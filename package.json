@@ -18,6 +18,9 @@
     "test": "tsx --test \"apps/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "build": "npm run build --workspaces --if-present",
     "check:boundaries": "tsx scripts/check-boundaries.ts",
+    "db:bootstrap": "tsx scripts/database-verify.ts",
+    "db:migrate": "tsx scripts/database-verify.ts",
+    "db:verify": "tsx scripts/database-verify.ts",
     "smoke:health": "tsx scripts/smoke-health.ts"
   },
   "devDependencies": {

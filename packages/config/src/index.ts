@@ -13,6 +13,10 @@ export interface ApiConfig {
   service: "api";
 }
 
+export interface DatabaseConfig {
+  databaseUrl: string;
+}
+
 export function loadApiConfig(
   env: Record<string, string | undefined>,
 ): ApiConfig {
@@ -27,4 +31,26 @@ export function loadApiConfig(
   }
 
   return { environment: environment as Environment, port, service: "api" };
+}
+
+export function loadDatabaseConfig(
+  env: Record<string, string | undefined>,
+): DatabaseConfig {
+  const databaseUrl = env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error("DATABASE_URL must be a valid PostgreSQL URL");
+  }
+
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error("DATABASE_URL must use the PostgreSQL protocol");
+  }
+
+  return { databaseUrl };
 }

@@ -7,7 +7,8 @@
       "@maos/contracts": ["packages/contracts/src/index.ts"],
       "@maos/config": ["packages/config/src/index.ts"],
       "@maos/logging": ["packages/logging/src/index.ts"],
-      "@maos/request-context": ["packages/request-context/src/index.ts"]
+      "@maos/request-context": ["packages/request-context/src/index.ts"],
+      "@maos/database": ["packages/database/src/index.ts"]
     }
   },
   "include": [

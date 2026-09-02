@@ -20,6 +20,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run db:verify
       - run: npm run check:boundaries
       - run: npm run smoke:health
       - run: npm audit --audit-level=high
