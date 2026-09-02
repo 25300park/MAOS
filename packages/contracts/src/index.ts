@@ -1,6 +1,23 @@
 export const ACTOR_TYPES = ["HUMAN", "AGENT", "SYSTEM"] as const;
 export type ActorType = (typeof ACTOR_TYPES)[number];
 
+export const TASK_STATUSES = [
+  "DRAFT",
+  "READY",
+  "QUEUED",
+  "IN_PROGRESS",
+  "WAITING_DEPENDENCY",
+  "WAITING_HUMAN",
+  "WAITING_APPROVAL",
+  "REVIEW",
+  "REVISE",
+  "BLOCKED",
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
 export const REVIEW_STATUSES = ["PASS", "REVISE", "BLOCK"] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
@@ -24,6 +41,25 @@ export const APPROVAL_VALIDITIES = [
   "CONSUMED",
 ] as const;
 export type ApprovalValidity = (typeof APPROVAL_VALIDITIES)[number];
+
+export type AuthorityOutcome =
+  "AUTHORIZED" | "DENIED" | "REQUIRES_ADDITIONAL_APPROVAL" | "UNKNOWN";
+
+export type GovernanceDecision =
+  | {
+      allowed: true;
+      approval_id: string;
+      authority: "AUTHORIZED";
+      status: "APPROVED";
+      validity: "VALID";
+    }
+  | {
+      allowed: false;
+      approval_id?: string;
+      authority: AuthorityOutcome;
+      status?: ApprovalStatus;
+      validity?: ApprovalValidity;
+    };
 
 export const TOOL_RISKS = ["R0", "R1", "R2", "R3", "R4"] as const;
 export type ToolRisk = (typeof TOOL_RISKS)[number];

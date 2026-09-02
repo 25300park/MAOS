@@ -2,8 +2,11 @@ import type {
   ActorType,
   ApprovalStatus,
   ApprovalValidity,
+  GovernanceDecision,
   ToolRisk,
 } from "@maos/contracts";
+
+export type { GovernanceDecision } from "@maos/contracts";
 
 export type AuthorityOutcome =
   "AUTHORIZED" | "DENIED" | "REQUIRES_ADDITIONAL_APPROVAL" | "UNKNOWN";
@@ -60,22 +63,6 @@ export interface AuthorityDecision {
   outcome: AuthorityOutcome;
   rule_ids: string[];
 }
-
-export type GovernanceDecision =
-  | {
-      allowed: true;
-      approval_id: string;
-      authority: "AUTHORIZED";
-      status: "APPROVED";
-      validity: "VALID";
-    }
-  | {
-      allowed: false;
-      approval_id?: string;
-      authority: AuthorityOutcome;
-      status?: ApprovalStatus;
-      validity?: ApprovalValidity;
-    };
 
 function matches(rule: AuthorityRule, request: AuthorityRequest): boolean {
   const actorMatches =

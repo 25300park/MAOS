@@ -16,22 +16,24 @@ try {
     "0001_canonical_schemas",
     "0002_core_foundation",
     "0003_approval_authority_foundation",
+    "0004_project_task_workflow_foundation",
   ]);
   assert.deepEqual(second.applied, []);
   assert.deepEqual(second.skipped, [
     "0001_canonical_schemas",
     "0002_core_foundation",
     "0003_approval_authority_foundation",
+    "0004_project_task_workflow_foundation",
   ]);
 
   const migrationCount = await database.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM core.schema_migrations",
   );
-  assert.equal(migrationCount.rows[0]?.count, "3");
+  assert.equal(migrationCount.rows[0]?.count, "4");
 
   console.log("Clean database initialization: PASS");
-  console.log("Database migrations applied: 3");
-  console.log("Migration repeatability: PASS (3 skipped on replay)");
+  console.log("Database migrations applied: 4");
+  console.log("Migration repeatability: PASS (4 skipped on replay)");
 } finally {
   await database.close();
 }

@@ -57,7 +57,7 @@ export interface ApiServerOptions {
   service: "api";
 }
 
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
   constructor(
     readonly statusCode: number,
     readonly body: ApiErrorBody,

@@ -18,6 +18,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0001_canonical_schemas",
       "0002_core_foundation",
       "0003_approval_authority_foundation",
+      "0004_project_task_workflow_foundation",
     ],
     skipped: [],
   });
@@ -64,6 +65,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
     [
       "core.departments",
       "core.organizations",
+      "core.project_members",
       "core.projects",
       "core.schema_migrations",
       "governance.approvals",
@@ -72,7 +74,33 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "identity.humans",
       "work.task_dependencies",
       "work.tasks",
+      "work.workflow_definitions",
+      "work.workflow_instances",
+      "work.workflow_step_instances",
+      "work.workflow_versions",
     ],
+  );
+});
+
+test("initializes Phase 1.8 ownership, workflow, and event persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0004_project_task_workflow_foundation");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema = 'core' AND table_name = 'project_members')
+       OR (table_schema = 'audit' AND table_name = 'events')
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    ["audit.events", "core.project_members"],
   );
 });
 
@@ -203,6 +231,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0001_canonical_schemas",
       "0002_core_foundation",
       "0003_approval_authority_foundation",
+      "0004_project_task_workflow_foundation",
     ],
   });
 
