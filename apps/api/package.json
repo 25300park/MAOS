@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@maos/config": "0.0.0",
+    "@maos/contracts": "0.0.0",
     "@maos/logging": "0.0.0",
     "@maos/request-context": "0.0.0"
   }

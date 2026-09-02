@@ -49,3 +49,28 @@ export const TOOL_CALL_STATUSES = [
   "CANCELLED",
 ] as const;
 export type ToolCallStatus = (typeof TOOL_CALL_STATUSES)[number];
+
+export interface ApiMeta {
+  correlation_id: string;
+  request_id: string;
+}
+
+export interface ApiSuccessEnvelope<T> {
+  data: T;
+  meta: ApiMeta;
+  ok: true;
+}
+
+export interface ApiErrorBody {
+  code: string;
+  details: unknown;
+  retryable: boolean;
+  severity: "INFO" | "NOTICE" | "WARNING" | "CRITICAL";
+  type: string;
+}
+
+export interface ApiErrorEnvelope {
+  error: ApiErrorBody;
+  meta: ApiMeta;
+  ok: false;
+}

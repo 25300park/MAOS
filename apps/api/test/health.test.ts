@@ -50,3 +50,25 @@ test("returns a stable structured error for an unknown route", async (t) => {
   assert.equal(body.ok, false);
   assert.equal(body.error.code, "ROUTE_NOT_FOUND");
 });
+
+test("reports degraded readiness when a required dependency is unavailable", async (t) => {
+  const server = createApiServer({
+    environment: "development",
+    readiness: async () => false,
+    service: "api",
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/health/ready`);
+  const body = (await response.json()) as {
+    checks: { dependencies: string };
+    status: string;
+  };
+
+  assert.equal(response.status, 503);
+  assert.equal(body.status, "DEGRADED");
+  assert.equal(body.checks.dependencies, "UNAVAILABLE");
+});
