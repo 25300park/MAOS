@@ -14,7 +14,11 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
   const result = await applyMigrations(database, migrations);
 
   assert.deepEqual(result, {
-    applied: ["0001_canonical_schemas", "0002_core_foundation"],
+    applied: [
+      "0001_canonical_schemas",
+      "0002_core_foundation",
+      "0003_approval_authority_foundation",
+    ],
     skipped: [],
   });
 
@@ -63,6 +67,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "core.projects",
       "core.schema_migrations",
       "governance.approvals",
+      "governance.authority_rules",
       "governance.reviews",
       "identity.humans",
       "work.task_dependencies",
@@ -147,6 +152,45 @@ test("enforces hierarchy, lifecycle, and dependency constraints", async (t) => {
   );
 });
 
+test("enforces exact approval binding and authority rule constraints", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO governance.approvals (
+        target_type, target_id, target_version, target_hash,
+        requested_by_actor_type, requested_by_actor_id
+      ) VALUES (
+        'RELEASE', '00000000-0000-4000-8000-000000000010', '1', '',
+        'HUMAN', '00000000-0000-4000-8000-000000000011'
+      )
+    `),
+    /check constraint/i,
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO governance.authority_rules (
+        action, effect, environment, resource, risk, scope
+      ) VALUES ('DEPLOY', 'ALLOW_EVERYTHING', 'production', 'RELEASE', 'R4', 'all')
+    `),
+    /check constraint/i,
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO governance.authority_rules (
+        actor_type, action, effect, environment, resource, risk, scope
+      ) VALUES (
+        'HUMAN', 'DEPLOY', 'ALLOW', 'production', 'RELEASE', 'R4', 'all'
+      )
+    `),
+    /check constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -155,7 +199,11 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
   await applyMigrations(database, migrations);
   assert.deepEqual(await applyMigrations(database, migrations), {
     applied: [],
-    skipped: ["0001_canonical_schemas", "0002_core_foundation"],
+    skipped: [
+      "0001_canonical_schemas",
+      "0002_core_foundation",
+      "0003_approval_authority_foundation",
+    ],
   });
 
   const drifted = migrations.map((migration, index) =>

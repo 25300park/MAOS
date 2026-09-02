@@ -17,6 +17,7 @@ import {
   type AuthorizationRequest,
   type IdentityContext,
 } from "@maos/module-identity";
+import type { GovernanceDecision } from "@maos/module-governance";
 import {
   createRequestContext,
   type RequestContext,
@@ -35,6 +36,12 @@ export interface ApiRoute {
     input: unknown;
     request: IncomingMessage;
   }): Promise<unknown> | unknown;
+  governance?: (input: {
+    context: RequestContext;
+    identity: IdentityContext;
+    input: unknown;
+    request: IncomingMessage;
+  }) => GovernanceDecision | Promise<GovernanceDecision>;
   method: string;
   path: string;
   validate?: (input: unknown) => ValidationResult;
@@ -313,6 +320,45 @@ async function handleRequest(
           retryable: false,
           details: validation.details,
         });
+      }
+
+      if (route.governance) {
+        if (!identity) {
+          throw new Error(
+            "Governance routes require an authenticated identity",
+          );
+        }
+        const decision = await route.governance({
+          context,
+          identity,
+          input: validation.value,
+          request,
+        });
+        if (!decision.allowed) {
+          const authorityDenied =
+            decision.authority === "DENIED" || decision.authority === "UNKNOWN";
+          const approvalRequired =
+            decision.authority === "REQUIRES_ADDITIONAL_APPROVAL";
+          throw new ApiRequestError(
+            authorityDenied || approvalRequired ? 403 : 409,
+            {
+              code: authorityDenied
+                ? "AUTHORITY_DENIED"
+                : approvalRequired
+                  ? "APPROVAL_REQUIRED"
+                  : "APPROVAL_CONFLICT",
+              type: authorityDenied ? "AUTHORIZATION" : "GOVERNANCE",
+              severity: "INFO",
+              retryable: false,
+              details: {
+                approval_id: decision.approval_id,
+                authority: decision.authority,
+                status: decision.status,
+                validity: decision.validity,
+              },
+            },
+          );
+        }
       }
 
       const data = await route.handle({
