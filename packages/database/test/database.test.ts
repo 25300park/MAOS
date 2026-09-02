@@ -20,6 +20,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0003_approval_authority_foundation",
       "0004_project_task_workflow_foundation",
       "0005_agent_model_runner_foundation",
+      "0006_skill_tool_mcp_foundation",
     ],
     skipped: [],
   });
@@ -72,6 +73,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "governance.approvals",
       "governance.authority_rules",
       "governance.reviews",
+      "governance.tool_permissions",
       "identity.humans",
       "work.task_assignments",
       "work.task_dependencies",
@@ -84,6 +86,59 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
   );
 });
 
+test("initializes Phase 1.10 Skill, Tool, MCP, permission, and ToolCall persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0006_skill_tool_mcp_foundation");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('ai', 'skill_definitions'),
+      ('ai', 'skill_versions'),
+      ('ai', 'skill_bindings'),
+      ('execution', 'tool_providers'),
+      ('execution', 'tools'),
+      ('execution', 'tool_capabilities'),
+      ('governance', 'tool_permissions'),
+      ('execution', 'tool_calls'),
+      ('audit', 'tool_call_events')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "ai.skill_bindings",
+      "ai.skill_definitions",
+      "ai.skill_versions",
+      "audit.tool_call_events",
+      "execution.tool_calls",
+      "execution.tool_capabilities",
+      "execution.tool_providers",
+      "execution.tools",
+      "governance.tool_permissions",
+    ],
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO execution.tools (
+        provider_id, name, tool_type, risk, lifecycle, health
+      ) VALUES (
+        '00000000-0000-4000-8000-000000000099',
+        'Invalid Tool', 'SHELL', 'R5', 'ENABLED', 'ASSUMED_HEALTHY'
+      )
+    `),
+    /(check constraint|foreign key)/i,
+  );
+});
+
 test("initializes distinct Phase 1.9 agent, model, runner, assignment, and run persistence", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -91,7 +146,7 @@ test("initializes distinct Phase 1.9 agent, model, runner, assignment, and run p
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0005_agent_model_runner_foundation");
+  assert.ok(result.applied.includes("0005_agent_model_runner_foundation"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -295,6 +350,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0003_approval_authority_foundation",
       "0004_project_task_workflow_foundation",
       "0005_agent_model_runner_foundation",
+      "0006_skill_tool_mcp_foundation",
     ],
   });
 

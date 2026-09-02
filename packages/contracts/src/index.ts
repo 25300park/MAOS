@@ -86,6 +86,45 @@ export const TOOL_CALL_STATUSES = [
 ] as const;
 export type ToolCallStatus = (typeof TOOL_CALL_STATUSES)[number];
 
+export const SKILL_STATUSES = [
+  "DRAFT",
+  "REVIEW",
+  "APPROVED",
+  "ACTIVE",
+  "DEPRECATED",
+  "DISABLED",
+  "ARCHIVED",
+] as const;
+export type SkillStatus = (typeof SKILL_STATUSES)[number];
+
+export const TOOL_TYPES = [
+  "FILESYSTEM",
+  "CLI",
+  "API",
+  "DATABASE",
+  "BROWSER",
+  "MCP",
+  "DEPLOYMENT",
+  "VERSION_CONTROL",
+  "COMMUNICATION",
+  "STORAGE",
+  "OBSERVABILITY",
+] as const;
+export type ToolType = (typeof TOOL_TYPES)[number];
+
+export const TOOL_LIFECYCLES = [
+  "DRAFT",
+  "TESTING",
+  "ACTIVE",
+  "DISABLED",
+  "DEPRECATED",
+  "ARCHIVED",
+] as const;
+export type ToolLifecycle = (typeof TOOL_LIFECYCLES)[number];
+
+export const TOOL_ACTION_TYPES = ["READ", "WRITE", "EXECUTE", "ADMIN"] as const;
+export type ToolActionType = (typeof TOOL_ACTION_TYPES)[number];
+
 export interface ApiMeta {
   correlation_id: string;
   request_id: string;

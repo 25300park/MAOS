@@ -11,6 +11,7 @@
       "@maos/module-governance": ["modules/governance/src/index.ts"],
       "@maos/module-identity": ["modules/identity/src/index.ts"],
       "@maos/module-orchestration": ["modules/orchestration/src/index.ts"],
+      "@maos/module-tooling": ["modules/tooling/src/index.ts"],
       "@maos/request-context": ["packages/request-context/src/index.ts"],
       "@maos/database": ["packages/database/src/index.ts"]
     }
