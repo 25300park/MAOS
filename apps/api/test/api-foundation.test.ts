@@ -103,6 +103,7 @@ test("validates registered route input before invoking its handler", async (t) =
     service: "api",
     routes: [
       {
+        access: "PUBLIC",
         method: "POST",
         path: "/api/v1/widgets",
         validate: (input: unknown) => {

@@ -12,6 +12,12 @@ import type {
 } from "@maos/contracts";
 import type { Logger } from "@maos/logging";
 import {
+  authorize,
+  type Authenticator,
+  type AuthorizationRequest,
+  type IdentityContext,
+} from "@maos/module-identity";
+import {
   createRequestContext,
   type RequestContext,
 } from "@maos/request-context";
@@ -22,8 +28,10 @@ export type ValidationResult =
   { ok: true; value: unknown } | { details: unknown; ok: false };
 
 export interface ApiRoute {
+  access?: "PUBLIC" | AuthorizationRequest;
   handle(input: {
     context: RequestContext;
+    identity: IdentityContext | null;
     input: unknown;
     request: IncomingMessage;
   }): Promise<unknown> | unknown;
@@ -33,6 +41,7 @@ export interface ApiRoute {
 }
 
 export interface ApiServerOptions {
+  authenticate?: Authenticator;
   environment: Environment;
   logger?: Logger;
   maxRequestBodyBytes?: number;
@@ -156,11 +165,14 @@ async function handleRequest(
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   const method = request.method ?? "UNKNOWN";
   const apiVersion = routeVersion(path);
+  let identity: IdentityContext | null = null;
 
   const complete = (statusCode: number, body: unknown): void => {
     sendJson(response, statusCode, body);
     options.logger?.info("request completed", {
       ...context,
+      actor_id: identity?.actor_id,
+      actor_type: identity?.actor_type,
       api_version: apiVersion,
       duration_ms: performance.now() - startedAt,
       method,
@@ -242,6 +254,47 @@ async function handleRequest(
       (candidate) => candidate.method === method && candidate.path === path,
     );
     if (route) {
+      if (route.access !== "PUBLIC") {
+        identity = (await options.authenticate?.(request.headers)) ?? null;
+        if (!identity) {
+          response.setHeader("www-authenticate", "Bearer");
+          complete(
+            401,
+            errorEnvelope(
+              {
+                code: "AUTHENTICATION_REQUIRED",
+                type: "AUTHENTICATION",
+                severity: "INFO",
+                retryable: false,
+                details: {},
+              },
+              context,
+            ),
+          );
+          return;
+        }
+
+        const decision = route.access
+          ? authorize(identity, route.access)
+          : { allowed: false, reason: "NO_MATCHING_PERMISSION" as const };
+        if (!decision.allowed) {
+          complete(
+            403,
+            errorEnvelope(
+              {
+                code: "PERMISSION_DENIED",
+                type: "AUTHORIZATION",
+                severity: "INFO",
+                retryable: false,
+                details: { reason: decision.reason },
+              },
+              context,
+            ),
+          );
+          return;
+        }
+      }
+
       const rawInput = route.validate
         ? await readJsonBody(
             request,
@@ -264,6 +317,7 @@ async function handleRequest(
 
       const data = await route.handle({
         context,
+        identity,
         input: validation.value,
         request,
       });

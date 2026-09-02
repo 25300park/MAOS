@@ -50,3 +50,26 @@ test("protects required fields and redacts secret-like context", () => {
   assert.equal(record.credential, "[REDACTED]");
   assert.equal(records[0]?.includes("must-not-appear"), false);
 });
+
+test("redacts security-sensitive fields nested in structured context", () => {
+  const records: string[] = [];
+  const logger = createLogger({
+    environment: "development",
+    service: "api",
+    write: (line) => records.push(line),
+  });
+
+  logger.info("authentication rejected", {
+    headers: { authorization: "sensitive-value" },
+    identity: { actor_id: "human-1", session_token: "sensitive-value" },
+  });
+
+  const record = JSON.parse(records[0] ?? "") as {
+    headers: { authorization: string };
+    identity: { actor_id: string; session_token: string };
+  };
+  assert.equal(record.headers.authorization, "[REDACTED]");
+  assert.equal(record.identity.actor_id, "human-1");
+  assert.equal(record.identity.session_token, "[REDACTED]");
+  assert.equal(records[0]?.includes("sensitive-value"), false);
+});

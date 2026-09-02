@@ -15,7 +15,7 @@
     "format:check": "prettier --check --end-of-line auto package.json eslint.config.mjs tsconfig.base.json tsconfig.check.json apps modules packages scripts .github",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
-    "test": "tsx --test \"apps/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test": "tsx --test \"apps/**/*.test.ts\" \"modules/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "build": "npm run build --workspaces --if-present",
     "check:boundaries": "tsx scripts/check-boundaries.ts",
     "db:bootstrap": "tsx scripts/database-verify.ts",

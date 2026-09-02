@@ -22,13 +22,29 @@ interface LoggerOptions {
 }
 
 const SENSITIVE_FIELD =
-  /^(?:api_?key|secret|password|credentials?|access_token|refresh_token|private_journal|chain_of_thought)$/i;
+  /^(?:api_?key|secret|password|credentials?|authorization|access_token|refresh_token|session_token|private_journal|chain_of_thought)$/i;
+
+function sanitizeValue(key: string, value: unknown): unknown {
+  if (SENSITIVE_FIELD.test(key)) return "[REDACTED]";
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeValue("", entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([nestedKey, nestedValue]) => [
+        nestedKey,
+        sanitizeValue(nestedKey, nestedValue),
+      ]),
+    );
+  }
+  return value;
+}
 
 function sanitizeContext(context: LogContext): LogContext {
   return Object.fromEntries(
     Object.entries(context).map(([key, value]) => [
       key,
-      SENSITIVE_FIELD.test(key) ? "[REDACTED]" : value,
+      sanitizeValue(key, value),
     ]),
   );
 }
