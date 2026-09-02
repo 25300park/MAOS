@@ -1,0 +1,33 @@
+{
+  "name": "maos",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "workspaces": [
+    "apps/*",
+    "modules/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "format:check": "prettier --check package.json eslint.config.mjs tsconfig.base.json tsconfig.check.json apps modules packages scripts .github",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "test": "tsx --test \"apps/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "build": "npm run build --workspaces --if-present",
+    "check:boundaries": "tsx scripts/check-boundaries.ts",
+    "smoke:health": "tsx scripts/smoke-health.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@maos/contracts": ["packages/contracts/src/index.ts"],
+      "@maos/config": ["packages/config/src/index.ts"],
+      "@maos/logging": ["packages/logging/src/index.ts"],
+      "@maos/request-context": ["packages/request-context/src/index.ts"]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "modules/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}

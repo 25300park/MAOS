@@ -1,0 +1,4 @@
+**/dist/**
+**/node_modules/**
+MAOS_Context_Efficiency_Pack/**
+package-lock.json
