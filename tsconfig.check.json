@@ -7,6 +7,7 @@
       "@maos/contracts": ["packages/contracts/src/index.ts"],
       "@maos/config": ["packages/config/src/index.ts"],
       "@maos/logging": ["packages/logging/src/index.ts"],
+      "@maos/module-agent-runtime": ["modules/agent-runtime/src/index.ts"],
       "@maos/module-governance": ["modules/governance/src/index.ts"],
       "@maos/module-identity": ["modules/identity/src/index.ts"],
       "@maos/module-orchestration": ["modules/orchestration/src/index.ts"],

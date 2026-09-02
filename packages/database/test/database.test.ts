@@ -19,6 +19,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0002_core_foundation",
       "0003_approval_authority_foundation",
       "0004_project_task_workflow_foundation",
+      "0005_agent_model_runner_foundation",
     ],
     skipped: [],
   });
@@ -72,6 +73,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "governance.authority_rules",
       "governance.reviews",
       "identity.humans",
+      "work.task_assignments",
       "work.task_dependencies",
       "work.tasks",
       "work.workflow_definitions",
@@ -82,6 +84,66 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
   );
 });
 
+test("initializes distinct Phase 1.9 agent, model, runner, assignment, and run persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0005_agent_model_runner_foundation");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('ai', 'agent_definitions'),
+      ('ai', 'agent_definition_versions'),
+      ('ai', 'agents'),
+      ('ai', 'model_providers'),
+      ('ai', 'models'),
+      ('execution', 'runners'),
+      ('execution', 'runs'),
+      ('audit', 'run_events')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "ai.agent_definition_versions",
+      "ai.agent_definitions",
+      "ai.agents",
+      "ai.model_providers",
+      "ai.models",
+      "audit.run_events",
+      "execution.runners",
+      "execution.runs",
+    ],
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO execution.runners (name, lifecycle, health, capabilities)
+      VALUES ('Invalid runner', 'ACTIVE', 'ASSUMED_HEALTHY', ARRAY['NODE'])
+    `),
+    /check constraint/i,
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO ai.models (provider_id, name, lifecycle, capabilities)
+      VALUES (
+        '00000000-0000-4000-8000-000000000099',
+        'Orphan model',
+        'ACTIVE',
+        ARRAY['TEXT']
+      )
+    `),
+    /foreign key/i,
+  );
+});
+
 test("initializes Phase 1.8 ownership, workflow, and event persistence", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -89,7 +151,7 @@ test("initializes Phase 1.8 ownership, workflow, and event persistence", async (
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0004_project_task_workflow_foundation");
+  assert.ok(result.applied.includes("0004_project_task_workflow_foundation"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -232,6 +294,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0002_core_foundation",
       "0003_approval_authority_foundation",
       "0004_project_task_workflow_foundation",
+      "0005_agent_model_runner_foundation",
     ],
   });
 
