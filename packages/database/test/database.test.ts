@@ -21,6 +21,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0004_project_task_workflow_foundation",
       "0005_agent_model_runner_foundation",
       "0006_skill_tool_mcp_foundation",
+      "0007_local_execution_bridge_foundation",
     ],
     skipped: [],
   });
@@ -93,7 +94,7 @@ test("initializes Phase 1.10 Skill, Tool, MCP, permission, and ToolCall persiste
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0006_skill_tool_mcp_foundation");
+  assert.ok(result.applied.includes("0006_skill_tool_mcp_foundation"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -136,6 +137,39 @@ test("initializes Phase 1.10 Skill, Tool, MCP, permission, and ToolCall persiste
       )
     `),
     /(check constraint|foreign key)/i,
+  );
+});
+
+test("initializes Phase 1.10A local runner registration, allowlist, policy, and task scope persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0007_local_execution_bridge_foundation");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('execution', 'local_runner_registrations'),
+      ('execution', 'local_runner_workroots'),
+      ('execution', 'local_runner_capabilities'),
+      ('execution', 'local_runner_command_policies'),
+      ('execution', 'local_task_scopes')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "execution.local_runner_capabilities",
+      "execution.local_runner_command_policies",
+      "execution.local_runner_registrations",
+      "execution.local_runner_workroots",
+      "execution.local_task_scopes",
+    ],
   );
 });
 
@@ -351,6 +385,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0004_project_task_workflow_foundation",
       "0005_agent_model_runner_foundation",
       "0006_skill_tool_mcp_foundation",
+      "0007_local_execution_bridge_foundation",
     ],
   });
 

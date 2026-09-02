@@ -9,6 +9,8 @@ import type {
   ToolType,
 } from "@maos/contracts";
 
+export * from "./local-bridge.js";
+
 export type SkillCategory =
   | "GENERAL"
   | "DEVELOPMENT"
