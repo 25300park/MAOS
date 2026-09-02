@@ -1,14 +1,14 @@
 # MAOS CURRENT STATE
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.10 — Skill / Tool / MCP**
+**Phase 1.10A — Local Execution Bridge / IDE Companion MVP**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.10A until Phase 1.10 is implemented, tested, and reviewed.
+Do not start Phase 1.11 until Phase 1.10A is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -22,27 +22,30 @@ Do not start Phase 1.10A until Phase 1.10 is implemented, tested, and reviewed.
 - Phase 1.7 — Approval / Authority: **COMPLETE**
 - Phase 1.8 — Project / Task / Workflow Engine: **COMPLETE**
 - Phase 1.9 — Agent / Model / Runner Runtime: **COMPLETE**
+- Phase 1.10 — Skill / Tool / MCP: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `06d791d5d5e310820b3a08a89c4e2355fa2ddf43`
+- Commit: `26ad0b729b1e9e959dd9165bf2661e3770c37e07`
 - Root: `D:\10. MAOS`
 
-## Phase 1.10 Goal
+## Phase 1.10A Goal
 
-Establish the minimum executable Skill / Tool / MCP foundation required by frozen architecture, while preserving: Skill != Tool Permission and Tool capability != authority.
+Establish the minimum Local Execution Bridge / IDE Companion MVP that allows MAOS to use a registered local runner/tool provider safely under existing identity, task-scope, permission, risk, approval, evidence, and audit boundaries.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.10.md`
+- Phase manifest: `docs/context/phase-1.10A.md`
 - MAOS Architecture v1.0 remains frozen.
-- MAOS-018 and MAOS-019 remain v1.1 candidate references only.
+- MAOS-019 is v1.1 candidate guidance and does not modify the frozen baseline.
+- MAOS-018 remains a v1.1 candidate reference only.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.10 only.
+- Implement Phase 1.10A only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Do not begin Phase 1.10A automatically.
+- Stop and report `CHANGE_REQUEST_REQUIRED` if MAOS-019 requires a frozen-architecture change.
+- Do not begin Phase 1.11 automatically.
