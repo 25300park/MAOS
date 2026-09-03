@@ -302,15 +302,54 @@ test("renders every development workspace operational state explicitly", () => {
   }
 });
 
-test("provides a governed Preview Workspace entry without preview automation", () => {
+test("renders the governed Preview, Inspector, and QA workspace", () => {
   const html = controlRoom.renderControlRoom({
     identity: operator,
     path: "/development/preview",
   });
   assert.match(html, /Preview Workspace/);
-  assert.match(html, /Entry point only/);
-  assert.match(html, /Phase 1\.16/);
-  assert.doesNotMatch(html, /Auto-fix|Run visual inspector/);
+  for (const text of [
+    "Preview state",
+    "UI Inspector",
+    "DOM / Component",
+    "Source location",
+    "Before / After",
+    "Functional QA",
+    "UX QA",
+    "Visual QA",
+    "Workflow Scenario",
+    "Regression",
+    "Human CEO / MAOS Operator",
+    "Development Lead",
+    "Reviewer / QA User",
+    "Structured Issue",
+    "Targeted Test",
+    "UX Re-test",
+  ])
+    assert.match(html, new RegExp(text.replaceAll("/", "\\/")));
+  assert.match(html, /QA PASS ≠ Production Approval/);
+  assert.match(html, /aria-label="Preview viewport"/);
+  assert.doesNotMatch(html, /production deploy now|unrestricted browser/i);
+});
+
+test("shows Preview and QA actions only with exact permissions", () => {
+  const readOnly = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development/preview",
+  });
+  assert.doesNotMatch(readOnly, /data-action="QA:EXECUTE"/);
+  assert.doesNotMatch(readOnly, /data-action="QA:ISSUE"/);
+
+  const authorized = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "QA:EXECUTE", "QA:ISSUE"],
+    },
+    path: "/development/preview",
+  });
+  assert.match(authorized, /data-action="QA:EXECUTE"/);
+  assert.match(authorized, /data-action="QA:ISSUE"/);
+  assert.match(authorized, /Task scope · task-116/);
 });
 
 test("shows all eleven development roles and the governed review chain", () => {
