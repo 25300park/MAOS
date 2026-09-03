@@ -15,6 +15,7 @@
     "@maos/module-agent-runtime": "0.0.0",
     "@maos/module-governance": "0.0.0",
     "@maos/module-identity": "0.0.0",
+    "@maos/module-knowledge": "0.0.0",
     "@maos/module-orchestration": "0.0.0",
     "@maos/module-tooling": "0.0.0",
     "@maos/request-context": "0.0.0"

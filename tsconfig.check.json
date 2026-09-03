@@ -10,6 +10,7 @@
       "@maos/module-agent-runtime": ["modules/agent-runtime/src/index.ts"],
       "@maos/module-governance": ["modules/governance/src/index.ts"],
       "@maos/module-identity": ["modules/identity/src/index.ts"],
+      "@maos/module-knowledge": ["modules/knowledge/src/index.ts"],
       "@maos/module-orchestration": ["modules/orchestration/src/index.ts"],
       "@maos/module-tooling": ["modules/tooling/src/index.ts"],
       "@maos/request-context": ["packages/request-context/src/index.ts"],

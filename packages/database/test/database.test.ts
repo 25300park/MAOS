@@ -22,6 +22,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0005_agent_model_runner_foundation",
       "0006_skill_tool_mcp_foundation",
       "0007_local_execution_bridge_foundation",
+      "0008_ai_memory_gateway_integration",
     ],
     skipped: [],
   });
@@ -147,7 +148,7 @@ test("initializes Phase 1.10A local runner registration, allowlist, policy, and 
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0007_local_execution_bridge_foundation");
+  assert.ok(result.applied.includes("0007_local_execution_bridge_foundation"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -170,6 +171,47 @@ test("initializes Phase 1.10A local runner registration, allowlist, policy, and 
       "execution.local_runner_workroots",
       "execution.local_task_scopes",
     ],
+  );
+});
+
+test("initializes Phase 1.11 gateway registration, external reference, and retrieval evidence persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0008_ai_memory_gateway_integration");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('integration', 'memory_gateways'),
+      ('knowledge', 'memory_references'),
+      ('audit', 'memory_retrieval_events')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "audit.memory_retrieval_events",
+      "integration.memory_gateways",
+      "knowledge.memory_references",
+    ],
+  );
+
+  const columns = await database.query<{ column_name: string }>(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'knowledge'
+      AND table_name = 'memory_references'
+    ORDER BY column_name
+  `);
+  assert.equal(
+    columns.rows.some(({ column_name }) => column_name === "content"),
+    false,
   );
 });
 
@@ -386,6 +428,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0005_agent_model_runner_foundation",
       "0006_skill_tool_mcp_foundation",
       "0007_local_execution_bridge_foundation",
+      "0008_ai_memory_gateway_integration",
     ],
   });
 
