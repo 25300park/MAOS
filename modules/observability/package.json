@@ -1,0 +1,15 @@
+{
+  "name": "@maos/module-observability",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@maos/contracts": "0.0.0",
+    "@maos/logging": "0.0.0"
+  }
+}

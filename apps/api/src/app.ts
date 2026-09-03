@@ -168,6 +168,8 @@ async function handleRequest(
   const context = createRequestContext(request.headers);
   response.setHeader("x-request-id", context.request_id);
   response.setHeader("x-correlation-id", context.correlation_id);
+  response.setHeader("x-trace-id", context.trace_id);
+  response.setHeader("x-span-id", context.span_id);
 
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   const method = request.method ?? "UNKNOWN";

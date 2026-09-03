@@ -23,6 +23,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0006_skill_tool_mcp_foundation",
       "0007_local_execution_bridge_foundation",
       "0008_ai_memory_gateway_integration",
+      "0009_observability_audit_foundation",
     ],
     skipped: [],
   });
@@ -181,7 +182,7 @@ test("initializes Phase 1.11 gateway registration, external reference, and retri
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0008_ai_memory_gateway_integration");
+  assert.ok(result.applied.includes("0008_ai_memory_gateway_integration"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -212,6 +213,64 @@ test("initializes Phase 1.11 gateway registration, external reference, and retri
   assert.equal(
     columns.rows.some(({ column_name }) => column_name === "content"),
     false,
+  );
+});
+
+test("initializes separate observability records and append-only audit persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.equal(result.applied.at(-1), "0009_observability_audit_foundation");
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('audit', 'observability_events'),
+      ('audit', 'trace_spans'),
+      ('audit', 'audit_records'),
+      ('operations', 'metric_samples')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "audit.audit_records",
+      "audit.observability_events",
+      "audit.trace_spans",
+      "operations.metric_samples",
+    ],
+  );
+
+  await database.exec(`
+    INSERT INTO audit.audit_records (
+      id, actor_type, actor_id, action, target_type, target_id, result,
+      request_id, correlation_id, trace_id, span_id, record_hash
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000901',
+      'SYSTEM', '00000000-0000-4000-8000-000000000902',
+      'SYSTEM.START', 'SYSTEM', '00000000-0000-4000-8000-000000000903',
+      'SUCCEEDED', 'request-1', 'correlation-1', 'trace-1', 'span-1',
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    )
+  `);
+  await assert.rejects(
+    database.exec(`
+      UPDATE audit.audit_records SET result = 'FAILED'
+      WHERE id = '00000000-0000-4000-8000-000000000901'
+    `),
+    /append-only/i,
+  );
+  await assert.rejects(
+    database.exec(`
+      DELETE FROM audit.audit_records
+      WHERE id = '00000000-0000-4000-8000-000000000901'
+    `),
+    /append-only/i,
   );
 });
 
@@ -429,6 +488,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0006_skill_tool_mcp_foundation",
       "0007_local_execution_bridge_foundation",
       "0008_ai_memory_gateway_integration",
+      "0009_observability_audit_foundation",
     ],
   });
 

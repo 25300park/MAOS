@@ -22,7 +22,7 @@ interface LoggerOptions {
 }
 
 const SENSITIVE_FIELD =
-  /^(?:api_?key|secret|password|credentials?|authorization|access_token|refresh_token|session_token|private_journal|chain_of_thought)$/i;
+  /^(?:api_?key|client_secret|secret|password|credentials?|authorization|cookie|set_cookie|access_token|refresh_token|session_token|token|private_journal|chain_of_thought)$/i;
 
 function sanitizeValue(key: string, value: unknown): unknown {
   if (SENSITIVE_FIELD.test(key)) return "[REDACTED]";
@@ -38,6 +38,10 @@ function sanitizeValue(key: string, value: unknown): unknown {
     );
   }
   return value;
+}
+
+export function redactStructuredData(value: unknown): unknown {
+  return sanitizeValue("", value);
 }
 
 function sanitizeContext(context: LogContext): LogContext {

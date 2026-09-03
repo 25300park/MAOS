@@ -128,6 +128,8 @@ export type ToolActionType = (typeof TOOL_ACTION_TYPES)[number];
 export interface ApiMeta {
   correlation_id: string;
   request_id: string;
+  span_id: string;
+  trace_id: string;
 }
 
 export interface ApiSuccessEnvelope<T> {

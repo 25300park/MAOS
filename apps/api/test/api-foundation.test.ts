@@ -40,6 +40,8 @@ test("serves the versioned API root with the canonical success envelope", async 
     meta: {
       request_id: "req-api-root",
       correlation_id: "corr-api-root",
+      span_id: response.headers.get("x-span-id"),
+      trace_id: response.headers.get("x-trace-id"),
     },
   });
 });
@@ -71,6 +73,8 @@ test("returns the canonical error envelope for an unknown versioned route", asyn
     meta: {
       request_id: "req-missing",
       correlation_id: "corr-missing",
+      span_id: response.headers.get("x-span-id"),
+      trace_id: response.headers.get("x-trace-id"),
     },
   });
 });

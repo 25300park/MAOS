@@ -11,11 +11,18 @@ try {
     headers: {
       "x-request-id": "smoke-request",
       "x-correlation-id": "smoke-correlation",
+      "x-span-id": "smoke-span",
+      "x-trace-id": "smoke-trace",
     },
   });
   const body = (await response.json()) as {
     data: { service: string; version: string };
-    meta: { correlation_id: string; request_id: string };
+    meta: {
+      correlation_id: string;
+      request_id: string;
+      span_id: string;
+      trace_id: string;
+    };
     ok: boolean;
   };
 
@@ -25,6 +32,8 @@ try {
   assert.deepEqual(body.meta, {
     request_id: "smoke-request",
     correlation_id: "smoke-correlation",
+    span_id: "smoke-span",
+    trace_id: "smoke-trace",
   });
   console.log("API smoke verification: PASS");
 } finally {

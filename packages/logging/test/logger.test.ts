@@ -73,3 +73,24 @@ test("redacts security-sensitive fields nested in structured context", () => {
   assert.equal(record.identity.session_token, "[REDACTED]");
   assert.equal(records[0]?.includes("sensitive-value"), false);
 });
+
+test("preserves trace continuity while redacting bearer-like values", () => {
+  const records: string[] = [];
+  const logger = createLogger({
+    environment: "development",
+    service: "api",
+    write: (line) => records.push(line),
+  });
+  logger.error("dependency failed", {
+    correlation_id: "corr-1",
+    request_id: "req-1",
+    span_id: "span-1",
+    trace_id: "trace-1",
+    token: "secret-value",
+  });
+  const record = JSON.parse(records[0] ?? "") as Record<string, unknown>;
+  assert.equal(record.trace_id, "trace-1");
+  assert.equal(record.span_id, "span-1");
+  assert.equal(record.token, "[REDACTED]");
+  assert.equal(records[0]?.includes("secret-value"), false);
+});

@@ -19,12 +19,16 @@ test("serves health, liveness, and readiness contracts with propagated context",
         headers: {
           "x-correlation-id": "corr-health",
           "x-request-id": "req-health",
+          "x-span-id": "span-health",
+          "x-trace-id": "trace-health",
         },
       },
     );
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-request-id"), "req-health");
     assert.equal(response.headers.get("x-correlation-id"), "corr-health");
+    assert.equal(response.headers.get("x-span-id"), "span-health");
+    assert.equal(response.headers.get("x-trace-id"), "trace-health");
     const body = (await response.json()) as { status: string };
     assert.equal(body.status, "HEALTHY");
   }

@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 export interface RequestContext {
   correlation_id: string;
   request_id: string;
+  span_id: string;
+  trace_id: string;
 }
 
 type HeaderValue = string | string[] | undefined;
@@ -21,5 +23,7 @@ export function createRequestContext(
   return {
     request_id: validHeader(headers["x-request-id"]) ?? generate(),
     correlation_id: validHeader(headers["x-correlation-id"]) ?? generate(),
+    trace_id: validHeader(headers["x-trace-id"]) ?? generate(),
+    span_id: validHeader(headers["x-span-id"]) ?? generate(),
   };
 }
