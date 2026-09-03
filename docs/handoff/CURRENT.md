@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.15A — Development Loop Runtime MVP**
+**Phase 1.16 — Preview / UI Inspector / Test / QA**
 
 Status: **NOT COMPLETE**
 
-Do not implement Phase 1.15A until its control files are reviewed and execution is explicitly authorized.
+Do not implement Phase 1.16 until its control files are reviewed and execution is explicitly authorized.
 
 ## Completed
 
@@ -29,28 +29,29 @@ Do not implement Phase 1.15A until its control files are reviewed and execution 
 - Phase 1.13 — MAOS Control Room UI: **COMPLETE**
 - Phase 1.14 — System Development Workspace: **COMPLETE**
 - Phase 1.15 — System Development Agent Team: **COMPLETE**
+- Phase 1.15A — Development Loop Runtime MVP: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `f170dce892244e354ad31f0d8ebec1b21ce10d88`
+- Commit: `b33c57d35a405f454a6b59929b4c24ee2b39a856`
 - Root: `D:\10. MAOS`
 
-## Phase 1.15A Goal
+## Phase 1.16 Goal
 
-Establish the minimum governed Development Loop Runtime MVP that coordinates the completed System Development Agent Team through explicit task, artifact, review, revision, approval, evidence, and verification states.
+Establish the minimum governed Preview, UI Inspector, Functional Test, UX QA, Visual QA, scenario, regression, and evidence-driven fix-loop foundation required to verify MAOS user workflows without weakening approval or production boundaries.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.15A.md`
+- Phase manifest: `docs/context/phase-1.16.md`
 - MAOS Architecture v1.0 remains frozen.
-- The Development Loop Runtime coordinates existing agents and engines; it does not create a mega-agent, new authority source, or uncontrolled conversation loop.
+- Preview and QA capabilities produce evidence and revision work; they do not grant approval or production authority.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.15A only after explicit authorization.
+- Implement Phase 1.16 only after explicit authorization.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 1.16 automatically.
+- Do not begin the next phase automatically.
