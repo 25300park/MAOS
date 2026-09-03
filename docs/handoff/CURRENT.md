@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.10A — Local Execution Bridge / IDE Companion MVP**
+**Phase 1.11 — AI Memory Gateway Integration**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.11 until Phase 1.10A is implemented, tested, and reviewed.
+Do not start Phase 1.12 until Phase 1.11 is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -23,29 +23,30 @@ Do not start Phase 1.11 until Phase 1.10A is implemented, tested, and reviewed.
 - Phase 1.8 — Project / Task / Workflow Engine: **COMPLETE**
 - Phase 1.9 — Agent / Model / Runner Runtime: **COMPLETE**
 - Phase 1.10 — Skill / Tool / MCP: **COMPLETE**
+- Phase 1.10A — Local Execution Bridge / IDE Companion MVP: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `26ad0b729b1e9e959dd9165bf2661e3770c37e07`
+- Commit: `aa51ab95a563589c908939f49674d76c7f8ea1ad`
 - Root: `D:\10. MAOS`
 
-## Phase 1.10A Goal
+## Phase 1.11 Goal
 
-Establish the minimum Local Execution Bridge / IDE Companion MVP that allows MAOS to use a registered local runner/tool provider safely under existing identity, task-scope, permission, risk, approval, evidence, and audit boundaries.
+Establish the minimum executable AI Memory Gateway integration required by frozen architecture while preserving the boundary between MAOS work governance and externally curated knowledge.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.10A.md`
+- Phase manifest: `docs/context/phase-1.11.md`
 - MAOS Architecture v1.0 remains frozen.
-- MAOS-019 is v1.1 candidate guidance and does not modify the frozen baseline.
-- MAOS-018 remains a v1.1 candidate reference only.
+- Existing AI Memory Gateway remains an independent system and is reused through an adapter.
+- v1.1 candidate documents remain guidance only and do not modify the frozen baseline.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.10A only.
+- Implement Phase 1.11 only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Stop and report `CHANGE_REQUEST_REQUIRED` if MAOS-019 requires a frozen-architecture change.
-- Do not begin Phase 1.11 automatically.
+- Do not duplicate AI Memory Gateway storage, search, summarization, or lifecycle ownership inside MAOS.
+- Do not begin Phase 1.12 automatically.
