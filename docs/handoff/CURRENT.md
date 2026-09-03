@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.11 — AI Memory Gateway Integration**
+**Phase 1.12 — Observability / Audit**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.12 until Phase 1.11 is implemented, tested, and reviewed.
+Do not start Phase 1.13 until Phase 1.12 is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -24,29 +24,29 @@ Do not start Phase 1.12 until Phase 1.11 is implemented, tested, and reviewed.
 - Phase 1.9 — Agent / Model / Runner Runtime: **COMPLETE**
 - Phase 1.10 — Skill / Tool / MCP: **COMPLETE**
 - Phase 1.10A — Local Execution Bridge / IDE Companion MVP: **COMPLETE**
+- Phase 1.11 — AI Memory Gateway Integration: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `aa51ab95a563589c908939f49674d76c7f8ea1ad`
+- Commit: `e023f8744f47bd80d90459e4e6071c68285df1c2`
 - Root: `D:\10. MAOS`
 
-## Phase 1.11 Goal
+## Phase 1.12 Goal
 
-Establish the minimum executable AI Memory Gateway integration required by frozen architecture while preserving the boundary between MAOS work governance and externally curated knowledge.
+Establish the minimum executable MAOS Observability / Audit foundation required by frozen architecture while preserving the distinct semantics of logs, metrics, traces, events, and audit records.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.11.md`
+- Phase manifest: `docs/context/phase-1.12.md`
 - MAOS Architecture v1.0 remains frozen.
-- Existing AI Memory Gateway remains an independent system and is reused through an adapter.
-- v1.1 candidate documents remain guidance only and do not modify the frozen baseline.
+- Log, Metric, Trace, Event, and Audit remain distinct canonical records.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.11 only.
+- Implement Phase 1.12 only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Do not duplicate AI Memory Gateway storage, search, summarization, or lifecycle ownership inside MAOS.
-- Do not begin Phase 1.12 automatically.
+- Do not expose secrets, credentials, private personal content, or hidden chain-of-thought through observability.
+- Do not begin Phase 1.13 automatically.
