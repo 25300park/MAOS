@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.15 — System Development Agent Team**
+**Phase 1.15A — Development Loop Runtime MVP**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.15A until Phase 1.15 is implemented, tested, and reviewed.
+Do not implement Phase 1.15A until its control files are reviewed and execution is explicitly authorized.
 
 ## Completed
 
@@ -28,28 +28,29 @@ Do not start Phase 1.15A until Phase 1.15 is implemented, tested, and reviewed.
 - Phase 1.12 — Observability / Audit: **COMPLETE**
 - Phase 1.13 — MAOS Control Room UI: **COMPLETE**
 - Phase 1.14 — System Development Workspace: **COMPLETE**
+- Phase 1.15 — System Development Agent Team: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `dcdcb7856db4cf1aeaea4ca61e1f42bea76c0b63`
+- Commit: `f170dce892244e354ad31f0d8ebec1b21ce10d88`
 - Root: `D:\10. MAOS`
 
-## Phase 1.15 Goal
+## Phase 1.15A Goal
 
-Establish the minimum executable System Development Agent Team foundation required by frozen architecture while preserving specialized roles, human authority, and existing task, workflow, tool, runner, evidence, and audit boundaries.
+Establish the minimum governed Development Loop Runtime MVP that coordinates the completed System Development Agent Team through explicit task, artifact, review, revision, approval, evidence, and verification states.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.15.md`
+- Phase manifest: `docs/context/phase-1.15A.md`
 - MAOS Architecture v1.0 remains frozen.
-- The System Development Agent Team is a governed set of specialized roles, not a mega-agent, autonomous loop, or authority bypass.
+- The Development Loop Runtime coordinates existing agents and engines; it does not create a mega-agent, new authority source, or uncontrolled conversation loop.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.15 only.
+- Implement Phase 1.15A only after explicit authorization.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Preserve Agent != Model != Runner, role separation, task scope, permission, approval, evidence, audit, and human authority in every operation.
-- Do not begin Phase 1.15A automatically.
+- Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
+- Do not begin Phase 1.16 automatically.
