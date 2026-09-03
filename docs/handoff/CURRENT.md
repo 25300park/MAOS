@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.14 — System Development Workspace**
+**Phase 1.15 — System Development Agent Team**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.15 until Phase 1.14 is implemented, tested, and reviewed.
+Do not start Phase 1.15A until Phase 1.15 is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -27,28 +27,29 @@ Do not start Phase 1.15 until Phase 1.14 is implemented, tested, and reviewed.
 - Phase 1.11 — AI Memory Gateway Integration: **COMPLETE**
 - Phase 1.12 — Observability / Audit: **COMPLETE**
 - Phase 1.13 — MAOS Control Room UI: **COMPLETE**
+- Phase 1.14 — System Development Workspace: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `d9dfdd17ed2185e72af7ee01db6a98f2db743be6`
+- Commit: `dcdcb7856db4cf1aeaea4ca61e1f42bea76c0b63`
 - Root: `D:\10. MAOS`
 
-## Phase 1.14 Goal
+## Phase 1.15 Goal
 
-Establish the minimum executable System Development Workspace required to inspect and coordinate governed repository work through existing MAOS task, run, tool, local-execution, evidence, and audit boundaries.
+Establish the minimum executable System Development Agent Team foundation required by frozen architecture while preserving specialized roles, human authority, and existing task, workflow, tool, runner, evidence, and audit boundaries.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.14.md`
+- Phase manifest: `docs/context/phase-1.15.md`
 - MAOS Architecture v1.0 remains frozen.
-- The System Development Workspace is a governed development surface, not an unrestricted shell, authority bypass, or replacement source of truth.
+- The System Development Agent Team is a governed set of specialized roles, not a mega-agent, autonomous loop, or authority bypass.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.14 only.
+- Implement Phase 1.15 only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Preserve repository scope, task binding, permission, risk, approval, audit, evidence, and local-execution boundaries in every operation.
-- Do not begin Phase 1.15 automatically.
+- Preserve Agent != Model != Runner, role separation, task scope, permission, approval, evidence, audit, and human authority in every operation.
+- Do not begin Phase 1.15A automatically.
