@@ -214,8 +214,8 @@ test("renders the System Development Workspace with task-scoped delivery context
   });
   for (const text of [
     "System Development Workspace",
-    "codex/phase-1.15-system-development-agent-team",
-    "task-dev-115",
+    "codex/phase-1.15A-development-loop-runtime",
+    "task-dev-115a",
     "Development Lead",
     "Requirement",
     "Implementation",
@@ -339,4 +339,26 @@ test("shows all eleven development roles and the governed review chain", () => {
   );
   assert.match(html, /Human approval required/);
   assert.match(html, /Agent ≠ Model ≠ Runner/);
+});
+
+test("shows bounded Development Loop status, budgets, stop controls, and approval boundary", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  for (const text of [
+    "Development Loop Runtime",
+    "Iteration 1 of 3",
+    "Time budget",
+    "Cost budget",
+    "Allowed tools",
+    "NO_PROGRESS",
+    "KILL_SWITCH",
+    "Human Approval",
+    "Deploy Preparation",
+    "Learn / Improvement Candidate",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.match(html, /QA PASS ≠ Production Approval/);
+  assert.doesNotMatch(html, /production deploy now|unrestricted autonomous/i);
 });

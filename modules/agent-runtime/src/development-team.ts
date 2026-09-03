@@ -59,7 +59,7 @@ export interface DevelopmentAssignment {
   agent_id: string;
   assigned_by: { id: string; type: ActorType };
   id: string;
-  status: "ASSIGNED";
+  status: "ASSIGNED" | "RELEASED";
   task_id: string;
   task_scope: string;
   task_type: string;
@@ -295,6 +295,26 @@ export class DevelopmentAgentTeam {
       ...current,
       lifecycle: "SUSPENDED" as const,
       runtime_status: "OFFLINE" as const,
+    };
+    this.members.set(agentId, updated);
+    return updated;
+  }
+
+  releaseAssignment(
+    assignmentId: string,
+    agentId: string,
+  ): DevelopmentAgentMember {
+    const assignment = this.assignments.get(assignmentId);
+    const member = this.member(agentId);
+    if (!assignment || assignment.agent_id !== agentId)
+      throw new RuntimeError("ASSIGNMENT_AGENT_MISMATCH");
+    if (member.current_assignment_id !== assignmentId)
+      throw new RuntimeError("ASSIGNMENT_NOT_ACTIVE");
+    this.assignments.set(assignmentId, { ...assignment, status: "RELEASED" });
+    const updated = {
+      ...member,
+      current_assignment_id: null,
+      runtime_status: "AVAILABLE" as const,
     };
     this.members.set(agentId, updated);
     return updated;
