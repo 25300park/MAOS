@@ -1,4 +1,8 @@
 import { CONTROL_ROOM_CSS } from "./styles.js";
+import {
+  renderDevelopmentWorkspace,
+  type DevelopmentWorkspaceState,
+} from "./development-workspace.js";
 
 export interface ControlRoomIdentity {
   actor_id: string;
@@ -7,8 +11,7 @@ export interface ControlRoomIdentity {
   role: string;
 }
 
-export type ViewState =
-  "approval_required" | "blocked" | "empty" | "error" | "loading" | "ready";
+export type ViewState = DevelopmentWorkspaceState;
 
 export interface ControlRoomRenderInput {
   context?: {
@@ -241,10 +244,6 @@ function systemsPage(): string {
   return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="table-wrap"><table class="data-table"><caption>Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
 }
 
-function developmentPage(): string {
-  return `${pageHeading("Governed build surface", "Development Workspace", "Entry point only. Full system development capabilities belong to Phase 1.14.")}<div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Workspace readiness</h2>${status("FOUNDATION", "active")}</div><div class="panel-body"><div class="callout"><strong>Phase boundary active</strong><p>This entry point exposes repository, task, run, evidence, and quality context. It does not implement an unrestricted IDE or execution surface.</p></div><dl class="fact-grid" style="margin-top:16px"><div class="fact"><dt>Repository</dt><dd>D:\\10. MAOS</dd></div><div class="fact"><dt>Branch policy</dt><dd>Short-lived task branch</dd></div><div class="fact"><dt>Current baseline</dt><dd>Phase 1.13</dd></div><div class="fact"><dt>Execution boundary</dt><dd>Local Bridge governed</dd></div></dl></div></section><aside class="panel"><div class="panel-head"><h2>Available now</h2></div><div class="panel-body"><p>✓ Open implementation task context</p><p>✓ Inspect linked runs and evidence</p><p>✓ View repository status through authorized tools</p><p>— Source editing arrives in Phase 1.14</p></div></aside></div>`;
-}
-
 function statePage(state: Exclude<ViewState, "ready">): string {
   const states = {
     loading: [
@@ -272,6 +271,26 @@ function statePage(state: Exclude<ViewState, "ready">): string {
       "Human approval required",
       "This operation cannot proceed until valid authority is recorded.",
     ],
+    conflict: [
+      "↻",
+      "Control Room state changed",
+      "Request a fresh authorized view before continuing.",
+    ],
+    denied: [
+      "⊘",
+      "Control Room access denied",
+      "This identity is not authorized for the requested resource.",
+    ],
+    timeout: [
+      "◷",
+      "Control Room request timed out",
+      "No operation was assumed successful. Retry safely.",
+    ],
+    unavailable: [
+      "◇",
+      "Control Room dependency unavailable",
+      "The required service is unavailable and the operation is fail-closed.",
+    ],
   } as const;
   const [icon, title, copy] = states[state];
   return `<section class="panel state-view" data-view-state="${state}"><div><div class="state-icon" aria-hidden="true">${icon}</div><h2>${title}</h2><p>${copy}</p><button class="btn">${state === "error" ? "Retry" : "Return to overview"}</button></div></section>`;
@@ -282,8 +301,14 @@ function notFound(): string {
 }
 
 function routeContent(input: ControlRoomRenderInput): string {
-  if (input.state && input.state !== "ready") return statePage(input.state);
   const path = input.path === "/" ? "/today" : input.path;
+  if (path === "/development" || path.startsWith("/development/"))
+    return renderDevelopmentWorkspace({
+      identity: input.identity!,
+      path,
+      state: input.state,
+    });
+  if (input.state && input.state !== "ready") return statePage(input.state);
   if (path === "/today") return todayPage(input.identity!);
   if (path === "/projects" || path.startsWith("/projects/"))
     return projectsPage();
@@ -296,7 +321,6 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/systems") return systemsPage();
-  if (path === "/development") return developmentPage();
   return notFound();
 }
 

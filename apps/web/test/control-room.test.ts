@@ -206,3 +206,109 @@ test("renders a useful not-found state without leaking unauthorized navigation",
   assert.match(html, /Return to Today/);
   assert.doesNotMatch(html, />Systems</);
 });
+
+test("renders the System Development Workspace with task-scoped delivery context", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  for (const text of [
+    "System Development Workspace",
+    "codex/phase-1.14-system-development-workspace",
+    "task-dev-114",
+    "Development Lead",
+    "Requirement",
+    "Implementation",
+    "Automated test",
+    "QA review",
+    "Next action",
+  ]) {
+    assert.match(html, new RegExp(text));
+  }
+});
+
+test("shows governed repository, changed-file, runner, and quality evidence", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  for (const text of [
+    "Approved workroot",
+    "GIT_STATUS",
+    "GIT_DIFF",
+    "Changed files",
+    "apps/web/src/control-room.ts",
+    "Tests",
+    "Build",
+    "local-runner-1",
+    "HEALTHY",
+    "evidence-test-114",
+    "QA PASS ≠ Production Approval",
+  ]) {
+    assert.match(html, new RegExp(text));
+  }
+  assert.doesNotMatch(html, /terminal|shell prompt|force-push/i);
+});
+
+test("shows local execution actions only with exact permissions", () => {
+  const readOnly = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  assert.doesNotMatch(readOnly, /Request test run/);
+  assert.doesNotMatch(readOnly, /Cancel run/);
+  assert.match(readOnly, /Read-only workspace access/);
+
+  const executor = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [
+        ...operator.permissions,
+        "LOCAL_EXECUTION:EXECUTE",
+        "LOCAL_EXECUTION:CANCEL",
+      ],
+    },
+    path: "/development",
+  });
+  assert.match(executor, /data-capability="RUN_COMMAND"/);
+  assert.match(executor, /data-capability="RUN_COMMAND" disabled/);
+  assert.match(executor, /Request test run/);
+  assert.match(executor, /data-action="LOCAL_EXECUTION:CANCEL"/);
+  assert.match(executor, /data-action="LOCAL_EXECUTION:CANCEL" disabled/);
+  assert.match(executor, /Cancel run/);
+  assert.match(executor, /Task scope · task-dev-114/);
+});
+
+test("renders every development workspace operational state explicitly", () => {
+  const states = {
+    approval_required: "Human approval required",
+    blocked: "Blocked by dependency",
+    conflict: "Workspace state changed",
+    denied: "Workspace access denied",
+    empty: "No development task selected",
+    error: "Development workspace unavailable",
+    loading: "Loading development workspace",
+    timeout: "Workspace request timed out",
+    unavailable: "Local runner unavailable",
+  } as const;
+  for (const [state, message] of Object.entries(states)) {
+    const html = controlRoom.renderControlRoom({
+      identity: operator,
+      path: "/development",
+      state,
+    });
+    assert.match(html, new RegExp(message));
+    assert.match(html, new RegExp(`data-view-state="${state}"`));
+  }
+});
+
+test("provides a governed Preview Workspace entry without preview automation", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development/preview",
+  });
+  assert.match(html, /Preview Workspace/);
+  assert.match(html, /Entry point only/);
+  assert.match(html, /Phase 1\.16/);
+  assert.doesNotMatch(html, /Auto-fix|Run visual inspector/);
+});

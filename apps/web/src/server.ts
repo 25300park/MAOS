@@ -17,6 +17,8 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "ALERT:READ",
     "SYSTEM:READ",
     "DEVELOPMENT:READ",
+    "LOCAL_EXECUTION:EXECUTE",
+    "LOCAL_EXECUTION:CANCEL",
     "AUDIT:READ",
   ],
   role: "OPERATOR",
