@@ -24,6 +24,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0007_local_execution_bridge_foundation",
       "0008_ai_memory_gateway_integration",
       "0009_observability_audit_foundation",
+      "0010_release_deployment_foundation",
     ],
     skipped: [],
   });
@@ -223,7 +224,7 @@ test("initializes separate observability records and append-only audit persisten
     database,
     await loadMigrations(migrationsDirectory),
   );
-  assert.equal(result.applied.at(-1), "0009_observability_audit_foundation");
+  assert.ok(result.applied.includes("0009_observability_audit_foundation"));
 
   const tables = await database.query<{ qualified_name: string }>(`
     SELECT table_schema || '.' || table_name AS qualified_name
@@ -471,6 +472,61 @@ test("enforces exact approval binding and authority rule constraints", async (t)
   );
 });
 
+test("initializes immutable release, artifact, environment, and deployment persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0010_release_deployment_foundation"));
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE table_schema = 'delivery'
+      AND table_name IN ('artifacts', 'releases', 'release_evidence', 'environments', 'deployments')
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "delivery.artifacts",
+      "delivery.deployments",
+      "delivery.environments",
+      "delivery.release_evidence",
+      "delivery.releases",
+    ],
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO delivery.artifacts (
+        project_id, artifact_key, build_id, artifact_hash, source_commit,
+        configuration_versions
+      ) VALUES (
+        '00000000-0000-4000-8000-000000000099', 'artifact-invalid',
+        'build-invalid', 'not-a-sha256', 'commit-invalid', ARRAY['config-1']
+      )
+    `),
+    /check constraint|foreign key/i,
+  );
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO delivery.deployments (
+        release_id, environment_name, status, artifact_hash,
+        rollback_artifact_hash, executor_actor_id, timeout_ms
+      ) VALUES (
+        '00000000-0000-4000-8000-000000000099', 'PRODUCTION', 'COMPLETED',
+        'sha256:${"a".repeat(64)}', 'sha256:${"b".repeat(64)}',
+        '00000000-0000-4000-8000-000000000098', 1000
+      )
+    `),
+    /check constraint|foreign key/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -489,6 +545,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0007_local_execution_bridge_foundation",
       "0008_ai_memory_gateway_integration",
       "0009_observability_audit_foundation",
+      "0010_release_deployment_foundation",
     ],
   });
 

@@ -105,6 +105,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     permission: "DEVELOPMENT:READ",
     section: "BUILD",
   },
+  {
+    icon: "⇧",
+    label: "Deployments",
+    path: "/deployments",
+    permission: "RELEASE:READ",
+    section: "BUILD",
+  },
 ];
 
 const SENSITIVE =
@@ -300,6 +307,16 @@ function notFound(): string {
   return `${pageHeading("Navigation", "Screen not available", "The requested Control Room screen does not exist or is outside your authorized navigation scope.")}<section class="panel state-view"><div><div class="state-icon">?</div><h2>Screen not available</h2><p>Check the address or return to an authorized operating view.</p><a class="btn btn-primary" href="/today" style="display:inline-flex;align-items:center;text-decoration:none">Return to Today</a></div></section>`;
 }
 
+function deploymentsPage(identity: ControlRoomIdentity): string {
+  const canExecute = identity.permissions.includes("DEPLOYMENT:EXECUTE");
+  const action = canExecute
+    ? '<button class="btn btn-primary" type="button" data-action="DEPLOYMENT:EXECUTE" disabled>Run simulated deployment</button><span class="permission-note">Human approval and runtime revalidation required</span>'
+    : '<span class="permission-note">Read-only release visibility · execution requires exact permission and human authority.</span>';
+  return `${pageHeading("Release control", "Deployment Center", "Promote one immutable artifact through governed environments with explicit human authority, verification, and rollback evidence.")}
+  <section class="metric-grid" aria-label="Release readiness"><article class="metric metric-working"><div class="metric-top"><span>Release</span><span>release-117</span></div><strong class="metric-value">1.17.0</strong><div class="metric-note">commit-candidate · build-117</div></article><article class="metric metric-approval"><div class="metric-top"><span>Production gate</span><span>Human authority</span></div><strong class="metric-value" style="font-size:21px">WAITING APPROVAL</strong><div class="metric-note">QA PASS ≠ Production Approval</div></article><article class="metric metric-working"><div class="metric-top"><span>Artifact</span><span>Immutable</span></div><strong class="metric-value" style="font-size:18px">sha256:candidate</strong><div class="metric-note">Build once → promote same artifact</div></article><article class="metric metric-working"><div class="metric-top"><span>Rollback</span><span>Known good</span></div><strong class="metric-value" style="font-size:21px">READY</strong><div class="metric-note">Rollback ready · sha256:previous</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Environment progression</h2>${status("SIMULATED ONLY", "working")}</div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Release environment progression</caption><thead><tr><th>Environment</th><th>Artifact</th><th>Health</th><th>Gate</th><th>Evidence</th></tr></thead><tbody><tr><td>DEVELOPMENT</td><td>sha256:candidate</td><td>${status("HEALTHY", "healthy")}</td><td>Verified tests</td><td>evidence-tests</td></tr><tr><td>PREVIEW / STAGING</td><td>sha256:candidate</td><td>${status("HEALTHY", "healthy")}</td><td>QA + Security PASS</td><td>evidence-qa · evidence-security</td></tr><tr><td>PRODUCTION</td><td>sha256:candidate</td><td>${status("WAITING APPROVAL", "approval")}</td><td>Exact-target human approval</td><td>Not yet authorized</td></tr></tbody></table></div></section><aside class="stack"><section class="panel"><div class="panel-head"><h2>Governed action</h2></div><div class="panel-body"><div class="callout"><strong>Simulated deployment</strong><p>No real production credentials or external deployment capability is available in this phase.</p></div><div class="utility-row" style="margin-top:14px">${action}</div></div></section><section class="panel"><div class="panel-head"><h2>Evidence chain</h2></div><div class="panel-body timeline"><article class="activity"><time>Build</time><strong>Artifact frozen</strong><p>commit-candidate · sha256:candidate</p></article><article class="activity"><time>QA / Security</time><strong>Independent evidence passed</strong><p>Does not grant production authority.</p></article><article class="activity"><time>Next</time><strong>Human approval</strong><p>Revalidate target, version, hash, policy, environment, and authority.</p></article></div></section></aside></div>`;
+}
+
 function routeContent(input: ControlRoomRenderInput): string {
   const path = input.path === "/" ? "/today" : input.path;
   if (path === "/development" || path.startsWith("/development/"))
@@ -321,6 +338,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/systems") return systemsPage();
+  if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }
 

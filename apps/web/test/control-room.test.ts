@@ -22,6 +22,7 @@ const operator = {
     "ALERT:READ",
     "SYSTEM:READ",
     "DEVELOPMENT:READ",
+    "RELEASE:READ",
     "AUDIT:READ",
   ],
   role: "OPERATOR",
@@ -50,6 +51,7 @@ test("renders a semantic Control Room shell and the complete authorized navigati
     "Alerts",
     "Systems",
     "Development",
+    "Deployments",
   ]) {
     assert.match(html, new RegExp(`>${label}<`));
   }
@@ -58,6 +60,43 @@ test("renders a semantic Control Room shell and the complete authorized navigati
   assert.match(html, /What needs attention/);
   assert.match(html, /Who owns it/);
   assert.match(html, /What happens next/);
+});
+
+test("renders a permission-aware Deployment Center with immutable artifact and human approval boundaries", () => {
+  const readOnly = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "RELEASE:READ"],
+    },
+    path: "/deployments",
+  });
+  for (const text of [
+    "Deployment Center",
+    "release-117",
+    "sha256:candidate",
+    "WAITING APPROVAL",
+    "Rollback ready",
+    "Build once",
+    "QA PASS ≠ Production Approval",
+    "Simulated deployment",
+  ])
+    assert.match(readOnly, new RegExp(text));
+  assert.doesNotMatch(readOnly, /data-action="DEPLOYMENT:EXECUTE"/);
+
+  const executor = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [
+        ...operator.permissions,
+        "RELEASE:READ",
+        "DEPLOYMENT:EXECUTE",
+      ],
+    },
+    path: "/deployments",
+  });
+  assert.match(executor, /data-action="DEPLOYMENT:EXECUTE" disabled/);
+  assert.match(executor, /Human approval and runtime revalidation required/);
+  assert.doesNotMatch(executor, /real production deploy|force-push/i);
 });
 
 test("filters navigation and governed actions by exact permission", () => {
