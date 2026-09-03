@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.16 — Preview / UI Inspector / Test / QA**
+**Phase 1.17 — Release / Approval / Deployment**
 
 Status: **NOT COMPLETE**
 
-Do not implement Phase 1.16 until its control files are reviewed and execution is explicitly authorized.
+Do not implement Phase 1.17 until its control files are reviewed and execution is explicitly authorized.
 
 ## Completed
 
@@ -30,27 +30,28 @@ Do not implement Phase 1.16 until its control files are reviewed and execution i
 - Phase 1.14 — System Development Workspace: **COMPLETE**
 - Phase 1.15 — System Development Agent Team: **COMPLETE**
 - Phase 1.15A — Development Loop Runtime MVP: **COMPLETE**
+- Phase 1.16 — Preview / UI Inspector / Test / QA: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `b33c57d35a405f454a6b59929b4c24ee2b39a856`
+- Commit: `71cb45db7450c01c63f29316ebbab4a3fb8afe52`
 - Root: `D:\10. MAOS`
 
-## Phase 1.16 Goal
+## Phase 1.17 Goal
 
-Establish the minimum governed Preview, UI Inspector, Functional Test, UX QA, Visual QA, scenario, regression, and evidence-driven fix-loop foundation required to verify MAOS user workflows without weakening approval or production boundaries.
+Establish the minimum governed Release, Approval, and Deployment foundation required to bind verified artifacts to explicit human authority and controlled environment progression.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.16.md`
+- Phase manifest: `docs/context/phase-1.17.md`
 - MAOS Architecture v1.0 remains frozen.
-- Preview and QA capabilities produce evidence and revision work; they do not grant approval or production authority.
+- Release and deployment operations must remain exact-target, environment, authority, permission, evidence, and audit bound.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.16 only after explicit authorization.
+- Implement Phase 1.17 only after explicit authorization.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
