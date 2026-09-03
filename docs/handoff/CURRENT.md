@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.13 — MAOS Control Room UI**
+**Phase 1.14 — System Development Workspace**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.14 until Phase 1.13 is implemented, tested, and reviewed.
+Do not start Phase 1.15 until Phase 1.14 is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -26,28 +26,29 @@ Do not start Phase 1.14 until Phase 1.13 is implemented, tested, and reviewed.
 - Phase 1.10A — Local Execution Bridge / IDE Companion MVP: **COMPLETE**
 - Phase 1.11 — AI Memory Gateway Integration: **COMPLETE**
 - Phase 1.12 — Observability / Audit: **COMPLETE**
+- Phase 1.13 — MAOS Control Room UI: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `74d978133800c882d3e854dc3a09d87305cef12f`
+- Commit: `d9dfdd17ed2185e72af7ee01db6a98f2db743be6`
 - Root: `D:\10. MAOS`
 
-## Phase 1.13 Goal
+## Phase 1.14 Goal
 
-Establish the minimum executable MAOS Control Room UI foundation required by frozen architecture for governed visibility and interaction with existing MAOS capabilities.
+Establish the minimum executable System Development Workspace required to inspect and coordinate governed repository work through existing MAOS task, run, tool, local-execution, evidence, and audit boundaries.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.13.md`
+- Phase manifest: `docs/context/phase-1.14.md`
 - MAOS Architecture v1.0 remains frozen.
-- The Control Room is a governed interface over existing MAOS contracts, not a new source of truth or authority bypass.
+- The System Development Workspace is a governed development surface, not an unrestricted shell, authority bypass, or replacement source of truth.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.13 only.
+- Implement Phase 1.14 only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Preserve authentication, authorization, approval, privacy, audit, and evidence boundaries in every UI operation.
-- Do not begin Phase 1.14 automatically.
+- Preserve repository scope, task binding, permission, risk, approval, audit, evidence, and local-execution boundaries in every operation.
+- Do not begin Phase 1.15 automatically.
