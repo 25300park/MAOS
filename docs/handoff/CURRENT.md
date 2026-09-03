@@ -4,11 +4,11 @@ Last updated: 2026-09-03
 
 ## Current Phase
 
-**Phase 1.12 — Observability / Audit**
+**Phase 1.13 — MAOS Control Room UI**
 
 Status: **NOT COMPLETE**
 
-Do not start Phase 1.13 until Phase 1.12 is implemented, tested, and reviewed.
+Do not start Phase 1.14 until Phase 1.13 is implemented, tested, and reviewed.
 
 ## Completed
 
@@ -25,28 +25,29 @@ Do not start Phase 1.13 until Phase 1.12 is implemented, tested, and reviewed.
 - Phase 1.10 — Skill / Tool / MCP: **COMPLETE**
 - Phase 1.10A — Local Execution Bridge / IDE Companion MVP: **COMPLETE**
 - Phase 1.11 — AI Memory Gateway Integration: **COMPLETE**
+- Phase 1.12 — Observability / Audit: **COMPLETE**
 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `e023f8744f47bd80d90459e4e6071c68285df1c2`
+- Commit: `74d978133800c882d3e854dc3a09d87305cef12f`
 - Root: `D:\10. MAOS`
 
-## Phase 1.12 Goal
+## Phase 1.13 Goal
 
-Establish the minimum executable MAOS Observability / Audit foundation required by frozen architecture while preserving the distinct semantics of logs, metrics, traces, events, and audit records.
+Establish the minimum executable MAOS Control Room UI foundation required by frozen architecture for governed visibility and interaction with existing MAOS capabilities.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1.12.md`
+- Phase manifest: `docs/context/phase-1.13.md`
 - MAOS Architecture v1.0 remains frozen.
-- Log, Metric, Trace, Event, and Audit remain distinct canonical records.
+- The Control Room is a governed interface over existing MAOS contracts, not a new source of truth or authority bypass.
 - Existing domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Implement Phase 1.12 only.
+- Implement Phase 1.13 only.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
-- Do not expose secrets, credentials, private personal content, or hidden chain-of-thought through observability.
-- Do not begin Phase 1.13 automatically.
+- Preserve authentication, authorization, approval, privacy, audit, and evidence boundaries in every UI operation.
+- Do not begin Phase 1.14 automatically.
