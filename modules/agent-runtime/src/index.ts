@@ -1,4 +1,7 @@
 import type { ActorType, TaskStatus } from "@maos/contracts";
+import { RuntimeError } from "./runtime-error.js";
+
+export { RuntimeError } from "./runtime-error.js";
 
 export type AgentLifecycle =
   "DRAFT" | "ACTIVE" | "SUSPENDED" | "DISABLED" | "RETIRED";
@@ -130,15 +133,6 @@ export interface ExecutionRequest {
 export type RunExecutor = (
   request: ExecutionRequest,
 ) => ExecutionResult | Promise<ExecutionResult>;
-
-export class RuntimeError extends Error {
-  constructor(
-    readonly code: string,
-    readonly details: Record<string, unknown> = {},
-  ) {
-    super(code);
-  }
-}
 
 type AssignmentInput = {
   agent_id: string;
@@ -496,3 +490,5 @@ export class AgentRuntimeEngine {
     if (collection.has(id)) throw new RuntimeError(code);
   }
 }
+
+export * from "./development-team.js";

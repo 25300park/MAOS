@@ -214,8 +214,8 @@ test("renders the System Development Workspace with task-scoped delivery context
   });
   for (const text of [
     "System Development Workspace",
-    "codex/phase-1.14-system-development-workspace",
-    "task-dev-114",
+    "codex/phase-1.15-system-development-agent-team",
+    "task-dev-115",
     "Development Lead",
     "Requirement",
     "Implementation",
@@ -276,7 +276,7 @@ test("shows local execution actions only with exact permissions", () => {
   assert.match(executor, /data-action="LOCAL_EXECUTION:CANCEL"/);
   assert.match(executor, /data-action="LOCAL_EXECUTION:CANCEL" disabled/);
   assert.match(executor, /Cancel run/);
-  assert.match(executor, /Task scope · task-dev-114/);
+  assert.match(executor, /Task scope · task-dev-115/);
 });
 
 test("renders every development workspace operational state explicitly", () => {
@@ -311,4 +311,32 @@ test("provides a governed Preview Workspace entry without preview automation", (
   assert.match(html, /Entry point only/);
   assert.match(html, /Phase 1\.16/);
   assert.doesNotMatch(html, /Auto-fix|Run visual inspector/);
+});
+
+test("shows all eleven development roles and the governed review chain", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  for (const role of [
+    "Development Lead",
+    "Requirement / Product Agent",
+    "Architecture Agent",
+    "UI / UX Agent",
+    "Frontend Agent",
+    "Backend Agent",
+    "Database Agent",
+    "Functional Test Agent",
+    "UX QA Agent",
+    "Security Review Agent",
+    "DevOps / Deployment Agent",
+  ]) {
+    assert.match(html, new RegExp(role.replaceAll("/", "\\/")));
+  }
+  assert.match(
+    html,
+    /Task → Artifact → Review Task → Feedback Artifact → Revision Task → Re-test \/ Re-review/,
+  );
+  assert.match(html, /Human approval required/);
+  assert.match(html, /Agent ≠ Model ≠ Runner/);
 });
