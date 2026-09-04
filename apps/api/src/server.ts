@@ -3,13 +3,16 @@ import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import {
+  AiMlsIntegrationService,
   MARKETING_ROLES,
   MarketingIntegrationService,
   RbsAdminPilotService,
   type DomainReadAdapter,
+  type AiMlsAdapter,
   type MarketingAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
+import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
@@ -24,6 +27,40 @@ const unavailableAdapter: DomainReadAdapter = {
   },
 };
 const pilot = new RbsAdminPilotService(unavailableAdapter);
+const unavailableAiMlsAdapter: AiMlsAdapter = {
+  mode: "INTERNAL_READ_ONLY",
+  observeIntake: async () => {
+    throw new Error("No external AI-MLS adapter is configured");
+  },
+  searchInternal: async () => {
+    throw new Error("No external AI-MLS adapter is configured");
+  },
+};
+const aiMls = new AiMlsIntegrationService(unavailableAiMlsAdapter);
+aiMls.registerSystem({
+  actor: { id: "human-ai-mls-owner", type: "HUMAN" },
+  capabilities: [
+    "READ_SOURCE_STATUS",
+    "READ_CANDIDATE_STATUS",
+    "SEARCH_INTERNAL",
+    "READ_TASK_STATUS",
+    "SIMULATE_HANDOFF",
+  ],
+  correlation_id: "bootstrap:ai-mls-integration",
+  credential_reference: "secretref://ai-mls/readonly",
+  environment_reference: "configref://ai-mls/internal",
+  health: "UNKNOWN",
+  id: "ai-mls",
+  integration_state: "REGISTERED",
+  name: "AI-MLS",
+  owner_actor_id: "human-ai-mls-owner",
+  repository_reference: "registry://ai-mls/repository",
+  source_of_truth: "DOMAIN_SYSTEM",
+  type: "INTERNAL_PLATFORM",
+  version_reference: "gitref://ai-mls/main",
+  visibility: "INTERNAL_ONLY",
+  workroot_reference: "workroot://ai-mls",
+});
 const unavailableMarketingAdapter: MarketingAdapter = {
   mode: "READ_ONLY_SIMULATION",
   observeCampaign: async () => {
@@ -123,6 +160,10 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createAiMlsRoutes(aiMls, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
   ...createMarketingRoutes(marketing, {
     environment: config.environment,
     scope: "project-maos",

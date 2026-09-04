@@ -34,6 +34,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0012_core_control_plane_generalization",
       "0013_ai_memory_knowledge_integration",
       "0014_marketing_automation_integration",
+      "0015_ai_mls_integration",
     ],
     skipped: [],
   });
@@ -743,6 +744,52 @@ test("persists only governed Marketing references and immutable observations", a
   );
 });
 
+test("persists only internal AI-MLS references and immutable observation metadata", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+  const tables = await database.query<{ table_name: string }>(`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'integration' AND table_name IN (
+      'ai_mls_resource_links', 'ai_mls_intake_observations', 'ai_mls_candidate_references'
+    ) ORDER BY table_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ table_name }) => table_name),
+    [
+      "ai_mls_candidate_references",
+      "ai_mls_intake_observations",
+      "ai_mls_resource_links",
+    ],
+  );
+  await database.exec(`
+    INSERT INTO integration.systems (id, name, system_type, source_of_truth, lifecycle, owner_actor_type, owner_actor_id)
+    VALUES ('ai-mls', 'AI-MLS', 'INTERNAL_PLATFORM', 'DOMAIN_SYSTEM', 'ACTIVE', 'HUMAN', 'owner');
+    INSERT INTO core.organizations (id, name, slug) VALUES ('00000000-0000-4000-8000-000000000501', 'AI MLS Org', 'ai-mls-org');
+    INSERT INTO core.departments (id, organization_id, name) VALUES ('00000000-0000-4000-8000-000000000502', '00000000-0000-4000-8000-000000000501', 'Intelligence');
+    INSERT INTO core.projects (id, organization_id, department_id, name) VALUES ('00000000-0000-4000-8000-000000000503', '00000000-0000-4000-8000-000000000501', '00000000-0000-4000-8000-000000000502', 'Internal intelligence');
+    INSERT INTO work.tasks (id, project_id, title, task_type, status) VALUES ('00000000-0000-4000-8000-000000000504', '00000000-0000-4000-8000-000000000503', 'Observe AI-MLS', 'ANALYSIS', 'IN_PROGRESS');
+    INSERT INTO integration.ai_mls_resource_links (system_id, resource_id, project_id, task_id, source_reference, external_version, target_hash)
+    VALUES ('ai-mls', 'feed', '00000000-0000-4000-8000-000000000503', '00000000-0000-4000-8000-000000000504', 'ai-mls://sources/feed', 'v5', 'sha256:${"d".repeat(64)}');
+    INSERT INTO integration.ai_mls_candidate_references (system_id, resource_id, candidate_id, source_reference, verification_state, contact_state, consent_state, duplicate_state, freshness, evidence_references, correlation_id, observed_at)
+    VALUES ('ai-mls', 'feed', 'candidate-5', 'ai-mls://candidates/candidate-5', 'VERIFIED', 'CONTACTED', 'GRANTED', 'UNIQUE', 'FRESH', ARRAY['evidence://ai-mls/candidate-5'], 'corr-5', CURRENT_TIMESTAMP);
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE integration.ai_mls_candidate_references SET freshness = 'STALE'",
+      ),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(
+        `INSERT INTO integration.ai_mls_candidate_references (system_id, resource_id, candidate_id, source_reference, verification_state, contact_state, consent_state, duplicate_state, freshness, publication_eligibility_informational_only, evidence_references, correlation_id, observed_at) VALUES ('ai-mls', 'feed', 'unsafe', 'ai-mls://candidates/unsafe', 'VERIFIED', 'CONTACTED', 'GRANTED', 'UNIQUE', 'FRESH', false, ARRAY['evidence://unsafe'], 'corr-unsafe', CURRENT_TIMESTAMP)`,
+      ),
+    /check constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -766,6 +813,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0012_core_control_plane_generalization",
       "0013_ai_memory_knowledge_integration",
       "0014_marketing_automation_integration",
+      "0015_ai_mls_integration",
     ],
   });
 
@@ -783,8 +831,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 14);
-  assert.equal(version.latest_id, "0014_marketing_automation_integration");
+  assert.equal(version.applied_count, 15);
+  assert.equal(version.latest_id, "0015_ai_mls_integration");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

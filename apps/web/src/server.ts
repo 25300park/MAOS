@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import {
   renderControlRoom,
+  type AiMlsView,
   type ControlPlaneView,
   type ControlRoomIdentity,
 } from "./control-room.js";
@@ -20,6 +21,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "APPROVAL:DECIDE",
     "ALERT:READ",
     "SYSTEM:READ",
+    "AI_MLS:READ",
     "DEVELOPMENT:READ",
     "LOCAL_EXECUTION:EXECUTE",
     "LOCAL_EXECUTION:CANCEL",
@@ -77,8 +79,22 @@ export const CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION = {
   request_count: 24,
 };
 
+export const CONTROL_ROOM_PREVIEW_AI_MLS: AiMlsView = {
+  blocked_tasks: 1,
+  candidate_counts: { blocked: 1, pending: 6, verified: 3 },
+  collection_status: "RUNNING",
+  failed_runs: 1,
+  health: "DEGRADED",
+  ingestion_status: "DEGRADED",
+  next_action: "Review failed ingestion and verification backlog",
+  source_reference: "ai-mls://sources/internal-feed",
+  stale_ingestions: 2,
+  verification_backlog: 6,
+};
+
 export function createControlRoomServer(
   options: {
+    ai_mls?: AiMlsView | undefined;
     control_plane?: ControlPlaneView | undefined;
     identity?: ControlRoomIdentity | null;
     memory_integration?:
@@ -95,6 +111,7 @@ export function createControlRoomServer(
     const spanId = randomUUID();
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const html = renderControlRoom({
+      ai_mls: options.ai_mls,
       control_plane: options.control_plane,
       context: {
         correlation_id: correlationId,
@@ -126,6 +143,7 @@ if (process.argv[1]?.endsWith("server.js")) {
   const preview = process.env.MAOS_UI_PREVIEW === "true";
   const port = Number(process.env.MAOS_WEB_PORT ?? "5180");
   const server = createControlRoomServer({
+    ai_mls: preview ? CONTROL_ROOM_PREVIEW_AI_MLS : undefined,
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
     memory_integration: preview

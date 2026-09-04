@@ -22,6 +22,7 @@ const operator = {
     "ALERT:READ",
     "SYSTEM:READ",
     "MARKETING:READ",
+    "AI_MLS:READ",
     "DEVELOPMENT:READ",
     "RELEASE:READ",
     "AUDIT:READ",
@@ -416,6 +417,40 @@ test("shows Marketing team, campaign, KPI, and governed publisher boundaries", (
   ])
     assert.match(html, new RegExp(text));
   assert.doesNotMatch(html, /data-action="MARKETING_PUBLISH"/);
+});
+
+test("shows internal-only AI-MLS intake, candidate, verification, and task visibility", () => {
+  const html = controlRoom.renderControlRoom({
+    ai_mls: {
+      blocked_tasks: 2,
+      candidate_counts: { blocked: 2, pending: 7, verified: 4 },
+      collection_status: "RUNNING",
+      failed_runs: 1,
+      health: "DEGRADED",
+      ingestion_status: "DEGRADED",
+      next_action: "Review failed source and verification backlog",
+      source_reference: "ai-mls://sources/internal-feed",
+      stale_ingestions: 2,
+      verification_backlog: 7,
+    },
+    identity: operator,
+    path: "/ai-mls",
+  });
+  for (const text of [
+    "AI-MLS",
+    "INTERNAL ONLY",
+    "AI-MLS remains source of truth",
+    "Ingestion",
+    "Candidate visibility",
+    "Verification backlog",
+    "Stale",
+    "Failed runs",
+    "Review failed source",
+    "ai-mls://sources/internal-feed",
+    "No external publication",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /data-action="AI_MLS_PUBLISH"/);
 });
 
 test("shows AI Memory Gateway boundary, context provenance health, and degraded state without memory content", () => {

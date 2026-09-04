@@ -63,7 +63,21 @@ export interface MarketingView {
   status: string;
 }
 
+export interface AiMlsView {
+  blocked_tasks: number;
+  candidate_counts: { blocked: number; pending: number; verified: number };
+  collection_status: string;
+  failed_runs: number;
+  health: string;
+  ingestion_status: string;
+  next_action: string;
+  source_reference: string;
+  stale_ingestions: number;
+  verification_backlog: number;
+}
+
 export interface ControlRoomRenderInput {
+  ai_mls?: AiMlsView | undefined;
   context?: {
     correlation_id: string;
     request_id: string;
@@ -157,6 +171,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "Marketing",
     path: "/marketing",
     permission: "MARKETING:READ",
+    section: "OPERATE",
+  },
+  {
+    icon: "⌗",
+    label: "AI-MLS",
+    path: "/ai-mls",
+    permission: "AI_MLS:READ",
     section: "OPERATE",
   },
   {
@@ -443,8 +464,17 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/systems")
     return systemsPage(input.control_plane, input.memory_integration);
   if (path === "/marketing") return marketingPage(input.marketing);
+  if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
+}
+
+function aiMlsPage(view?: AiMlsView): string {
+  if (!view)
+    return `${pageHeading("Independent internal system", "AI-MLS", "MAOS integrates and monitors; AI-MLS remains source of truth.")}<section class="panel state-view"><div><div class="state-icon">⌗</div><h2>No internal observation</h2><p>The integration is registered without copying listing data into MAOS.</p></div></section>`;
+  return `${pageHeading("INTERNAL ONLY", "AI-MLS", "Governed real-estate intelligence visibility. AI-MLS remains source of truth.")}
+  <section class="metric-grid" aria-label="AI-MLS integration summary"><article class="metric metric-working"><div class="metric-top"><span>Ingestion</span><span>${escapeHtml(view.health)}</span></div><strong class="metric-value" style="font-size:21px">${escapeHtml(view.ingestion_status)}</strong><div class="metric-note">Collection · ${escapeHtml(view.collection_status)}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Verification backlog</span><span>Human review</span></div><strong class="metric-value">${view.verification_backlog}</strong><div class="metric-note">Pending candidates</div></article><article class="metric metric-risk"><div class="metric-top"><span>Stale ingestion</span><span>Stale warning</span></div><strong class="metric-value">${view.stale_ingestions}</strong><div class="metric-note">Requires source review</div></article><article class="metric metric-critical"><div class="metric-top"><span>Failed runs</span><span>Operational</span></div><strong class="metric-value">${view.failed_runs}</strong><div class="metric-note">Blocked tasks · ${view.blocked_tasks}</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Candidate visibility</h2>${status("INTERNAL ONLY", "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Pending</dt><dd>${view.candidate_counts.pending}</dd></div><div class="fact"><dt>Verified</dt><dd>${view.candidate_counts.verified}</dd></div><div class="fact"><dt>Blocked</dt><dd>${view.candidate_counts.blocked}</dd></div><div class="fact"><dt>Source reference</dt><dd><code>${escapeHtml(view.source_reference)}</code></dd></div></dl><div class="callout"><strong>No external publication</strong><p>Publication eligibility is informational only. Verified and consented information still requires separately governed downstream authority.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>Current coordination</h2><span class="permission-note">Read-only</span></div><div class="panel-body"><p><strong>Next action</strong></p><p>${escapeHtml(view.next_action)}</p><p class="permission-note">MAOS does not run the AI-MLS parser, matching engine, search index, contact workflow, or publication runtime.</p></div></aside></div>`;
 }
 
 function marketingPage(view?: MarketingView): string {
