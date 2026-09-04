@@ -4,11 +4,11 @@ Last updated: 2026-09-04
 
 ## Current Phase
 
-**Phase 5 — AI-MLS Integration**
+**Phase 6 — CRM / Brokerage / Human Work Integration**
 
 Status: **NOT COMPLETE**
 
-Phase 1 MVP, Phase 1P, Phase 2, Phase 3, and Phase 4 are complete. Phase 5 will integrate AI-MLS as an independent internal-only system that MAOS can monitor and coordinate without transferring source-of-truth ownership or enabling external publication.
+Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, and Phase 5 are complete. Phase 6 will update the existing CRM MVP for governed MAOS integration and human daily work without transferring CRM source-of-truth ownership or exposing private employee content.
 
 ## Completed
 
@@ -18,6 +18,7 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, and Phase 4 are complete. Phase 5 will 
 - Phase 2 — MAOS Core Control Plane MVP: **COMPLETE**
 - Phase 3 — AI Memory & Knowledge Integration: **COMPLETE**
 - Phase 4 — Marketing Automation Integration: **COMPLETE**
+- Phase 5 — AI-MLS Integration: **COMPLETE**
 - MVP_READY: **YES**
 - PRODUCTION_PREPARATION_COMPLETE: **YES**
 - PRODUCTION_READY: **NO**
@@ -49,16 +50,17 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, and Phase 4 are complete. Phase 5 will 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `58220c9595b166f8ec725294ed1dbad58d25341a`
+- Commit: `82b8f5167dbff679ca14bac3420307b32055a55a`
 - Root: `D:\10. MAOS`
 
-## Phase 5 Goal
+## Phase 6 Goal
 
-Integrate AI-MLS as an independently owned internal system that MAOS can monitor and coordinate through governed contracts while preserving AI-MLS source-of-truth ownership and prohibiting external publication.
+Update and integrate the existing CRM MVP as the human employee daily work system, preserving CRM ownership of customer, listing, contract, and work data while enabling governed MAOS monitoring and coordination through natural-language, low-duplication Human Work UX.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-5.md`
+- Phase manifest: `docs/context/phase-6.md`
+- Phase 5 evidence: `docs/implementation/phase-5-ai-mls-integration-evidence.md`
 - Phase 4 evidence: `docs/implementation/phase-4-marketing-automation-integration-evidence.md`
 - Phase 3 evidence: `docs/implementation/phase-3-ai-memory-knowledge-integration-evidence.md`
 - Phase 2 evidence: `docs/implementation/phase-2-core-control-plane-evidence.md`
@@ -67,18 +69,19 @@ Integrate AI-MLS as an independently owned internal system that MAOS can monitor
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
-- Production gaps remain separately tracked and are not silently resolved by Phase 5 work.
+- Production gaps remain separately tracked and are not silently resolved by Phase 6 work.
 - External and domain systems remain independent systems and repositories by default.
 - AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.
 - Any overlap with a Personal Agent remains separately governed and cannot silently enter enterprise context.
-- AI-MLS remains an independent internal-only system and source of truth. MAOS may integrate and monitor through governed contracts but does not own its domain data or internal runtime.
-- AI-MLS external publication is prohibited in Phase 5.
+- CRM remains the human employee daily work system and source of truth for customer, listing, contract, and human-work records.
+- MAOS receives management-level operational abstractions and governed references, not private employee content.
+- The existing CRM MVP is updated and integrated, not rebuilt from zero without separate approval.
 
 ## Guardrails
 
-- Do not implement Phase 5 until its implementation work is explicitly started on a short-lived task branch.
+- Do not implement Phase 6 until its implementation work is explicitly started on a short-lived task branch.
 - Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 6 or later work automatically.
+- Do not begin Phase 7 or later work automatically.
