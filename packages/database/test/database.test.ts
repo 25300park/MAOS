@@ -25,6 +25,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0008_ai_memory_gateway_integration",
       "0009_observability_audit_foundation",
       "0010_release_deployment_foundation",
+      "0011_rbs_admin_pilot_foundation",
     ],
     skipped: [],
   });
@@ -527,6 +528,78 @@ test("initializes immutable release, artifact, environment, and deployment persi
   );
 });
 
+test("creates the read-only RBS/Admin pilot persistence boundary", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+
+  const tables = await database.query<{ table_name: string }>(`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'integration'
+      AND table_name IN ('domain_systems', 'rbs_admin_pilots', 'pilot_evidence')
+    ORDER BY table_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ table_name }) => table_name),
+    ["domain_systems", "pilot_evidence", "rbs_admin_pilots"],
+  );
+  await database.exec(`
+    INSERT INTO core.organizations (id, name, slug)
+    VALUES ('00000000-0000-4000-8000-000000000181', 'Pilot Org', 'pilot-org');
+    INSERT INTO core.departments (id, organization_id, name)
+    VALUES ('00000000-0000-4000-8000-000000000182', '00000000-0000-4000-8000-000000000181', 'Pilot');
+    INSERT INTO core.projects (id, organization_id, department_id, name)
+    VALUES ('00000000-0000-4000-8000-000000000183', '00000000-0000-4000-8000-000000000181', '00000000-0000-4000-8000-000000000182', 'RBS Pilot');
+    INSERT INTO work.tasks (id, project_id, title, task_type, status)
+    VALUES ('00000000-0000-4000-8000-000000000184', '00000000-0000-4000-8000-000000000183', 'Safe pilot', 'DEVELOPMENT', 'IN_PROGRESS');
+    INSERT INTO integration.domain_systems (
+      id, name, system_type, source_of_truth, maturity, integration_owner_id,
+      repository_reference, workroot_reference, credential_reference, capabilities
+    ) VALUES (
+      'rbs-homes', 'RBS Homes', 'PUBLIC_PLATFORM', 'DOMAIN_SYSTEM', 'I2', 'human-owner',
+      'registry://rbs/repository', 'workroot://rbs', 'secretref://rbs/read',
+      ARRAY['READ_SYSTEM_STATUS']
+    );
+    INSERT INTO integration.rbs_admin_pilots (
+      id, version, project_id, task_id, system_id, repository_reference,
+      workroot_reference, stage, status
+    ) VALUES (
+      'pilot-rbs-118', 'pilot-v1', '00000000-0000-4000-8000-000000000183',
+      '00000000-0000-4000-8000-000000000184', 'rbs-homes',
+      'registry://rbs/repository', 'workroot://rbs', 'REQUEST', 'ACTIVE'
+    );
+    INSERT INTO integration.pilot_evidence (
+      id, pilot_id, evidence_ref, source_system_id, source_record_id,
+      project_id, task_id, correlation_id, capability, version, health,
+      environment_name, deployment_readiness, observed_at, captured_at
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000185', 'pilot-rbs-118', 'evidence-status',
+      'rbs-homes', 'status:rbs', '00000000-0000-4000-8000-000000000183',
+      '00000000-0000-4000-8000-000000000184', 'corr-118', 'READ_SYSTEM_STATUS',
+      'pilot-v1', 'HEALTHY', 'PREVIEW', 'READY', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+  `);
+  await assert.rejects(() =>
+    database.exec(`
+      UPDATE integration.pilot_evidence
+      SET source_record_id = 'tampered'
+      WHERE id = '00000000-0000-4000-8000-000000000185'
+    `),
+  );
+  await assert.rejects(() =>
+    database.exec(`
+      INSERT INTO integration.domain_systems (
+        id, name, system_type, source_of_truth, maturity, integration_owner_id,
+        repository_reference, workroot_reference, credential_reference, capabilities
+      ) VALUES (
+        'unsafe', 'Unsafe', 'PUBLIC_PLATFORM', 'DOMAIN_SYSTEM', 'I2', 'human-owner',
+        'registry://unsafe/repository', 'workroot://unsafe', 'secretref://unsafe/read',
+        ARRAY['WRITE_PRODUCTION']
+      )
+    `),
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -546,6 +619,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0008_ai_memory_gateway_integration",
       "0009_observability_audit_foundation",
       "0010_release_deployment_foundation",
+      "0011_rbs_admin_pilot_foundation",
     ],
   });
 

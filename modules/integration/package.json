@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
+  "dependencies": {
+    "@maos/contracts": "0.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   }

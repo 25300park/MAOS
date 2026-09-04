@@ -289,6 +289,37 @@ test("shows governed repository, changed-file, runner, and quality evidence", ()
   assert.doesNotMatch(html, /terminal|shell prompt|force-push/i);
 });
 
+test("shows the read-only RBS/Admin pilot boundary and simulated delivery state", () => {
+  const systems = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/systems",
+  });
+  for (const text of [
+    "RBS Homes",
+    "Admin RBS Homes",
+    "I2 · Observable",
+    "DOMAIN SOURCE OF TRUTH",
+    "READ ONLY",
+    "PREVIEW",
+  ])
+    assert.match(systems, new RegExp(text));
+
+  const workspace = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/development",
+  });
+  for (const text of [
+    "RBS / Admin Pilot",
+    "registry://rbs-homes/repository",
+    "workroot://rbs-homes",
+    "WAITING APPROVAL",
+    "Simulated deployment",
+    "Production authority: NONE",
+  ])
+    assert.match(workspace, new RegExp(text));
+  assert.doesNotMatch(workspace, /data-action="RBS_PRODUCTION_DEPLOY"/);
+});
+
 test("shows local execution actions only with exact permissions", () => {
   const readOnly = controlRoom.renderControlRoom({
     identity: operator,
