@@ -14,14 +14,61 @@ export interface DevelopmentWorkspaceIdentity {
   permissions: readonly string[];
 }
 
+export interface Phase1VerificationSnapshot {
+  approval_status: string;
+  artifact_hash: string;
+  assigned_agent: string;
+  blocker: string | null;
+  branch: string;
+  changed_files: readonly string[];
+  deployment_status: string;
+  evidence_ids: readonly string[];
+  loop_stage: string;
+  next_action: string;
+  owner: string;
+  project_id: string;
+  qa_status: string;
+  release_status: string;
+  run_id: string;
+  run_status: string;
+  source_commit: string;
+  task_id: string;
+  task_status: string;
+  test_status: string;
+  verification_status: string;
+}
+
 export interface DevelopmentWorkspaceInput {
   identity: DevelopmentWorkspaceIdentity;
   path: string;
+  snapshot?: Phase1VerificationSnapshot | undefined;
   state?: DevelopmentWorkspaceState | undefined;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function badge(label: string, style: string): string {
   return `<span class="status status-${style}">${label}</span>`;
+}
+
+function verificationPanel(snapshot?: Phase1VerificationSnapshot): string {
+  if (!snapshot) return "";
+  const value = (input: string) => escapeHtml(input);
+  const blocker = snapshot.blocker ?? "CLEAR";
+  const files = snapshot.changed_files
+    .map((file) => `<li><code>${value(file)}</code></li>`)
+    .join("");
+  const evidence = snapshot.evidence_ids.map(value).join(" · ");
+  const statusStyle =
+    snapshot.verification_status === "PASS" ? "healthy" : "working";
+  return `<section class="panel" aria-label="Phase 1 E2E verification"><div class="panel-head"><h2>Phase 1 E2E Verification</h2>${badge(value(snapshot.verification_status), statusStyle)}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Project</dt><dd>${value(snapshot.project_id)}</dd></div><div class="fact"><dt>Task</dt><dd>${value(snapshot.task_id)} · ${value(snapshot.task_status)}</dd></div><div class="fact"><dt>Owner / Agent</dt><dd>${value(snapshot.owner)} · ${value(snapshot.assigned_agent)}</dd></div><div class="fact"><dt>Run / Loop stage</dt><dd>${value(snapshot.run_id)} · ${value(snapshot.run_status)} · ${value(snapshot.loop_stage)}</dd></div><div class="fact"><dt>Blocker / Approval</dt><dd>${value(blocker)} · ${value(snapshot.approval_status)}</dd></div><div class="fact"><dt>Test / QA</dt><dd>${value(snapshot.test_status)} · ${value(snapshot.qa_status)}</dd></div><div class="fact"><dt>Release / Deployment</dt><dd>${value(snapshot.release_status)} · ${value(snapshot.deployment_status)}</dd></div><div class="fact"><dt>Artifact binding</dt><dd>${value(snapshot.artifact_hash)} · ${value(snapshot.source_commit)}</dd></div></dl><div class="repository-boundary"><strong>Branch and changed files</strong><span>${value(snapshot.branch)}</span><ul>${files}</ul></div><p><strong>Next action</strong> · ${value(snapshot.next_action)}</p><p class="permission-note"><strong>Evidence</strong> · ${evidence}</p></div></section>`;
 }
 
 function workspaceState(
@@ -116,7 +163,13 @@ export function renderDevelopmentWorkspace(
       ? `<div class="workspace-actions" aria-label="Governed development actions">${canExecute ? '<button class="btn btn-primary" type="button" data-capability="RUN_COMMAND" disabled>Request test run</button>' : ""}${canCancel ? '<button class="btn" type="button" data-action="LOCAL_EXECUTION:CANCEL" disabled>Cancel run</button>' : ""}<span>Task scope · task-dev-115 · authenticated API session required</span></div>`
       : '<p class="permission-note">Read-only workspace access · execution actions require exact Local Execution permission.</p>';
 
-  return `<div class="page-heading development-heading"><div><div class="eyebrow">Governed build surface</div><h1>System Development Workspace</h1><p>Build context for one authorized change—task, agent, repository state, quality evidence, approval, and next action in one place.</p></div><a class="btn" href="/development/preview" style="display:inline-flex;align-items:center;text-decoration:none">Open Preview Workspace →</a></div>
+  const heading = `<div class="page-heading development-heading"><div><div class="eyebrow">Governed build surface</div><h1>System Development Workspace</h1><p>Build context for one authorized change—task, agent, repository state, quality evidence, approval, and next action in one place.</p></div><a class="btn" href="/development/preview" style="display:inline-flex;align-items:center;text-decoration:none">Open Preview Workspace →</a></div>`;
+  if (input.snapshot)
+    return `${heading}
+    ${verificationPanel(input.snapshot)}
+    <section class="panel"><div class="panel-body"><p class="permission-note"><strong>Human Authority &gt; AI Authority.</strong> QA PASS is not production approval, and the displayed deployment is simulated evidence only.</p>${actions}</div></section>`;
+
+  return `${heading}
   <section class="dev-context" aria-label="Development context"><div><span>PROJECT</span><strong>MAOS Core</strong></div><div><span>REPOSITORY</span><strong>D:\\10. MAOS</strong></div><div><span>BRANCH</span><strong>codex/phase-1.15A-development-loop-runtime</strong></div><div><span>Approved workroot</span><strong>Verified · task scoped</strong></div></section>
   <section class="panel dev-hero"><div><div class="eyebrow">task-dev-115a · DEVELOPMENT</div><h2>Implement Development Loop Runtime MVP</h2><p>Coordinate bounded requirement, implementation, test, revision, approval, verification, and learning-candidate stages with explicit evidence.</p></div><div class="dev-hero-meta">${badge("IN PROGRESS", "working")}<span><strong>Owner</strong> · Development Lead</span><span><strong>Assigned agent</strong> · Backend Agent</span><span><strong>Next action</strong> · complete loop lifecycle tests</span></div></section>
   <section class="dev-stage-grid" aria-label="Development lifecycle"><article class="dev-stage complete"><span>01</span><strong>Requirement</strong><small>COMPLETE · evidence linked</small></article><article class="dev-stage complete"><span>02</span><strong>Plan</strong><small>COMPLETE · reviewed</small></article><article class="dev-stage active"><span>03</span><strong>Implementation</strong><small>IN PROGRESS · Frontend Agent</small></article><article class="dev-stage"><span>04</span><strong>Automated test</strong><small>QUEUED · governed runner</small></article><article class="dev-stage"><span>05</span><strong>QA review</strong><small>WAITING · human gate</small></article></section>

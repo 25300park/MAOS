@@ -471,3 +471,53 @@ test("shows bounded Development Loop status, budgets, stop controls, and approva
   assert.match(html, /QA PASS ≠ Production Approval/);
   assert.doesNotMatch(html, /production deploy now|unrestricted autonomous/i);
 });
+
+test("renders the actual Phase 1 verification snapshot without trusting snapshot text", () => {
+  const html = controlRoom.renderControlRoom({
+    development_snapshot: {
+      approval_status: "APPROVED · VALID",
+      artifact_hash: "sha256:phase119",
+      assigned_agent: "agent-backend-e2e",
+      blocker: null,
+      branch: "codex/phase-1.19-full-e2e-loop-verification",
+      changed_files: ["scripts/phase-1.19-e2e.test.ts"],
+      deployment_status: "SUCCEEDED · SIMULATED",
+      evidence_ids: ["evidence-e2e", "evidence-verification"],
+      loop_stage: "LEARN",
+      next_action: "Prepare MVP Go / No-Go evidence",
+      owner: "human-phase-owner",
+      project_id: "project-phase-1",
+      qa_status: "PASS",
+      release_status: "READY",
+      run_id: "loop-run-phase-119",
+      run_status: "COMPLETED",
+      source_commit: "commit-phase119",
+      task_id: "task-phase-119",
+      task_status: "COMPLETED",
+      test_status: "PASS",
+      verification_status: "PASS <script>alert(1)</script>",
+    },
+    identity: operator,
+    path: "/development",
+  });
+
+  for (const text of [
+    "Phase 1 E2E Verification",
+    "project-phase-1",
+    "task-phase-119",
+    "loop-run-phase-119",
+    "agent-backend-e2e",
+    "APPROVED · VALID",
+    "sha256:phase119",
+    "SUCCEEDED · SIMULATED",
+    "Prepare MVP Go / No-Go evidence",
+    "evidence-verification",
+  ])
+    assert.match(html, new RegExp(text.replaceAll("/", "\\/")));
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  assert.match(html, /PASS &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(
+    html,
+    /phase-1\.15A|task-dev-115a|loop-run-115a|pilot-rbs-118/,
+  );
+});

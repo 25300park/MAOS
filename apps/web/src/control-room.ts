@@ -2,6 +2,7 @@ import { CONTROL_ROOM_CSS } from "./styles.js";
 import {
   renderDevelopmentWorkspace,
   type DevelopmentWorkspaceState,
+  type Phase1VerificationSnapshot,
 } from "./development-workspace.js";
 
 export interface ControlRoomIdentity {
@@ -20,6 +21,7 @@ export interface ControlRoomRenderInput {
     span_id: string;
     trace_id: string;
   };
+  development_snapshot?: Phase1VerificationSnapshot | undefined;
   identity: ControlRoomIdentity | null;
   path: string;
   state?: ViewState;
@@ -323,6 +325,7 @@ function routeContent(input: ControlRoomRenderInput): string {
     return renderDevelopmentWorkspace({
       identity: input.identity!,
       path,
+      snapshot: input.development_snapshot,
       state: input.state,
     });
   if (input.state && input.state !== "ready") return statePage(input.state);
