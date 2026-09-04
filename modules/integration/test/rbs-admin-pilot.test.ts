@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { GovernanceDecision } from "@maos/contracts";
 import {
+  InMemoryHandoffEvidenceRegistry,
   RbsAdminPilotError,
   RbsAdminPilotService,
+  rbsAdminHandoffTargetHash,
   type DomainReadAdapter,
   type DomainStatusSnapshot,
+  type HandoffEvidence,
+  type HandoffEvidencePort,
   type PilotAuditRecord,
   type PilotPersistencePort,
   type PilotStage,
@@ -13,6 +17,17 @@ import {
 
 const human = (id: string) => ({ id, type: "HUMAN" as const });
 const agent = (id: string) => ({ id, type: "AGENT" as const });
+const handoffTarget = {
+  ai_mls_candidate_reference: "ai-mls://candidates/listing-42",
+  crm_listing_reference: "crm://listings/42",
+  id: "handoff-42",
+  project_id: "project-maos",
+  target_admin_system_id: "admin-rbs-homes",
+  target_rbs_system_id: "rbs-homes",
+  target_version: "listing-v42",
+  task_id: "task-listing-42",
+};
+const handoffHash = rbsAdminHandoffTargetHash(handoffTarget);
 
 class ReadOnlyAdapter implements DomainReadAdapter {
   readonly mode = "READ_ONLY" as const;
@@ -122,12 +137,15 @@ function configured(
   adapter = new ReadOnlyAdapter(),
   audits?: PilotAuditRecord[],
   persistence?: PilotPersistencePort,
+  evidence = handoffEvidence(),
+  now: () => Date = () => new Date("2026-09-03T03:00:30Z"),
 ) {
   const service = new RbsAdminPilotService(
     adapter,
-    () => new Date("2026-09-03T03:00:30Z"),
+    now,
     audits ? { record: (record) => audits.push(record) } : undefined,
     persistence,
+    evidence,
   );
   for (const system of systems)
     service.registerSystem({
@@ -137,6 +155,54 @@ function configured(
     });
   return service;
 }
+
+function handoffEvidence(
+  override: Record<string, unknown> = {},
+): HandoffEvidencePort {
+  const kinds: Record<string, HandoffEvidence["kind"]> = {
+    "evidence-ai-mls-verified": "AI_MLS_VERIFICATION",
+    "evidence-consent-confirmed": "CONSENT",
+    "evidence-crm-approved": "CRM_APPROVAL",
+    "evidence-employee-review": "EMPLOYEE_REVIEW",
+  };
+  return {
+    resolve: (id) =>
+      kinds[id]
+        ? ({
+            environment: "PREVIEW",
+            hash: handoffHash,
+            id,
+            kind: kinds[id],
+            observed_at: "2026-09-03T03:00:00Z",
+            project_id: "project-maos",
+            status: "VERIFIED",
+            target_id: "handoff-42",
+            target_admin_system_id: "admin-rbs-homes",
+            target_rbs_system_id: "rbs-homes",
+            target_version: "listing-v42",
+            task_id: "task-listing-42",
+            ai_mls_candidate_reference: "ai-mls://candidates/listing-42",
+            crm_listing_reference: "crm://listings/42",
+            ...override,
+          } as HandoffEvidence)
+        : undefined,
+  };
+}
+
+test("keeps handoff evidence immutable while allowing identical retries", () => {
+  const registry = new InMemoryHandoffEvidenceRegistry();
+  const evidence = handoffEvidence().resolve("evidence-ai-mls-verified");
+  assert.ok(evidence);
+  assert.equal(registry.record(evidence), "CREATED");
+  assert.equal(registry.record({ ...evidence }), "UNCHANGED");
+  assert.throws(
+    () => registry.record({ ...evidence, task_id: "task-other" }),
+    (error) =>
+      error instanceof RbsAdminPilotError &&
+      error.code === "RBS_ADMIN_HANDOFF_EVIDENCE_ID_CONFLICT",
+  );
+  assert.equal(registry.resolve(evidence.id)?.task_id, "task-listing-42");
+});
 
 function configuredPilot(
   adapter = new ReadOnlyAdapter(),
@@ -167,6 +233,244 @@ test("registers RBS and Admin identities as independent observable domain system
     status: "NOT_READY",
   });
 });
+
+test("projects management-level RBS and Admin operations without copying domain data", async () => {
+  const service = configuredPilot();
+  await service.readStatus({
+    actor: agent("integration-observer"),
+    capability: "READ_SYSTEM_STATUS",
+    correlation_id: "corr-operations",
+    permission_allowed: true,
+    pilot_id: "pilot-rbs-118",
+    project_id: "project-maos",
+    system_id: "rbs-homes",
+    task_id: "task-rbs-pilot",
+    timeout_ms: 1_000,
+  });
+
+  const view = service.operationalView();
+  assert.equal(view.production_deployment_approved, false);
+  assert.equal(view.systems.length, 2);
+  assert.deepEqual(
+    view.systems.map(({ id, source_of_truth }) => ({ id, source_of_truth })),
+    [
+      { id: "rbs-homes", source_of_truth: "DOMAIN_SYSTEM" },
+      { id: "admin-rbs-homes", source_of_truth: "DOMAIN_SYSTEM" },
+    ],
+  );
+  assert.equal(view.systems[0]?.health, "HEALTHY");
+  assert.equal(view.systems[0]?.repository_state, "CLEAN");
+  assert.equal(view.systems[0]?.source_commit, "commit-observed");
+  assert.equal(view.systems[1]?.health, "UNKNOWN");
+  assert.equal("domain_data" in (view.systems[0] ?? {}), false);
+});
+
+test("expires cached operational evidence instead of reporting stale status as healthy", async () => {
+  let current = "2026-09-03T03:00:30Z";
+  const adapter = new ReadOnlyAdapter();
+  const service = new RbsAdminPilotService(adapter, () => new Date(current));
+  for (const system of systems)
+    service.registerSystem({
+      actor: human("human-platform-owner"),
+      correlation_id: "corr-stale-view",
+      ...system,
+    });
+  pilot(service);
+  await service.readStatus({
+    actor: agent("integration-observer"),
+    capability: "READ_SYSTEM_STATUS",
+    correlation_id: "corr-stale-view",
+    permission_allowed: true,
+    pilot_id: "pilot-rbs-118",
+    project_id: "project-maos",
+    system_id: "rbs-homes",
+    task_id: "task-rbs-pilot",
+    timeout_ms: 1_000,
+  });
+  current = "2026-09-03T03:06:00Z";
+  const rbs = service.operationalView().systems[0];
+  assert.equal(rbs?.health, "UNKNOWN");
+  assert.equal(rbs?.deployment_readiness, "UNKNOWN");
+  assert.equal(rbs?.last_verified_at, "STALE");
+});
+
+test("prepares only an evidence-bound CRM to AI-MLS to Admin/RBS handoff simulation", () => {
+  const audits: PilotAuditRecord[] = [];
+  const service = configured(undefined, audits, undefined, handoffEvidence());
+  const result = service.prepareListingHandoffSimulation({
+    actor: human("employee-reviewer"),
+    ai_mls_candidate_reference: "ai-mls://candidates/listing-42",
+    ai_mls_verification_evidence_id: "evidence-ai-mls-verified",
+    ai_mls_status: "VERIFIED",
+    consent_evidence_id: "evidence-consent-confirmed",
+    consent_status: "CONFIRMED",
+    correlation_id: "corr-handoff",
+    crm_approval_evidence_id: "evidence-crm-approved",
+    crm_listing_reference: "crm://listings/42",
+    employee_review_evidence_id: "evidence-employee-review",
+    employee_review_status: "APPROVED",
+    id: "handoff-42",
+    mode: "SIMULATED",
+    permission_allowed: true,
+    project_id: "project-maos",
+    target_admin_system_id: "admin-rbs-homes",
+    target_hash: handoffHash,
+    target_rbs_system_id: "rbs-homes",
+    target_version: "listing-v42",
+    task_id: "task-listing-42",
+  });
+
+  assert.deepEqual(result.target_system_ids, ["admin-rbs-homes", "rbs-homes"]);
+  assert.equal(result.mode, "SIMULATION_ONLY");
+  assert.equal(result.status, "READY_FOR_HUMAN_REVIEW");
+  assert.equal(result.external_action_performed, false);
+  assert.equal(result.valid_until, "2026-09-03T03:05:00.000Z");
+  assert.deepEqual(result.evidence_refs, [
+    "evidence-ai-mls-verified",
+    "evidence-consent-confirmed",
+    "evidence-employee-review",
+    "evidence-crm-approved",
+  ]);
+  assert.equal(
+    service.events().at(-1)?.name,
+    "RBS_ADMIN.HANDOFF_SIMULATION_PREPARED",
+  );
+  assert.equal(audits.at(-1)?.action, "PREPARE_HANDOFF_SIMULATION");
+  assert.equal(
+    service.operationalView().handoff_status,
+    "READY_FOR_HUMAN_REVIEW",
+  );
+});
+
+test("expires handoff readiness when its evidence validity window ends", () => {
+  let current = "2026-09-03T03:00:30Z";
+  const service = configured(
+    undefined,
+    undefined,
+    undefined,
+    handoffEvidence(),
+    () => new Date(current),
+  );
+  service.prepareListingHandoffSimulation({
+    actor: human("employee-reviewer"),
+    ai_mls_candidate_reference: handoffTarget.ai_mls_candidate_reference,
+    ai_mls_verification_evidence_id: "evidence-ai-mls-verified",
+    ai_mls_status: "VERIFIED",
+    consent_evidence_id: "evidence-consent-confirmed",
+    consent_status: "CONFIRMED",
+    correlation_id: "corr-handoff",
+    crm_approval_evidence_id: "evidence-crm-approved",
+    crm_listing_reference: handoffTarget.crm_listing_reference,
+    employee_review_evidence_id: "evidence-employee-review",
+    employee_review_status: "APPROVED",
+    id: handoffTarget.id,
+    mode: "SIMULATED",
+    permission_allowed: true,
+    project_id: handoffTarget.project_id,
+    target_admin_system_id: handoffTarget.target_admin_system_id,
+    target_hash: handoffHash,
+    target_rbs_system_id: handoffTarget.target_rbs_system_id,
+    target_version: handoffTarget.target_version,
+    task_id: handoffTarget.task_id,
+  });
+  current = "2026-09-03T03:06:00Z";
+  assert.equal(service.operationalView().handoff_status, "STALE");
+});
+
+test("rejects missing, stale, mismatched, and unverified handoff evidence", () => {
+  const input = {
+    actor: human("employee-reviewer"),
+    ai_mls_candidate_reference: "ai-mls://candidates/listing-42",
+    ai_mls_verification_evidence_id: "evidence-ai-mls-verified",
+    ai_mls_status: "VERIFIED",
+    consent_evidence_id: "evidence-consent-confirmed",
+    consent_status: "CONFIRMED",
+    correlation_id: "corr-handoff",
+    crm_approval_evidence_id: "evidence-crm-approved",
+    crm_listing_reference: "crm://listings/42",
+    employee_review_evidence_id: "evidence-employee-review",
+    employee_review_status: "APPROVED",
+    id: "handoff-42",
+    mode: "SIMULATED",
+    permission_allowed: true,
+    project_id: "project-maos",
+    target_admin_system_id: "admin-rbs-homes",
+    target_hash: handoffHash,
+    target_rbs_system_id: "rbs-homes",
+    target_version: "listing-v42",
+    task_id: "task-listing-42",
+  };
+  for (const evidence of [
+    { resolve: () => undefined },
+    handoffEvidence({ observed_at: "2026-09-03T02:00:00Z" }),
+    handoffEvidence({ target_version: "listing-v41" }),
+    handoffEvidence({ status: "REJECTED" }),
+  ])
+    assert.throws(
+      () =>
+        configured(
+          undefined,
+          undefined,
+          undefined,
+          evidence,
+        ).prepareListingHandoffSimulation(input),
+      (error) =>
+        error instanceof RbsAdminPilotError &&
+        error.code === "RBS_ADMIN_HANDOFF_EVIDENCE_INVALID",
+    );
+});
+
+test("denies unverified, unconsented, cross-system, unauthorized, and production handoffs", () => {
+  const base = {
+    actor: human("employee-reviewer"),
+    ai_mls_candidate_reference: "ai-mls://candidates/listing-42",
+    ai_mls_verification_evidence_id: "evidence-ai-mls-verified",
+    ai_mls_status: "VERIFIED" as const,
+    consent_evidence_id: "evidence-consent-confirmed",
+    consent_status: "CONFIRMED" as const,
+    correlation_id: "corr-handoff",
+    crm_approval_evidence_id: "evidence-crm-approved",
+    crm_listing_reference: "crm://listings/42",
+    employee_review_evidence_id: "evidence-employee-review",
+    employee_review_status: "APPROVED" as const,
+    id: "handoff-42",
+    mode: "SIMULATED" as const,
+    permission_allowed: true,
+    project_id: "project-maos",
+    target_admin_system_id: "admin-rbs-homes",
+    target_hash: handoffHash,
+    target_rbs_system_id: "rbs-homes",
+    target_version: "listing-v42",
+    task_id: "task-listing-42",
+  };
+  const cases = [
+    [{ ...base, permission_allowed: false }, "RBS_ADMIN_HANDOFF_DENIED"],
+    [{ ...base, ai_mls_status: "PENDING" }, "RBS_ADMIN_HANDOFF_NOT_VERIFIED"],
+    [{ ...base, consent_status: "UNKNOWN" }, "RBS_ADMIN_HANDOFF_NOT_CONSENTED"],
+    [
+      { ...base, employee_review_status: "PENDING" },
+      "RBS_ADMIN_EMPLOYEE_REVIEW_REQUIRED",
+    ],
+    [
+      { ...base, target_admin_system_id: "rbs-homes" },
+      "RBS_ADMIN_SYSTEM_BOUNDARY_REQUIRED",
+    ],
+    [
+      { ...base, mode: "PRODUCTION" },
+      "RBS_ADMIN_PRODUCTION_MUTATION_FORBIDDEN",
+    ],
+  ] as const;
+
+  for (const [input, code] of cases)
+    assert.throws(
+      () => serviceForHandoff().prepareListingHandoffSimulation(input),
+      (error) => error instanceof RbsAdminPilotError && error.code === code,
+    );
+});
+
+function serviceForHandoff() {
+  return configured(undefined, undefined, undefined, handoffEvidence());
+}
 
 test("rejects source-of-truth takeover, management maturity, raw credentials, and write capabilities", () => {
   const service = new RbsAdminPilotService(new ReadOnlyAdapter());

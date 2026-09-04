@@ -88,6 +88,31 @@ export interface CrmView {
   workload: string;
 }
 
+export interface RbsAdminView {
+  approval_status: string;
+  blockers: readonly string[];
+  handoff_status: string;
+  next_action: string;
+  production_deployment_approved: false;
+  systems: readonly {
+    api_health: string;
+    artifact_reference: string;
+    deployment_readiness: string;
+    environment: string;
+    health: string;
+    id: string;
+    last_verified_at: string;
+    name: string;
+    owner: string;
+    qa_status: string;
+    release_reference: string;
+    rollback_readiness: string;
+    source_commit: string;
+    source_of_truth: "DOMAIN_SYSTEM";
+    type: "INTERNAL_PLATFORM" | "PUBLIC_PLATFORM";
+  }[];
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -103,6 +128,7 @@ export interface ControlRoomRenderInput {
   memory_integration?: MemoryIntegrationView | undefined;
   marketing?: MarketingView | undefined;
   path: string;
+  rbs_admin?: RbsAdminView | undefined;
   state?: ViewState;
   supplemental?: Record<string, unknown>;
 }
@@ -389,9 +415,24 @@ function memoryIntegrationPanel(view?: MemoryIntegrationView): string {
 function systemsPage(
   controlPlane?: ControlPlaneView,
   memoryIntegration?: MemoryIntegrationView,
+  rbsAdmin?: RbsAdminView,
 ): string {
   const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
-  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}${memoryIntegrationPanel(memoryIntegration)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+}
+
+function rbsAdminPanel(view?: RbsAdminView): string {
+  if (!view) return "";
+  const rows = view.systems
+    .map(
+      (system) =>
+        `<tr><td><strong>${escapeHtml(system.name)}</strong><br><small>${escapeHtml(system.id)} · ${escapeHtml(system.type)}</small></td><td>${status(system.health, system.health === "HEALTHY" ? "healthy" : "waiting")}<br><small>API health · ${escapeHtml(system.api_health)}</small></td><td>${escapeHtml(system.environment)}<br><small>${escapeHtml(system.source_commit)}</small></td><td>${escapeHtml(system.release_reference)}<br><small>${escapeHtml(system.artifact_reference)}</small></td><td>QA · ${escapeHtml(system.qa_status)}<br><small>Approval · ${escapeHtml(view.approval_status)}</small></td><td>${escapeHtml(system.deployment_readiness)}<br><small>Rollback · ${escapeHtml(system.rollback_readiness)}</small></td><td>${escapeHtml(system.owner)}<br><small>${escapeHtml(system.source_of_truth)}</small></td><td>${escapeHtml(system.last_verified_at)}</td></tr>`,
+    )
+    .join("");
+  const blockers = view.blockers
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+  return `<div class="section-title"><h2>RBS / Admin Operations</h2><span class="permission-note">Read-only governance view · separate systems and independent AWS infrastructure</span></div><section class="metric-grid" aria-label="RBS and Admin governance summary"><article class="metric metric-approval"><div class="metric-top"><span>Listing handoff</span><span>Simulation only</span></div><strong class="metric-value" style="font-size:18px">${escapeHtml(view.handoff_status)}</strong><div class="metric-note">CRM → AI-MLS → employee → CRM → Admin/RBS</div></article><article class="metric metric-critical"><div class="metric-top"><span>Production deployment</span><span>Human authority</span></div><strong class="metric-value" style="font-size:18px">NOT APPROVED</strong><div class="metric-note">No publish, deploy, rollback, or AWS action</div></article></section><section class="panel"><div class="table-wrap"><table class="data-table"><caption>RBS and Admin operational status</caption><thead><tr><th>System</th><th>Health / API health</th><th>Environment / commit</th><th>Release / artifact</th><th>QA / approval</th><th>Readiness / rollback</th><th>Owner / boundary</th><th>Last verified</th></tr></thead><tbody>${rows}</tbody></table></div></section><div class="detail-grid" style="margin-top:18px"><section class="panel"><div class="panel-head"><h2>Blockers and alerts</h2></div><div class="panel-body"><ul>${blockers || "<li>No active blocker in authorized scope</li>"}</ul></div></section><section class="panel"><div class="panel-head"><h2>Next action</h2></div><div class="panel-body"><p>${escapeHtml(view.next_action)}</p><p class="permission-note">Production deployment: ${view.production_deployment_approved ? "APPROVED" : "NOT APPROVED"}</p></div></section></div>`;
 }
 
 function statePage(state: Exclude<ViewState, "ready">): string {
@@ -482,7 +523,11 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/systems")
-    return systemsPage(input.control_plane, input.memory_integration);
+    return systemsPage(
+      input.control_plane,
+      input.memory_integration,
+      input.rbs_admin,
+    );
   if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
   if (path === "/crm") return crmPage(input.identity!, input.crm);

@@ -7,6 +7,7 @@ import {
   CrmHumanWorkService,
   MARKETING_ROLES,
   MarketingIntegrationService,
+  InMemoryHandoffEvidenceRegistry,
   RbsAdminPilotService,
   type DomainReadAdapter,
   type AiMlsAdapter,
@@ -29,7 +30,14 @@ const unavailableAdapter: DomainReadAdapter = {
     throw new Error("No external RBS/Admin adapter is configured");
   },
 };
-const pilot = new RbsAdminPilotService(unavailableAdapter);
+const handoffEvidence = new InMemoryHandoffEvidenceRegistry();
+const pilot = new RbsAdminPilotService(
+  unavailableAdapter,
+  undefined,
+  undefined,
+  undefined,
+  handoffEvidence,
+);
 const unavailableAiMlsAdapter: AiMlsAdapter = {
   mode: "INTERNAL_READ_ONLY",
   observeIntake: async () => {

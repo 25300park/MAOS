@@ -2,6 +2,7 @@ import type { Environment } from "@maos/config";
 import type { GovernanceDecision } from "@maos/contracts";
 import {
   RbsAdminPilotError,
+  type HandoffEvidence,
   type PilotReadCapability,
   type RbsAdminPilotService,
 } from "@maos/module-integration";
@@ -152,6 +153,80 @@ const advanceInput = (value: unknown): ValidationResult => {
   }
   return failures.length ? invalid(failures) : base;
 };
+const handoffInput = (value: unknown): ValidationResult => {
+  const fields = [
+    "ai_mls_candidate_reference",
+    "ai_mls_verification_evidence_id",
+    "ai_mls_status",
+    "consent_evidence_id",
+    "consent_status",
+    "crm_approval_evidence_id",
+    "crm_listing_reference",
+    "employee_review_evidence_id",
+    "employee_review_status",
+    "id",
+    "mode",
+    "project_id",
+    "target_admin_system_id",
+    "target_hash",
+    "target_rbs_system_id",
+    "target_version",
+    "task_id",
+  ] as const;
+  const base = required(fields)(value);
+  if (!base.ok) return base;
+  const input = base.value as Input;
+  const failures = fields.filter((field) => !nonempty(input[field]));
+  if (!["SIMULATED", "PRODUCTION"].includes(input.mode as string))
+    failures.push("mode");
+  if (input.ai_mls_status !== "VERIFIED") failures.push("ai_mls_status");
+  if (input.consent_status !== "CONFIRMED") failures.push("consent_status");
+  if (input.employee_review_status !== "APPROVED")
+    failures.push("employee_review_status");
+  if (!String(input.crm_listing_reference).startsWith("crm://"))
+    failures.push("crm_listing_reference");
+  if (!String(input.ai_mls_candidate_reference).startsWith("ai-mls://"))
+    failures.push("ai_mls_candidate_reference");
+  if (!/^sha256:[a-f0-9]{64}$/.test(String(input.target_hash)))
+    failures.push("target_hash");
+  return failures.length ? invalid([...new Set(failures)]) : base;
+};
+const handoffEvidenceInput = (value: unknown): ValidationResult => {
+  const fields = [
+    "ai_mls_candidate_reference",
+    "crm_listing_reference",
+    "environment",
+    "hash",
+    "id",
+    "kind",
+    "observed_at",
+    "project_id",
+    "status",
+    "target_admin_system_id",
+    "target_id",
+    "target_rbs_system_id",
+    "target_version",
+    "task_id",
+  ] as const;
+  const base = required(fields)(value);
+  if (!base.ok) return base;
+  const input = base.value as Input;
+  const failures = fields.filter((field) => !nonempty(input[field]));
+  if (
+    ![
+      "AI_MLS_VERIFICATION",
+      "CONSENT",
+      "CRM_APPROVAL",
+      "EMPLOYEE_REVIEW",
+    ].includes(input.kind as string)
+  )
+    failures.push("kind");
+  if (input.environment !== "PREVIEW") failures.push("environment");
+  if (input.status !== "VERIFIED") failures.push("status");
+  if (Number.isNaN(Date.parse(String(input.observed_at))))
+    failures.push("observed_at");
+  return failures.length ? invalid([...new Set(failures)]) : base;
+};
 const actor = (identity: IdentityContext | null) => {
   if (!identity) throw new Error("Authenticated pilot route missing identity");
   return { id: identity.actor_id, type: identity.actor_type };
@@ -166,6 +241,9 @@ async function execute(operation: () => unknown | Promise<unknown>) {
           "PILOT_READ_DENIED",
           "HUMAN_APPROVAL_REQUIRED",
           "PRODUCTION_WRITE_FORBIDDEN",
+          "RBS_ADMIN_HANDOFF_DENIED",
+          "RBS_ADMIN_PRODUCTION_MUTATION_FORBIDDEN",
+          "RBS_ADMIN_EVIDENCE_REGISTRATION_DENIED",
         ].includes(error.code)
           ? 403
           : 409,
@@ -224,6 +302,61 @@ export function createRbsAdminPilotRoutes(
       handle: () => ({ entities: runtime.listSystems() }),
       method: "GET",
       path: "/api/v1/integrations/rbs-admin/systems",
+    },
+    {
+      access: access("READ"),
+      handle: () => runtime.operationalView(),
+      method: "GET",
+      path: "/api/v1/integrations/rbs-admin/operations",
+    },
+    {
+      access: access("RECORD_EVIDENCE"),
+      method: "POST",
+      path: "/api/v1/integrations/rbs-admin/handoff-evidence",
+      validate: handoffEvidenceInput,
+      handle: ({ context, identity, input }) =>
+        execute(() => {
+          const value = input as Input;
+          if (value.project_id !== options.scope)
+            throw new ApiRequestError(403, {
+              code: "PILOT_SCOPE_MISMATCH",
+              details: {},
+              retryable: false,
+              severity: "INFO",
+              type: "AUTHORIZATION",
+            });
+          return runtime.registerHandoffEvidence({
+            ...(input as HandoffEvidence),
+            actor: actor(identity),
+            correlation_id: context.correlation_id,
+          });
+        }),
+    },
+    {
+      access: access("CREATE_HANDOFF"),
+      method: "POST",
+      path: "/api/v1/integrations/rbs-admin/handoffs/simulate",
+      validate: handoffInput,
+      handle: ({ context, identity, input }) =>
+        execute(() => {
+          const value = input as Input;
+          if (value.project_id !== options.scope)
+            throw new ApiRequestError(403, {
+              code: "PILOT_SCOPE_MISMATCH",
+              details: {},
+              retryable: false,
+              severity: "INFO",
+              type: "AUTHORIZATION",
+            });
+          return runtime.prepareListingHandoffSimulation({
+            ...(input as Parameters<
+              RbsAdminPilotService["prepareListingHandoffSimulation"]
+            >[0]),
+            actor: actor(identity),
+            correlation_id: context.correlation_id,
+            permission_allowed: true,
+          });
+        }),
     },
     {
       access: access("READ"),

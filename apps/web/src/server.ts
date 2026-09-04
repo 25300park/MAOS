@@ -6,6 +6,7 @@ import {
   type ControlPlaneView,
   type ControlRoomIdentity,
   type CrmView,
+  type RbsAdminView,
 } from "./control-room.js";
 
 export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
@@ -110,6 +111,50 @@ export const CONTROL_ROOM_PREVIEW_CRM: CrmView = {
   workload: "BALANCED",
 };
 
+export const CONTROL_ROOM_PREVIEW_RBS_ADMIN: RbsAdminView = {
+  approval_status: "NOT APPROVED",
+  blockers: ["Admin API health evidence requires refresh"],
+  handoff_status: "READY FOR HUMAN REVIEW",
+  next_action: "Refresh Admin health before governed preview progression",
+  production_deployment_approved: false,
+  systems: [
+    {
+      api_health: "HEALTHY",
+      artifact_reference: "artifact://rbs/preview-candidate",
+      deployment_readiness: "NOT_READY",
+      environment: "PREVIEW",
+      health: "HEALTHY",
+      id: "rbs-homes",
+      last_verified_at: "2026-09-04T08:30:00Z",
+      name: "RBS Homes",
+      owner: "RBS Platform Owner",
+      qa_status: "PASS",
+      release_reference: "release://rbs/preview-candidate",
+      rollback_readiness: "READY",
+      source_commit: "commit-rbs-candidate",
+      source_of_truth: "DOMAIN_SYSTEM",
+      type: "PUBLIC_PLATFORM",
+    },
+    {
+      api_health: "UNKNOWN",
+      artifact_reference: "artifact://admin/preview-candidate",
+      deployment_readiness: "UNKNOWN",
+      environment: "PREVIEW",
+      health: "UNKNOWN",
+      id: "admin-rbs-homes",
+      last_verified_at: "STALE",
+      name: "Admin RBS Homes",
+      owner: "Admin Platform Owner",
+      qa_status: "WAITING",
+      release_reference: "release://admin/preview-candidate",
+      rollback_readiness: "UNKNOWN",
+      source_commit: "commit-admin-candidate",
+      source_of_truth: "DOMAIN_SYSTEM",
+      type: "INTERNAL_PLATFORM",
+    },
+  ],
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
@@ -118,6 +163,7 @@ export function createControlRoomServer(
     identity?: ControlRoomIdentity | null;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
+    rbs_admin?: RbsAdminView | undefined;
   } = {},
 ): Server {
   const identity = options.identity ?? null;
@@ -142,6 +188,7 @@ export function createControlRoomServer(
       identity,
       memory_integration: options.memory_integration,
       path,
+      rbs_admin: options.rbs_admin,
     });
     response.writeHead(200, {
       "cache-control": "no-store",
@@ -170,6 +217,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION
       : undefined,
+    rbs_admin: preview ? CONTROL_ROOM_PREVIEW_RBS_ADMIN : undefined,
   });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(

@@ -371,6 +371,74 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
   assert.doesNotMatch(workspace, /data-action="RBS_PRODUCTION_DEPLOY"/);
 });
 
+test("shows management-level RBS/Admin operations and the governed listing handoff", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/systems",
+    rbs_admin: {
+      approval_status: "NOT APPROVED",
+      blockers: ["Admin API health evidence is stale"],
+      handoff_status: "READY FOR HUMAN REVIEW",
+      next_action: "Refresh Admin health before any governed progression",
+      production_deployment_approved: false,
+      systems: [
+        {
+          api_health: "HEALTHY",
+          artifact_reference: "artifact://rbs/preview-42",
+          deployment_readiness: "NOT_READY",
+          environment: "PREVIEW",
+          health: "HEALTHY",
+          id: "rbs-homes",
+          last_verified_at: "2026-09-04T08:30:00Z",
+          name: "RBS Homes",
+          owner: "RBS Platform Owner",
+          qa_status: "PASS",
+          release_reference: "release://rbs/42",
+          rollback_readiness: "READY",
+          source_commit: "commit-rbs-42",
+          source_of_truth: "DOMAIN_SYSTEM",
+          type: "PUBLIC_PLATFORM",
+        },
+        {
+          api_health: "UNKNOWN",
+          artifact_reference: "artifact://admin/preview-42",
+          deployment_readiness: "UNKNOWN",
+          environment: "PREVIEW",
+          health: "UNKNOWN",
+          id: "admin-rbs-homes",
+          last_verified_at: "STALE",
+          name: "Admin RBS Homes",
+          owner: "Admin Platform Owner",
+          qa_status: "WAITING",
+          release_reference: "release://admin/42",
+          rollback_readiness: "UNKNOWN",
+          source_commit: "commit-admin-42",
+          source_of_truth: "DOMAIN_SYSTEM",
+          type: "INTERNAL_PLATFORM",
+        },
+      ],
+    },
+  });
+
+  for (const text of [
+    "RBS / Admin Operations",
+    "RBS Homes",
+    "Admin RBS Homes",
+    "RBS Platform Owner",
+    "API health",
+    "commit-rbs-42",
+    "QA",
+    "Rollback",
+    "READY FOR HUMAN REVIEW",
+    "Production deployment: NOT APPROVED",
+    "Admin API health evidence is stale",
+    "Refresh Admin health",
+    "independent AWS infrastructure",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /data-action="(?:PUBLISH|DEPLOY|ROLLBACK)"/);
+});
+
 test("shows Marketing team, campaign, KPI, and governed publisher boundaries", () => {
   const html = controlRoom.renderControlRoom({
     identity: operator,

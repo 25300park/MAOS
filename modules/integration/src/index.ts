@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ActorType, GovernanceDecision } from "@maos/contracts";
 
 export * from "./marketing-automation.js";
@@ -107,6 +108,7 @@ export interface RbsAdminPilot {
 }
 export interface PilotEvent {
   name: string;
+  handoff_id?: string;
   pilot_id?: string;
   system_id?: string;
   correlation_id: string;
@@ -117,7 +119,10 @@ export interface PilotEvent {
 export interface PilotAuditRecord {
   actor: PilotActor;
   action: string;
-  target: { id: string; type: "DOMAIN_SYSTEM" | "RBS_ADMIN_PILOT" };
+  target: {
+    id: string;
+    type: "DOMAIN_SYSTEM" | "RBS_ADMIN_HANDOFF" | "RBS_ADMIN_PILOT";
+  };
   result: "SUCCEEDED" | "DENIED";
   correlation_id: string;
   evidence_refs: readonly string[];
@@ -131,6 +136,68 @@ export interface PilotPersistencePort {
   appendEvidence(evidence: Readonly<PilotStatusEvidence>): void;
 }
 
+export type HandoffEvidenceKind =
+  "AI_MLS_VERIFICATION" | "CONSENT" | "CRM_APPROVAL" | "EMPLOYEE_REVIEW";
+export interface HandoffEvidence {
+  ai_mls_candidate_reference: string;
+  crm_listing_reference: string;
+  environment: "PREVIEW";
+  hash: string;
+  id: string;
+  kind: HandoffEvidenceKind;
+  observed_at: string;
+  project_id: string;
+  status: "VERIFIED";
+  target_id: string;
+  target_admin_system_id: string;
+  target_rbs_system_id: string;
+  target_version: string;
+  task_id: string;
+}
+export interface HandoffEvidencePort {
+  record?(evidence: Readonly<HandoffEvidence>): "CREATED" | "UNCHANGED";
+  resolve(id: string): Readonly<HandoffEvidence> | undefined;
+}
+
+export interface ListingHandoffSimulation {
+  ai_mls_candidate_reference: string;
+  crm_listing_reference: string;
+  evidence_refs: readonly string[];
+  external_action_performed: false;
+  id: string;
+  mode: "SIMULATION_ONLY";
+  project_id: string;
+  status: "READY_FOR_HUMAN_REVIEW";
+  target_hash: string;
+  target_system_ids: readonly [string, string];
+  target_version: string;
+  task_id: string;
+  valid_until: string;
+}
+
+export function rbsAdminHandoffTargetHash(input: {
+  ai_mls_candidate_reference: string;
+  crm_listing_reference: string;
+  id: string;
+  project_id: string;
+  target_admin_system_id: string;
+  target_rbs_system_id: string;
+  target_version: string;
+  task_id: string;
+}): string {
+  const canonical = [
+    input.id,
+    input.project_id,
+    input.task_id,
+    input.crm_listing_reference,
+    input.ai_mls_candidate_reference,
+    input.target_admin_system_id,
+    input.target_rbs_system_id,
+    input.target_version,
+  ].join("\n");
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
 export class RbsAdminPilotError extends Error {
   constructor(
     readonly code: string,
@@ -139,6 +206,47 @@ export class RbsAdminPilotError extends Error {
     super(message);
     this.name = "RbsAdminPilotError";
   }
+}
+
+export class InMemoryHandoffEvidenceRegistry implements HandoffEvidencePort {
+  private readonly records = new Map<string, Readonly<HandoffEvidence>>();
+
+  record(evidence: Readonly<HandoffEvidence>): "CREATED" | "UNCHANGED" {
+    const existing = this.records.get(evidence.id);
+    if (existing) {
+      if (
+        handoffEvidenceSignature(existing) !==
+        handoffEvidenceSignature(evidence)
+      )
+        throw new RbsAdminPilotError("RBS_ADMIN_HANDOFF_EVIDENCE_ID_CONFLICT");
+      return "UNCHANGED";
+    }
+    this.records.set(evidence.id, freeze({ ...evidence }));
+    return "CREATED";
+  }
+
+  resolve(id: string): Readonly<HandoffEvidence> | undefined {
+    return this.records.get(id);
+  }
+}
+
+function handoffEvidenceSignature(evidence: Readonly<HandoffEvidence>): string {
+  return JSON.stringify([
+    evidence.id,
+    evidence.kind,
+    evidence.project_id,
+    evidence.task_id,
+    evidence.target_id,
+    evidence.target_version,
+    evidence.hash,
+    evidence.environment,
+    evidence.status,
+    evidence.observed_at,
+    evidence.crm_listing_reference,
+    evidence.ai_mls_candidate_reference,
+    evidence.target_admin_system_id,
+    evidence.target_rbs_system_id,
+  ]);
 }
 
 const capabilities = new Set<PilotReadCapability>([
@@ -233,11 +341,17 @@ export class RbsAdminPilotService {
     string,
     { health: PilotHealth; observed_at: string }
   >();
+  private readonly observedStatus = new Map<
+    string,
+    Readonly<PilotStatusEvidence>
+  >();
+  private lastHandoff?: Readonly<ListingHandoffSimulation>;
   constructor(
     private readonly adapter: DomainReadAdapter,
     private readonly now: () => Date = () => new Date(),
     private readonly audit?: PilotAuditPort,
     private readonly persistence?: PilotPersistencePort,
+    private readonly handoffEvidence?: HandoffEvidencePort,
   ) {
     if (adapter.mode !== "READ_ONLY")
       throw new RbsAdminPilotError("READ_ONLY_ADAPTER_REQUIRED");
@@ -269,6 +383,15 @@ export class RbsAdminPilotService {
       "workroot://",
       "INVALID_WORKROOT_REFERENCE",
     );
+    for (const reference of [
+      input.environment_reference,
+      input.hosting_reference,
+      input.deployment_reference,
+      input.health_reference,
+    ])
+      requireSymbolic(reference, "registry://", "INVALID_SYSTEM_REFERENCE");
+    if (this.systems.has(input.id))
+      throw new RbsAdminPilotError("DOMAIN_SYSTEM_ALREADY_REGISTERED");
     const { actor, correlation_id, ...record } = input;
     const stored = freeze({
       ...record,
@@ -420,6 +543,7 @@ export class RbsAdminPilotService {
         pilot_id: input.pilot_id,
         task_id: input.task_id,
       });
+      this.observedStatus.set(input.system_id, evidence);
       this.observedHealth.set(input.system_id, {
         health: snapshot.health,
         observed_at: snapshot.observed_at,
@@ -445,6 +569,328 @@ export class RbsAdminPilotService {
       if (timer) clearTimeout(timer);
       input.signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  operationalView(): Readonly<{
+    approval_status: "NOT APPROVED";
+    blockers: readonly string[];
+    handoff_status: "NOT_PREPARED" | "READY_FOR_HUMAN_REVIEW" | "STALE";
+    next_action: string;
+    production_deployment_approved: false;
+    systems: readonly Readonly<{
+      api_health: PilotHealth;
+      artifact_reference: string;
+      deployment_readiness: "NOT_READY" | "READY" | "UNKNOWN";
+      environment: "PREVIEW" | "STAGING" | "PRODUCTION" | "UNKNOWN";
+      health: PilotHealth;
+      hosting_reference: string;
+      id: string;
+      integration_owner_id: string;
+      last_verified_at: string;
+      name: string;
+      owner: string;
+      qa_status: "PASS" | "WAITING";
+      release_reference: string;
+      repository_reference: string;
+      repository_state: "CLEAN" | "DIRTY" | "UNKNOWN";
+      rollback_readiness: "NOT_APPLICABLE" | "UNKNOWN";
+      source_commit: string;
+      source_of_truth: "DOMAIN_SYSTEM";
+      type: "PUBLIC_PLATFORM" | "INTERNAL_PLATFORM";
+      workroot_reference: string;
+    }>[];
+  }> {
+    const systems = [...this.systems.values()].map((system) => {
+      const cached = this.observedStatus.get(system.id);
+      const fresh =
+        cached &&
+        this.now().getTime() - Date.parse(cached.observed_at) <= 5 * 60 * 1000
+          ? cached
+          : undefined;
+      const pilot = [...this.pilots.values()].find(
+        ({ system_id }) => system_id === system.id,
+      );
+      const qaPassed =
+        pilot &&
+        pilot.stage !== "REQUEST" &&
+        [
+          "QA",
+          "APPROVAL_BOUNDARY",
+          "RELEASE_PREPARATION",
+          "SIMULATED_DEPLOYMENT",
+          "VERIFIED",
+        ].includes(pilot.stage);
+      return freeze({
+        api_health: fresh?.health ?? ("UNKNOWN" as const),
+        artifact_reference:
+          pilot?.evidence_ids.find((id) => id.startsWith("artifact-")) ??
+          "NOT_AVAILABLE",
+        deployment_readiness:
+          fresh?.deployment_readiness ?? ("UNKNOWN" as const),
+        environment: fresh?.environment ?? ("UNKNOWN" as const),
+        health: fresh?.health ?? ("UNKNOWN" as const),
+        hosting_reference: system.hosting_reference,
+        id: system.id,
+        integration_owner_id: system.integration_owner_id,
+        last_verified_at: fresh
+          ? fresh.observed_at
+          : cached
+            ? "STALE"
+            : "NOT_OBSERVED",
+        name: system.name,
+        owner: system.integration_owner_id,
+        qa_status: qaPassed ? ("PASS" as const) : ("WAITING" as const),
+        release_reference: pilot?.release_id ?? "NOT_PREPARED",
+        repository_reference: system.repository_reference,
+        repository_state: fresh?.repository_state ?? ("UNKNOWN" as const),
+        rollback_readiness: pilot?.deployment_id
+          ? ("NOT_APPLICABLE" as const)
+          : ("UNKNOWN" as const),
+        source_commit: fresh?.commit ?? "NOT_OBSERVED",
+        source_of_truth: system.source_of_truth,
+        type: system.type,
+        workroot_reference: system.workroot_reference,
+      });
+    });
+    const blockers = systems
+      .filter(({ health }) => health !== "HEALTHY")
+      .map(({ name }) => `${name} requires fresh healthy evidence`);
+    return freeze({
+      approval_status: "NOT APPROVED" as const,
+      blockers: freeze(blockers),
+      handoff_status: this.lastHandoff
+        ? this.now().getTime() <= Date.parse(this.lastHandoff.valid_until)
+          ? this.lastHandoff.status
+          : ("STALE" as const)
+        : ("NOT_PREPARED" as const),
+      next_action:
+        blockers[0] ??
+        (this.lastHandoff
+          ? "Human review of the simulation candidate"
+          : "Prepare a governed handoff simulation"),
+      production_deployment_approved: false as const,
+      systems: freeze(systems),
+    });
+  }
+
+  registerHandoffEvidence(
+    input: HandoffEvidence & {
+      actor: PilotActor;
+      correlation_id: string;
+    },
+  ): Readonly<HandoffEvidence> {
+    const { actor, correlation_id, ...evidence } = input;
+    if (actor.type !== "SYSTEM" || !this.handoffEvidence?.record)
+      throw new RbsAdminPilotError("RBS_ADMIN_EVIDENCE_REGISTRATION_DENIED");
+    if (
+      !/^evidence-[A-Za-z0-9._-]+$/.test(evidence.id) ||
+      ![
+        "AI_MLS_VERIFICATION",
+        "CONSENT",
+        "CRM_APPROVAL",
+        "EMPLOYEE_REVIEW",
+      ].includes(evidence.kind) ||
+      !evidence.crm_listing_reference.startsWith("crm://") ||
+      !evidence.ai_mls_candidate_reference.startsWith("ai-mls://") ||
+      !this.systems.has(evidence.target_admin_system_id) ||
+      !this.systems.has(evidence.target_rbs_system_id) ||
+      evidence.hash !==
+        rbsAdminHandoffTargetHash({
+          ai_mls_candidate_reference: evidence.ai_mls_candidate_reference,
+          crm_listing_reference: evidence.crm_listing_reference,
+          id: evidence.target_id,
+          project_id: evidence.project_id,
+          target_admin_system_id: evidence.target_admin_system_id,
+          target_rbs_system_id: evidence.target_rbs_system_id,
+          target_version: evidence.target_version,
+          task_id: evidence.task_id,
+        }) ||
+      evidence.status !== "VERIFIED" ||
+      evidence.environment !== "PREVIEW" ||
+      Number.isNaN(Date.parse(evidence.observed_at))
+    )
+      throw new RbsAdminPilotError("INVALID_RBS_ADMIN_HANDOFF_EVIDENCE");
+    const stored = freeze({ ...evidence });
+    const registration = this.handoffEvidence.record(stored);
+    if (registration === "UNCHANGED") return stored;
+    this.emit({
+      actor,
+      correlation_id,
+      evidence_refs: [stored.id],
+      handoff_id: stored.target_id,
+      name: "RBS_ADMIN.HANDOFF_EVIDENCE_REGISTERED",
+      occurred_at: this.now().toISOString(),
+    });
+    this.record(
+      actor,
+      "REGISTER_HANDOFF_EVIDENCE",
+      { id: stored.target_id, type: "RBS_ADMIN_HANDOFF" },
+      correlation_id,
+      [stored.id],
+    );
+    return stored;
+  }
+
+  prepareListingHandoffSimulation(input: {
+    actor: PilotActor;
+    ai_mls_candidate_reference: string;
+    ai_mls_verification_evidence_id: string;
+    ai_mls_status: string;
+    consent_evidence_id: string;
+    consent_status: string;
+    correlation_id: string;
+    crm_approval_evidence_id: string;
+    crm_listing_reference: string;
+    employee_review_evidence_id: string;
+    employee_review_status: string;
+    id: string;
+    mode: string;
+    permission_allowed: boolean;
+    project_id: string;
+    target_admin_system_id: string;
+    target_hash: string;
+    target_rbs_system_id: string;
+    target_version: string;
+    task_id: string;
+  }): Readonly<ListingHandoffSimulation> {
+    const deny = (code: string): never => {
+      this.emit({
+        actor: input.actor,
+        correlation_id: input.correlation_id,
+        evidence_refs: [],
+        handoff_id: input.id,
+        name: `RBS_ADMIN.HANDOFF_${code}`,
+        occurred_at: this.now().toISOString(),
+      });
+      this.record(
+        input.actor,
+        code,
+        { id: input.id, type: "RBS_ADMIN_HANDOFF" },
+        input.correlation_id,
+        [],
+        "DENIED",
+      );
+      throw new RbsAdminPilotError(code);
+    };
+    if (input.mode !== "SIMULATED")
+      return deny("RBS_ADMIN_PRODUCTION_MUTATION_FORBIDDEN");
+    if (
+      !input.permission_allowed ||
+      input.actor.type !== "HUMAN" ||
+      !input.project_id ||
+      !input.task_id ||
+      !input.correlation_id
+    )
+      return deny("RBS_ADMIN_HANDOFF_DENIED");
+    if (input.ai_mls_status !== "VERIFIED")
+      return deny("RBS_ADMIN_HANDOFF_NOT_VERIFIED");
+    if (input.consent_status !== "CONFIRMED")
+      return deny("RBS_ADMIN_HANDOFF_NOT_CONSENTED");
+    if (input.employee_review_status !== "APPROVED")
+      return deny("RBS_ADMIN_EMPLOYEE_REVIEW_REQUIRED");
+    const admin = this.systems.get(input.target_admin_system_id);
+    const rbs = this.systems.get(input.target_rbs_system_id);
+    if (
+      !admin ||
+      !rbs ||
+      admin.id === rbs.id ||
+      admin.type !== "INTERNAL_PLATFORM" ||
+      rbs.type !== "PUBLIC_PLATFORM"
+    )
+      return deny("RBS_ADMIN_SYSTEM_BOUNDARY_REQUIRED");
+    const evidenceIds = [
+      input.ai_mls_verification_evidence_id,
+      input.consent_evidence_id,
+      input.employee_review_evidence_id,
+      input.crm_approval_evidence_id,
+    ];
+    if (
+      !input.id ||
+      !input.crm_listing_reference.startsWith("crm://") ||
+      !input.ai_mls_candidate_reference.startsWith("ai-mls://") ||
+      !input.ai_mls_verification_evidence_id ||
+      !input.consent_evidence_id ||
+      !input.employee_review_evidence_id ||
+      !input.crm_approval_evidence_id ||
+      !input.target_version ||
+      !/^sha256:[a-f0-9]{64}$/.test(input.target_hash) ||
+      input.target_hash !== rbsAdminHandoffTargetHash(input) ||
+      new Set(evidenceIds).size !== evidenceIds.length ||
+      evidenceIds.some((id) => !/^evidence-[A-Za-z0-9._-]+$/.test(id))
+    )
+      return deny("INVALID_RBS_ADMIN_HANDOFF");
+    const expectedKinds: readonly HandoffEvidenceKind[] = [
+      "AI_MLS_VERIFICATION",
+      "CONSENT",
+      "EMPLOYEE_REVIEW",
+      "CRM_APPROVAL",
+    ];
+    const resolved = evidenceIds.map((id) => this.handoffEvidence?.resolve(id));
+    if (
+      resolved.some((item, index) => {
+        if (!item) return true;
+        const observed = Date.parse(item.observed_at);
+        return (
+          item.id !== evidenceIds[index] ||
+          item.kind !== expectedKinds[index] ||
+          item.status !== "VERIFIED" ||
+          item.environment !== "PREVIEW" ||
+          item.project_id !== input.project_id ||
+          item.task_id !== input.task_id ||
+          item.target_id !== input.id ||
+          item.target_admin_system_id !== input.target_admin_system_id ||
+          item.target_rbs_system_id !== input.target_rbs_system_id ||
+          item.target_version !== input.target_version ||
+          item.crm_listing_reference !== input.crm_listing_reference ||
+          item.ai_mls_candidate_reference !==
+            input.ai_mls_candidate_reference ||
+          item.hash !== input.target_hash ||
+          Number.isNaN(observed) ||
+          observed - this.now().getTime() > 60 * 1000 ||
+          this.now().getTime() - observed > 5 * 60 * 1000
+        );
+      })
+    )
+      return deny("RBS_ADMIN_HANDOFF_EVIDENCE_INVALID");
+    const evidenceRefs = freeze(evidenceIds);
+    const result = freeze({
+      ai_mls_candidate_reference: input.ai_mls_candidate_reference,
+      crm_listing_reference: input.crm_listing_reference,
+      evidence_refs: evidenceRefs,
+      external_action_performed: false as const,
+      id: input.id,
+      mode: "SIMULATION_ONLY" as const,
+      project_id: input.project_id,
+      status: "READY_FOR_HUMAN_REVIEW" as const,
+      target_hash: input.target_hash,
+      target_system_ids: freeze([
+        input.target_admin_system_id,
+        input.target_rbs_system_id,
+      ]) as readonly [string, string],
+      target_version: input.target_version,
+      task_id: input.task_id,
+      valid_until: new Date(
+        Math.min(...resolved.map((item) => Date.parse(item!.observed_at))) +
+          5 * 60 * 1000,
+      ).toISOString(),
+    });
+    this.emit({
+      actor: input.actor,
+      correlation_id: input.correlation_id,
+      evidence_refs: evidenceRefs,
+      handoff_id: input.id,
+      name: "RBS_ADMIN.HANDOFF_SIMULATION_PREPARED",
+      occurred_at: this.now().toISOString(),
+    });
+    this.record(
+      input.actor,
+      "PREPARE_HANDOFF_SIMULATION",
+      { id: input.id, type: "RBS_ADMIN_HANDOFF" },
+      input.correlation_id,
+      evidenceRefs,
+    );
+    this.lastHandoff = result;
+    return result;
   }
 
   createPilot(input: {
@@ -643,12 +1089,11 @@ export class RbsAdminPilotService {
   ): never {
     const eventName =
       code === "PILOT_SOURCE_UNAVAILABLE" ? "UNAVAILABLE" : code;
-    if (
-      code === "PILOT_SOURCE_UNAVAILABLE" &&
-      this.systems.has(input.system_id)
-    )
+    if (this.systems.has(input.system_id))
+      this.observedStatus.delete(input.system_id);
+    if (this.systems.has(input.system_id))
       this.observedHealth.set(input.system_id, {
-        health: "UNAVAILABLE",
+        health: code === "PILOT_SOURCE_UNAVAILABLE" ? "UNAVAILABLE" : "UNKNOWN",
         observed_at: this.now().toISOString(),
       });
     this.emit({
