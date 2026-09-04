@@ -369,6 +369,35 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
   assert.doesNotMatch(workspace, /data-action="RBS_PRODUCTION_DEPLOY"/);
 });
 
+test("shows AI Memory Gateway boundary, context provenance health, and degraded state without memory content", () => {
+  const memoryIntegration = {
+    average_latency_ms: 42,
+    failure_rate: 0.1,
+    gateway_id: "memory-gateway-1",
+    health: "DEGRADED",
+    last_context_status: "DEGRADED",
+    provenance_issues: 2,
+    ready: false,
+    request_count: 10,
+  };
+  for (const path of ["/systems", "/development"]) {
+    const html = controlRoom.renderControlRoom({
+      identity: operator,
+      memory_integration: memoryIntegration,
+      path,
+    });
+    for (const text of [
+      "AI Memory Gateway Integration",
+      "AI Memory Gateway is source of truth",
+      "DEGRADED",
+      "Provenance issues",
+      "memory-gateway-1",
+    ])
+      assert.match(html, new RegExp(text));
+    assert.doesNotMatch(html, /raw memory content|retrieval query/i);
+  }
+});
+
 test("shows local execution actions only with exact permissions", () => {
   const readOnly = controlRoom.renderControlRoom({
     identity: operator,

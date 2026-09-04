@@ -49,6 +49,23 @@ export type MemoryGatewayHealth =
   "HEALTHY" | "DEGRADED" | "UNAVAILABLE" | "MAINTENANCE" | "UNKNOWN";
 export type MemoryGatewayLifecycle = "ACTIVE" | "DISABLED";
 
+export const MEMORY_INTEGRATION_BOUNDARY = Object.freeze({
+  gateway_role: "RETRIEVAL_RANKING_SUMMARIZATION",
+  maos_persistence: "REFERENCE_AND_GOVERNANCE_METADATA_ONLY",
+  memory_source_of_truth: "AI_MEMORY_GATEWAY",
+  provider_router_owner: "MAOS_AGENT_MODEL_RUNNER_RUNTIME",
+} as const);
+
+export const MEMORY_OVERLAP_CLASSIFICATION = Object.freeze({
+  CODE_EXECUTION: "KEEP",
+  CRM_TOOLS: "KEEP",
+  DEVELOPMENT_QA_PLANNING: "INTEGRATE",
+  GITHUB_TOOLS: "KEEP",
+  PENDING_ACTIONS: "INTEGRATE",
+  PERSONAL_AGENT: "KEEP",
+  PROVIDER_ROUTING: "INTEGRATE",
+} as const);
+
 export interface MemoryGatewayRegistration {
   credential_ref: string;
   endpoint: string;
@@ -90,8 +107,16 @@ export interface GatewayMemoryItem {
   external_memory_id: string;
   namespace: MemoryNamespace;
   provenance: {
+    confidence?: number;
     evidence_ids: readonly string[];
+    origin?: string;
+    project_id?: string;
+    quality?: string;
+    references?: readonly string[];
+    retrieval_reason?: string;
     retrieved_at: string;
+    source_identity?: string;
+    system_id?: string;
   };
   scope_id: string;
   source: {
@@ -100,6 +125,8 @@ export interface GatewayMemoryItem {
   };
   type: MemoryType;
   validation: MemoryValidation;
+  kind?: "KNOWLEDGE" | "MEMORY";
+  version?: string;
 }
 
 export interface MemoryReference extends GatewayMemoryItem {
@@ -119,6 +146,9 @@ export interface MemoryGatewayAdapter {
     request: MemoryGatewayRetrievalRequest,
     context: MemoryGatewayAdapterContext,
   ): Promise<{ items: readonly GatewayMemoryItem[] }>;
+  submitCandidate?(
+    candidate: MemoryCandidate,
+  ): Promise<{ external_memory_id: string }>;
 }
 
 export interface MemoryIntegrationEvent {
@@ -142,6 +172,53 @@ export interface MemoryRetrievalResult {
   references: readonly MemoryReference[];
 }
 
+export const TASK_CONTEXT_CATEGORIES = [
+  "APPROVED_DECISIONS",
+  "PROJECT_CONSTRAINTS",
+  "REQUIRED_ARTIFACTS",
+  "RELEVANT_MEMORY",
+  "GENERAL_CORPORATE_POLICY",
+] as const;
+export type TaskContextCategory = (typeof TASK_CONTEXT_CATEGORIES)[number];
+
+export interface TaskContextRequest extends MemoryGatewayRetrievalRequest {
+  agent_id: string;
+  allow_partial: boolean;
+  categories: readonly TaskContextCategory[];
+  max_age_ms: number;
+  privacy: { allow_private_personal: false };
+  requested_classifications: readonly MemoryClassification[];
+  require_provenance: true;
+  system_id: string;
+}
+
+export interface MemoryCandidate {
+  actor: { id: string; type: ActorType };
+  content_hash: string;
+  content_reference: string;
+  correlation_id: string;
+  evidence_ids: readonly string[];
+  gateway_id: string;
+  id: string;
+  merged_external_memory_id?: string;
+  project_id: string;
+  reviewed_by?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "MERGED" | "EXPIRED";
+  task_id: string;
+  type: MemoryType;
+  validation: MemoryValidation;
+}
+
+export interface MemoryIntegrationHealth {
+  average_latency_ms: number;
+  failure_rate: number;
+  gateway_id: string;
+  health: MemoryGatewayHealth;
+  provenance_issues: number;
+  ready: boolean;
+  request_count: number;
+}
+
 export class MemoryGatewayError extends Error {
   constructor(
     readonly code: string,
@@ -157,14 +234,26 @@ type GatewayEntry = {
   registration: MemoryGatewayRegistration;
 };
 
-const nonEmpty = (value: string): boolean => value.trim().length > 0;
+const nonEmpty = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
 
 export class MemoryGatewayIntegration {
   private readonly gateways = new Map<string, GatewayEntry>();
   private readonly references = new Map<string, MemoryReference>();
+  private readonly candidates = new Map<string, MemoryCandidate>();
+  private readonly metrics = new Map<
+    string,
+    {
+      failures: number;
+      latency_ms: number;
+      provenance_issues: number;
+      requests: number;
+    }
+  >();
 
   constructor(
     private readonly onEvent?: (event: MemoryIntegrationEvent) => void,
+    private readonly now: () => number = Date.now,
   ) {}
 
   registerGateway(
@@ -193,6 +282,12 @@ export class MemoryGatewayIntegration {
       throw new MemoryGatewayError("INVALID_GATEWAY_ENDPOINT");
     }
     this.gateways.set(registration.id, { adapter, registration });
+    this.metrics.set(registration.id, {
+      failures: 0,
+      latency_ms: 0,
+      provenance_issues: 0,
+      requests: 0,
+    });
     return registration;
   }
 
@@ -220,6 +315,31 @@ export class MemoryGatewayIntegration {
     return gateway.lifecycle === "ACTIVE" && gateway.health === "HEALTHY";
   }
 
+  getIntegrationHealth(id: string): MemoryIntegrationHealth {
+    const registration = this.getGateway(id);
+    const metrics = this.metrics.get(id) ?? {
+      failures: 0,
+      latency_ms: 0,
+      provenance_issues: 0,
+      requests: 0,
+    };
+    const effectiveHealth =
+      registration.health === "HEALTHY" && metrics.provenance_issues > 0
+        ? "DEGRADED"
+        : registration.health;
+    return {
+      average_latency_ms:
+        metrics.requests === 0 ? 0 : metrics.latency_ms / metrics.requests,
+      failure_rate:
+        metrics.requests === 0 ? 0 : metrics.failures / metrics.requests,
+      gateway_id: id,
+      health: effectiveHealth,
+      provenance_issues: metrics.provenance_issues,
+      ready: this.isReady(id) && effectiveHealth === "HEALTHY",
+      request_count: metrics.requests,
+    };
+  }
+
   getReference(id: string, policy: MemoryAccessPolicy): MemoryReference {
     const reference = this.references.get(id);
     if (!reference) throw new MemoryGatewayError("MEMORY_REFERENCE_NOT_FOUND");
@@ -237,6 +357,9 @@ export class MemoryGatewayIntegration {
     policy: MemoryAccessPolicy,
     externalSignal?: AbortSignal,
   ): Promise<MemoryRetrievalResult> {
+    const startedAt = this.now();
+    const metrics = this.metric(request.gateway_id);
+    metrics.requests += 1;
     this.validateRequest(request);
     this.expectPolicy(policy, request.namespace);
     const entry = this.gateway(request.gateway_id);
@@ -301,12 +424,183 @@ export class MemoryGatewayIntegration {
       this.onEvent?.(succeeded);
       return { events, evidence, references: accepted };
     } catch (error) {
+      metrics.failures += 1;
       if (error instanceof MemoryGatewayError) this.emitFailure(request, error);
       throw error;
     } finally {
+      metrics.latency_ms += Math.max(0, this.now() - startedAt);
       clearTimeout(timer);
       externalSignal?.removeEventListener("abort", cancel);
     }
+  }
+
+  async assembleTaskContextPackage(
+    request: TaskContextRequest,
+    policy: MemoryAccessPolicy,
+    input: Omit<TaskContextInput, "relevant_memory">,
+    externalSignal?: AbortSignal,
+  ): Promise<{
+    degraded_reasons: readonly string[];
+    references: readonly MemoryReference[];
+    scope: {
+      agent_id: string;
+      project_id: string;
+      system_id: string;
+      task_id: string;
+    };
+    sections: ReturnType<typeof assembleTaskContext>["sections"];
+    status: "DEGRADED" | "READY";
+  }> {
+    this.validateTaskContextRequest(request, policy);
+    const result = await this.retrieveTaskContext(
+      request,
+      policy,
+      externalSignal,
+    );
+    const references: MemoryReference[] = [];
+    const degradedReasons = new Set<string>();
+    for (const reference of result.references) {
+      const reason = this.contextReferenceIssue(reference, request);
+      if (!reason) {
+        references.push(reference);
+        continue;
+      }
+      this.metric(request.gateway_id).provenance_issues += 1;
+      if (!request.allow_partial) throw new MemoryGatewayError(reason);
+      degradedReasons.add(reason);
+    }
+    const assembled = assembleTaskContext({
+      ...input,
+      relevant_memory: references.map(({ content }) => content),
+    });
+    const sections = assembled.sections.filter(
+      ({ kind }) =>
+        kind === "TASK_INSTRUCTIONS" ||
+        request.categories.includes(kind as TaskContextCategory),
+    );
+    const assembledEvent = this.event(
+      request,
+      degradedReasons.size === 0
+        ? "MEMORY.CONTEXT_ASSEMBLED"
+        : "MEMORY.CONTEXT_DEGRADED",
+      {
+        gateway_id: request.gateway_id,
+        provenance_issue_count: degradedReasons.size,
+        reference_count: references.length,
+        task_id: request.task_id,
+      },
+    );
+    this.onEvent?.(assembledEvent);
+    return {
+      degraded_reasons: [...degradedReasons],
+      references,
+      scope: {
+        agent_id: request.agent_id,
+        project_id: request.project_id,
+        system_id: request.system_id,
+        task_id: request.task_id,
+      },
+      sections,
+      status: degradedReasons.size === 0 ? "READY" : "DEGRADED",
+    };
+  }
+
+  createMemoryCandidate(
+    input: Omit<MemoryCandidate, "status" | "validation">,
+  ): MemoryCandidate {
+    if (this.candidates.has(input.id))
+      throw new MemoryGatewayError("MEMORY_CANDIDATE_ALREADY_EXISTS");
+    this.gateway(input.gateway_id);
+    if (
+      !nonEmpty(input.id) ||
+      !nonEmpty(input.actor.id) ||
+      !nonEmpty(input.project_id) ||
+      !nonEmpty(input.task_id) ||
+      !MEMORY_TYPES.includes(input.type) ||
+      !nonEmpty(input.content_reference) ||
+      !input.content_reference.startsWith("artifact://") ||
+      !/^sha256:[a-f0-9]{64}$/.test(input.content_hash) ||
+      !Array.isArray(input.evidence_ids) ||
+      input.evidence_ids.length === 0 ||
+      input.evidence_ids.some((evidenceId) => !nonEmpty(evidenceId))
+    )
+      throw new MemoryGatewayError("INVALID_MEMORY_CANDIDATE");
+    const candidate: MemoryCandidate = {
+      ...input,
+      status: "PENDING",
+      validation: "UNVERIFIED",
+    };
+    this.candidates.set(candidate.id, candidate);
+    this.emitCandidateEvent(
+      candidate,
+      candidate.actor,
+      "MEMORY.CANDIDATE_CREATED",
+    );
+    return candidate;
+  }
+
+  reviewMemoryCandidate(
+    id: string,
+    review: {
+      actor: { id: string; type: ActorType };
+      decision: "APPROVE" | "REJECT";
+      validation: MemoryValidation;
+    },
+  ): MemoryCandidate {
+    const candidate = this.candidate(id);
+    if (review.actor.type !== "HUMAN")
+      throw new MemoryGatewayError("HUMAN_MEMORY_REVIEW_REQUIRED");
+    if (candidate.status !== "PENDING")
+      throw new MemoryGatewayError("MEMORY_CANDIDATE_NOT_PENDING");
+    if (
+      !["APPROVE", "REJECT"].includes(review.decision) ||
+      !MEMORY_VALIDATIONS.includes(review.validation)
+    )
+      throw new MemoryGatewayError("INVALID_MEMORY_CANDIDATE_REVIEW");
+    if (
+      review.decision === "APPROVE" &&
+      !["HUMAN_VERIFIED", "AUTHORITATIVE"].includes(review.validation)
+    )
+      throw new MemoryGatewayError("INVALID_MEMORY_CANDIDATE_VALIDATION");
+    const reviewed: MemoryCandidate = {
+      ...candidate,
+      reviewed_by: review.actor.id,
+      status: review.decision === "APPROVE" ? "APPROVED" : "REJECTED",
+      validation: review.validation,
+    };
+    this.candidates.set(id, reviewed);
+    this.emitCandidateEvent(
+      reviewed,
+      review.actor,
+      review.decision === "APPROVE"
+        ? "MEMORY.CANDIDATE_APPROVED"
+        : "MEMORY.CANDIDATE_REJECTED",
+    );
+    return reviewed;
+  }
+
+  async submitMemoryCandidate(id: string): Promise<MemoryCandidate> {
+    const candidate = this.candidate(id);
+    if (candidate.status !== "APPROVED")
+      throw new MemoryGatewayError("MEMORY_CANDIDATE_NOT_APPROVED");
+    const adapter = this.gateway(candidate.gateway_id).adapter;
+    if (!adapter.submitCandidate)
+      throw new MemoryGatewayError("MEMORY_CANDIDATE_SUBMISSION_UNAVAILABLE");
+    const result = await adapter.submitCandidate(candidate);
+    if (!nonEmpty(result.external_memory_id))
+      throw new MemoryGatewayError("INVALID_MEMORY_CANDIDATE_RESULT");
+    const merged: MemoryCandidate = {
+      ...candidate,
+      merged_external_memory_id: result.external_memory_id,
+      status: "MERGED",
+    };
+    this.candidates.set(id, merged);
+    this.emitCandidateEvent(
+      merged,
+      { id: merged.reviewed_by!, type: "HUMAN" },
+      "MEMORY.CANDIDATE_MERGED",
+    );
+    return merged;
   }
 
   private emitFailure(
@@ -446,6 +740,69 @@ export class MemoryGatewayIntegration {
       throw new MemoryGatewayError("MEMORY_ACCESS_DENIED");
   }
 
+  private validateTaskContextRequest(
+    request: TaskContextRequest,
+    policy: MemoryAccessPolicy,
+  ): void {
+    if (
+      !nonEmpty(request.agent_id) ||
+      !nonEmpty(request.system_id) ||
+      (request.actor.type === "AGENT" &&
+        request.actor.id !== request.agent_id) ||
+      !Array.isArray(request.categories) ||
+      request.categories.length === 0 ||
+      request.categories.some(
+        (category) => !TASK_CONTEXT_CATEGORIES.includes(category),
+      ) ||
+      !Number.isSafeInteger(request.max_age_ms) ||
+      request.max_age_ms < 1 ||
+      request.require_provenance !== true ||
+      !request.privacy ||
+      request.privacy.allow_private_personal !== false ||
+      !Array.isArray(request.requested_classifications) ||
+      request.requested_classifications.length === 0 ||
+      request.requested_classifications.includes("PRIVATE_PERSONAL") ||
+      request.requested_classifications.some(
+        (classification) =>
+          !policy.allowed_classifications.includes(classification),
+      )
+    )
+      throw new MemoryGatewayError("INVALID_TASK_CONTEXT_REQUEST");
+  }
+
+  private contextReferenceIssue(
+    reference: MemoryReference,
+    request: TaskContextRequest,
+  ): string | null {
+    if (!request.requested_classifications.includes(reference.classification))
+      return "MEMORY_CLASSIFICATION_NOT_REQUESTED";
+    if (
+      !["KNOWLEDGE", "MEMORY"].includes(reference.kind ?? "") ||
+      !nonEmpty(reference.version)
+    )
+      return "INVALID_MEMORY_CONTRACT";
+    const provenance = reference.provenance;
+    if (
+      !nonEmpty(provenance.source_identity ?? "") ||
+      !nonEmpty(provenance.origin ?? "") ||
+      !nonEmpty(provenance.retrieval_reason ?? "") ||
+      !nonEmpty(provenance.project_id ?? "") ||
+      !nonEmpty(provenance.system_id ?? "") ||
+      provenance.project_id !== request.project_id ||
+      provenance.system_id !== request.system_id ||
+      !Array.isArray(provenance.references) ||
+      provenance.references.length === 0 ||
+      typeof provenance.confidence !== "number" ||
+      provenance.confidence < 0 ||
+      provenance.confidence > 1 ||
+      !nonEmpty(provenance.quality ?? "")
+    )
+      return "INVALID_MEMORY_PROVENANCE";
+    if (this.now() - Date.parse(provenance.retrieved_at) > request.max_age_ms)
+      return "MEMORY_STALE";
+    return null;
+  }
+
   private event(
     request: MemoryGatewayRetrievalRequest,
     name: string,
@@ -466,6 +823,38 @@ export class MemoryGatewayIntegration {
     const gateway = this.gateways.get(id);
     if (!gateway) throw new MemoryGatewayError("MEMORY_GATEWAY_NOT_FOUND");
     return gateway;
+  }
+
+  private candidate(id: string): MemoryCandidate {
+    const candidate = this.candidates.get(id);
+    if (!candidate) throw new MemoryGatewayError("MEMORY_CANDIDATE_NOT_FOUND");
+    return candidate;
+  }
+
+  private emitCandidateEvent(
+    candidate: MemoryCandidate,
+    actor: { id: string; type: ActorType },
+    name: string,
+  ): void {
+    this.onEvent?.({
+      actor,
+      correlation_id: candidate.correlation_id,
+      evidence: {
+        candidate_id: candidate.id,
+        evidence_ids: candidate.evidence_ids,
+        gateway_id: candidate.gateway_id,
+        status: candidate.status,
+      },
+      name,
+      request_id: `memory-candidate:${candidate.id}`,
+      task_id: candidate.task_id,
+    });
+  }
+
+  private metric(id: string) {
+    const metric = this.metrics.get(id);
+    if (!metric) throw new MemoryGatewayError("MEMORY_GATEWAY_NOT_FOUND");
+    return metric;
   }
 }
 

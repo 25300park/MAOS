@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  MEMORY_INTEGRATION_BOUNDARY,
+  MEMORY_OVERLAP_CLASSIFICATION,
   MemoryGatewayError,
   MemoryGatewayIntegration,
   assembleTaskContext,
@@ -33,8 +35,9 @@ const request: MemoryGatewayRetrievalRequest = {
 function integration(
   adapter: MemoryGatewayAdapter,
   onEvent?: (event: MemoryIntegrationEvent) => void,
+  now?: () => number,
 ) {
-  const service = new MemoryGatewayIntegration(onEvent);
+  const service = new MemoryGatewayIntegration(onEvent, now);
   service.registerGateway(
     {
       credential_ref: "secret://memory-gateway/service-token",
@@ -65,6 +68,23 @@ const validItem = {
   },
   type: "DECISION" as const,
   validation: "HUMAN_VERIFIED" as const,
+};
+
+const phase3ValidItem = {
+  ...validItem,
+  kind: "KNOWLEDGE" as const,
+  provenance: {
+    ...validItem.provenance,
+    confidence: 0.92,
+    origin: "approved decision registry",
+    project_id: "project-1",
+    quality: "VERIFIED",
+    references: ["artifact://decision-1"],
+    retrieval_reason: "Matches the active task objective",
+    source_identity: "knowledge-owner",
+    system_id: "system-1",
+  },
+  version: "decision-v1",
 };
 
 test("registers a healthy gateway using only a credential reference", () => {
@@ -299,4 +319,308 @@ test("emits structured failure evidence without query or credential values", asy
   const serialized = JSON.stringify(events);
   assert.equal(serialized.includes(request.query), false);
   assert.equal(serialized.includes("service-token"), false);
+});
+
+test("assembles task context with complete scope and provenance while preserving canonical priority", async () => {
+  const events: MemoryIntegrationEvent[] = [];
+  const service = integration(
+    {
+      retrieve: async () => ({ items: [phase3ValidItem] }),
+    },
+    (event) => events.push(event),
+    () => Date.parse("2026-09-03T01:00:00.000Z"),
+  );
+  const result = await service.assembleTaskContextPackage(
+    {
+      ...request,
+      agent_id: "agent-1",
+      allow_partial: false,
+      categories: [
+        "APPROVED_DECISIONS",
+        "PROJECT_CONSTRAINTS",
+        "REQUIRED_ARTIFACTS",
+        "RELEVANT_MEMORY",
+        "GENERAL_CORPORATE_POLICY",
+      ],
+      max_age_ms: 86_400_000,
+      privacy: { allow_private_personal: false },
+      requested_classifications: ["INTERNAL"],
+      require_provenance: true,
+      system_id: "system-1",
+    },
+    policy,
+    {
+      approved_decisions: ["decision"],
+      general_corporate_policy: ["policy"],
+      project_constraints: ["constraint"],
+      required_artifacts: ["artifact"],
+      task_instructions: ["instruction"],
+    },
+  );
+
+  assert.equal(result.status, "READY");
+  assert.equal(result.scope.agent_id, "agent-1");
+  assert.equal(result.scope.system_id, "system-1");
+  assert.equal(result.references[0]?.kind, "KNOWLEDGE");
+  assert.equal(result.references[0]?.version, "decision-v1");
+  assert.deepEqual(
+    result.sections.map(({ kind }) => kind),
+    [
+      "TASK_INSTRUCTIONS",
+      "APPROVED_DECISIONS",
+      "PROJECT_CONSTRAINTS",
+      "REQUIRED_ARTIFACTS",
+      "RELEVANT_MEMORY",
+      "GENERAL_CORPORATE_POLICY",
+    ],
+  );
+  assert.deepEqual(result.references[0]?.provenance.references, [
+    "artifact://decision-1",
+  ]);
+  assert.equal(events.at(-1)?.name, "MEMORY.CONTEXT_ASSEMBLED");
+});
+
+test("fails closed or returns explicit degraded partial context for stale and malformed results", async () => {
+  const stale = integration(
+    {
+      retrieve: async () => ({ items: [phase3ValidItem] }),
+    },
+    undefined,
+    () => Date.parse("2026-09-05T00:00:00.000Z"),
+  );
+  const phase3Request = {
+    ...request,
+    agent_id: "agent-1",
+    allow_partial: false,
+    categories: ["RELEVANT_MEMORY" as const],
+    max_age_ms: 60_000,
+    privacy: { allow_private_personal: false as const },
+    requested_classifications: ["INTERNAL" as const],
+    require_provenance: true as const,
+    system_id: "system-1",
+  };
+  await assert.rejects(
+    stale.assembleTaskContextPackage(phase3Request, policy, {
+      approved_decisions: [],
+      general_corporate_policy: [],
+      project_constraints: [],
+      required_artifacts: [],
+      task_instructions: ["instruction"],
+    }),
+    (error: unknown) =>
+      error instanceof MemoryGatewayError && error.code === "MEMORY_STALE",
+  );
+
+  const partial = await stale.assembleTaskContextPackage(
+    { ...phase3Request, allow_partial: true },
+    policy,
+    {
+      approved_decisions: [],
+      general_corporate_policy: [],
+      project_constraints: [],
+      required_artifacts: [],
+      task_instructions: ["instruction"],
+    },
+  );
+  assert.equal(partial.status, "DEGRADED");
+  assert.equal(partial.references.length, 0);
+  assert.deepEqual(partial.degraded_reasons, ["MEMORY_STALE"]);
+  assert.equal(
+    stale.getIntegrationHealth("memory-gateway-1").provenance_issues,
+    2,
+  );
+  assert.equal(
+    stale.getIntegrationHealth("memory-gateway-1").health,
+    "DEGRADED",
+  );
+  assert.equal(stale.getIntegrationHealth("memory-gateway-1").ready, false);
+
+  const malformed = integration(
+    {
+      retrieve: async () => ({
+        items: [
+          phase3ValidItem,
+          {
+            ...phase3ValidItem,
+            external_memory_id: "malformed-1",
+            provenance: { ...phase3ValidItem.provenance, source_identity: "" },
+          },
+        ],
+      }),
+    },
+    undefined,
+    () => Date.parse("2026-09-03T01:00:00.000Z"),
+  );
+  const malformedPartial = await malformed.assembleTaskContextPackage(
+    { ...phase3Request, allow_partial: true, max_age_ms: 86_400_000 },
+    policy,
+    {
+      approved_decisions: [],
+      general_corporate_policy: [],
+      project_constraints: [],
+      required_artifacts: [],
+      task_instructions: ["instruction"],
+    },
+  );
+  assert.equal(malformedPartial.status, "DEGRADED");
+  assert.equal(malformedPartial.references.length, 1);
+  assert.deepEqual(malformedPartial.degraded_reasons, [
+    "INVALID_MEMORY_PROVENANCE",
+  ]);
+});
+
+test("excludes classifications not requested for the current task context", async () => {
+  const service = integration(
+    {
+      retrieve: async () => ({
+        items: [
+          phase3ValidItem,
+          {
+            ...phase3ValidItem,
+            classification: "CONFIDENTIAL",
+            external_memory_id: "confidential-1",
+          },
+        ],
+      }),
+    },
+    undefined,
+    () => Date.parse("2026-09-03T01:00:00.000Z"),
+  );
+  const result = await service.assembleTaskContextPackage(
+    {
+      ...request,
+      agent_id: "agent-1",
+      allow_partial: true,
+      categories: ["RELEVANT_MEMORY"],
+      max_age_ms: 86_400_000,
+      privacy: { allow_private_personal: false },
+      requested_classifications: ["INTERNAL"],
+      require_provenance: true,
+      system_id: "system-1",
+    },
+    policy,
+    {
+      approved_decisions: ["must not be included"],
+      general_corporate_policy: ["must not be included"],
+      project_constraints: ["must not be included"],
+      required_artifacts: ["must not be included"],
+      task_instructions: ["instruction"],
+    },
+  );
+  assert.equal(result.references.length, 1);
+  assert.deepEqual(result.degraded_reasons, [
+    "MEMORY_CLASSIFICATION_NOT_REQUESTED",
+  ]);
+  assert.deepEqual(
+    result.sections.map(({ kind }) => kind),
+    ["TASK_INSTRUCTIONS", "RELEVANT_MEMORY"],
+  );
+});
+
+test("rejects an agent requesting context for a different agent identity", async () => {
+  const service = integration({
+    retrieve: async () => ({ items: [phase3ValidItem] }),
+  });
+  await assert.rejects(
+    service.assembleTaskContextPackage(
+      {
+        ...request,
+        agent_id: "agent-2",
+        allow_partial: false,
+        categories: ["RELEVANT_MEMORY"],
+        max_age_ms: 86_400_000,
+        privacy: { allow_private_personal: false },
+        requested_classifications: ["INTERNAL"],
+        require_provenance: true,
+        system_id: "system-1",
+      },
+      policy,
+      {
+        approved_decisions: [],
+        general_corporate_policy: [],
+        project_constraints: [],
+        required_artifacts: [],
+        task_instructions: [],
+      },
+    ),
+    (error: unknown) =>
+      error instanceof MemoryGatewayError &&
+      error.code === "INVALID_TASK_CONTEXT_REQUEST",
+  );
+});
+
+test("requires human validation before submitting a memory candidate to the existing gateway", async () => {
+  const submitted: string[] = [];
+  const events: MemoryIntegrationEvent[] = [];
+  const service = integration(
+    {
+      retrieve: async () => ({ items: [] }),
+      submitCandidate: async (candidate) => {
+        submitted.push(candidate.id);
+        return { external_memory_id: "gateway-candidate-1" };
+      },
+    },
+    (event) => events.push(event),
+  );
+  const candidate = service.createMemoryCandidate({
+    actor: { id: "agent-1", type: "AGENT" },
+    content_hash: `sha256:${"a".repeat(64)}`,
+    content_reference: "artifact://run-1/learned-constraint",
+    correlation_id: "corr-candidate",
+    evidence_ids: ["evidence-1"],
+    gateway_id: "memory-gateway-1",
+    id: "candidate-1",
+    project_id: "project-1",
+    task_id: "task-1",
+    type: "PROJECT",
+  });
+  assert.equal(candidate.status, "PENDING");
+  await assert.rejects(
+    service.submitMemoryCandidate("candidate-1"),
+    (error: unknown) =>
+      error instanceof MemoryGatewayError &&
+      error.code === "MEMORY_CANDIDATE_NOT_APPROVED",
+  );
+  assert.throws(
+    () =>
+      service.reviewMemoryCandidate("candidate-1", {
+        actor: { id: "agent-2", type: "AGENT" },
+        decision: "APPROVE",
+        validation: "AGENT_VERIFIED",
+      }),
+    (error: unknown) =>
+      error instanceof MemoryGatewayError &&
+      error.code === "HUMAN_MEMORY_REVIEW_REQUIRED",
+  );
+  service.reviewMemoryCandidate("candidate-1", {
+    actor: { id: "human-1", type: "HUMAN" },
+    decision: "APPROVE",
+    validation: "HUMAN_VERIFIED",
+  });
+  const merged = await service.submitMemoryCandidate("candidate-1");
+  assert.equal(merged.status, "MERGED");
+  assert.equal(merged.merged_external_memory_id, "gateway-candidate-1");
+  assert.deepEqual(submitted, ["candidate-1"]);
+  assert.equal(JSON.stringify(merged).includes("learned-constraint"), true);
+  assert.equal("content" in merged, false);
+  assert.deepEqual(
+    events.map(({ name }) => name),
+    [
+      "MEMORY.CANDIDATE_CREATED",
+      "MEMORY.CANDIDATE_APPROVED",
+      "MEMORY.CANDIDATE_MERGED",
+    ],
+  );
+});
+
+test("keeps memory ownership and provider routing outside competing MAOS implementations", () => {
+  assert.deepEqual(MEMORY_INTEGRATION_BOUNDARY, {
+    memory_source_of_truth: "AI_MEMORY_GATEWAY",
+    provider_router_owner: "MAOS_AGENT_MODEL_RUNNER_RUNTIME",
+    gateway_role: "RETRIEVAL_RANKING_SUMMARIZATION",
+    maos_persistence: "REFERENCE_AND_GOVERNANCE_METADATA_ONLY",
+  });
+  assert.equal(MEMORY_OVERLAP_CLASSIFICATION.PERSONAL_AGENT, "KEEP");
+  assert.equal(MEMORY_OVERLAP_CLASSIFICATION.PROVIDER_ROUTING, "INTEGRATE");
+  assert.equal(MEMORY_OVERLAP_CLASSIFICATION.CODE_EXECUTION, "KEEP");
 });

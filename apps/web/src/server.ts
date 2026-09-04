@@ -66,10 +66,23 @@ export const CONTROL_ROOM_PREVIEW_CONTROL_PLANE: ControlPlaneView = {
   ],
 };
 
+export const CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION = {
+  average_latency_ms: 38,
+  failure_rate: 0,
+  gateway_id: "ai-memory-gateway",
+  health: "HEALTHY",
+  last_context_status: "READY" as const,
+  provenance_issues: 0,
+  ready: true,
+  request_count: 24,
+};
+
 export function createControlRoomServer(
   options: {
     control_plane?: ControlPlaneView | undefined;
     identity?: ControlRoomIdentity | null;
+    memory_integration?:
+      typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
   } = {},
 ): Server {
   const identity = options.identity ?? null;
@@ -90,6 +103,7 @@ export function createControlRoomServer(
         trace_id: traceId,
       },
       identity,
+      memory_integration: options.memory_integration,
       path,
     });
     response.writeHead(200, {
@@ -114,6 +128,9 @@ if (process.argv[1]?.endsWith("server.js")) {
   const server = createControlRoomServer({
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
+    memory_integration: preview
+      ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION
+      : undefined,
   });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(

@@ -1,12 +1,14 @@
 import { loadApiConfig } from "@maos/config";
 import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
+import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import {
   RbsAdminPilotService,
   type DomainReadAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
+import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
@@ -49,6 +51,22 @@ for (const system of [
     ...system,
   });
 const controlPlane = new ControlPlaneRegistry();
+const memoryGateway = new MemoryGatewayIntegration();
+memoryGateway.registerGateway(
+  {
+    credential_ref: "secret://ai-memory-gateway/service-token",
+    endpoint: "https://ai-memory-gateway.internal/v1",
+    health: "UNKNOWN",
+    id: "ai-memory-gateway",
+    lifecycle: "ACTIVE",
+    name: "AI Memory Gateway",
+  },
+  {
+    retrieve: async () => {
+      throw new Error("No AI Memory Gateway adapter is configured");
+    },
+  },
+);
 controlPlane.registerSystem({
   id: "maos",
   lifecycle: "ACTIVE",
@@ -65,6 +83,21 @@ const routes = [
   ...createControlPlaneRoutes(controlPlane, {
     environment: config.environment,
     system_ids: ["maos"],
+  }),
+  ...createMemoryGatewayRoutes(memoryGateway, {
+    environment: config.environment,
+    resolvePolicy: () => ({
+      allowed_classifications: ["PUBLIC", "INTERNAL"],
+      allowed_namespaces: [
+        "/projects",
+        "/tasks",
+        "/decisions",
+        "/artifacts",
+        "/policies",
+      ],
+      allowed_types: ["PROJECT", "TASK", "DECISION", "POLICY"],
+    }),
+    scope: "project-maos",
   }),
 ];
 const server = createApiServer({ ...config, logger, routes });

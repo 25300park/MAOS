@@ -32,6 +32,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0010_release_deployment_foundation",
       "0011_rbs_admin_pilot_foundation",
       "0012_core_control_plane_generalization",
+      "0013_ai_memory_knowledge_integration",
     ],
     skipped: [],
   });
@@ -223,6 +224,38 @@ test("initializes Phase 1.11 gateway registration, external reference, and retri
     columns.rows.some(({ column_name }) => column_name === "content"),
     false,
   );
+});
+
+test("initializes Phase 3 run-context and reviewed memory-candidate metadata without memory content", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0013_ai_memory_knowledge_integration"));
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('execution', 'run_contexts'),
+      ('knowledge', 'memory_candidates')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    ["execution.run_contexts", "knowledge.memory_candidates"],
+  );
+  const forbidden = await database.query<{ count: string }>(`
+    SELECT count(*)::text AS count
+    FROM information_schema.columns
+    WHERE (table_schema, table_name) IN (
+      ('execution', 'run_contexts'),
+      ('knowledge', 'memory_candidates')
+    ) AND column_name IN ('content', 'memory_content', 'prompt')
+  `);
+  assert.equal(forbidden.rows[0]?.count, "0");
 });
 
 test("initializes separate observability records and append-only audit persistence", async (t) => {
@@ -682,6 +715,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0010_release_deployment_foundation",
       "0011_rbs_admin_pilot_foundation",
       "0012_core_control_plane_generalization",
+      "0013_ai_memory_knowledge_integration",
     ],
   });
 
@@ -699,8 +733,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 12);
-  assert.equal(version.latest_id, "0012_core_control_plane_generalization");
+  assert.equal(version.applied_count, 13);
+  assert.equal(version.latest_id, "0013_ai_memory_knowledge_integration");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

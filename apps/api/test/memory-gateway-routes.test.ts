@@ -15,7 +15,7 @@ const policy: MemoryAccessPolicy = {
   allowed_types: ["PROJECT"],
 };
 
-async function startApi() {
+async function startApi(actorType: "AGENT" | "HUMAN" = "AGENT") {
   const service = new MemoryGatewayIntegration();
   service.registerGateway(
     {
@@ -33,10 +33,19 @@ async function startApi() {
             classification: "INTERNAL",
             content: "Use the approved launch checklist.",
             external_memory_id: "memory-1",
+            kind: "KNOWLEDGE",
             namespace: "/projects",
             provenance: {
+              confidence: 0.92,
               evidence_ids: ["evidence-1"],
+              origin: "approved project registry",
+              project_id: "project-1",
+              quality: "VERIFIED",
+              references: ["artifact://checklist-1"],
+              retrieval_reason: "Matches the active task objective",
               retrieved_at: "2026-09-03T00:00:00.000Z",
+              source_identity: "knowledge-owner",
+              system_id: "system-1",
             },
             scope_id: "project-1",
             source: {
@@ -45,8 +54,12 @@ async function startApi() {
             },
             type: "PROJECT",
             validation: "HUMAN_VERIFIED",
+            version: "checklist-v1",
           },
         ],
+      }),
+      submitCandidate: async () => ({
+        external_memory_id: "gateway-candidate-1",
       }),
     },
   );
@@ -54,10 +67,15 @@ async function startApi() {
     ["MEMORY_GATEWAY", "READ"],
     ["MEMORY_CONTEXT", "READ"],
     ["MEMORY_REFERENCE", "READ"],
+    ["MEMORY_CONTEXT_PACKAGE", "READ"],
+    ["MEMORY_INTEGRATION_HEALTH", "READ"],
+    ["MEMORY_CANDIDATE", "CREATE"],
+    ["MEMORY_CANDIDATE", "REVIEW"],
+    ["MEMORY_CANDIDATE", "SUBMIT"],
   ] as const;
   const authenticate = createBearerAuthenticator(async () => ({
     actor_id: "agent-1",
-    actor_type: "AGENT",
+    actor_type: actorType,
     roles: [
       {
         id: "memory-reader",
@@ -67,7 +85,8 @@ async function startApi() {
           effect: "ALLOW" as const,
           environment: "development",
           resource,
-          risk: "R0" as const,
+          risk:
+            resource === "MEMORY_CANDIDATE" ? ("R2" as const) : ("R0" as const),
           scope: "project-1",
         })),
       },
@@ -178,4 +197,143 @@ test("reports gateway unavailability through readiness and stable API errors", a
   });
   assert.equal(retrieval.response.status, 503);
   assert.equal(retrieval.body.error?.code, "GATEWAY_UNAVAILABLE");
+});
+
+test("returns a task-scoped context package and observable gateway health without credentials", async (t) => {
+  const api = await startApi();
+  t.after(api.close);
+  const assembled = await post(
+    api.baseUrl,
+    "/api/v1/memory/context-packages/assemble",
+    {
+      agent_id: "agent-1",
+      allow_partial: false,
+      approved_decisions: ["decision"],
+      categories: ["RELEVANT_MEMORY"],
+      gateway_id: "memory-gateway-1",
+      general_corporate_policy: ["policy"],
+      limit: 5,
+      max_age_ms: 604_800_000,
+      namespace: "/projects",
+      privacy: { allow_private_personal: false },
+      project_constraints: ["constraint"],
+      project_id: "project-1",
+      query: "launch checklist",
+      requested_classifications: ["INTERNAL"],
+      require_provenance: true,
+      required_artifacts: ["artifact"],
+      system_id: "system-1",
+      task_id: "task-1",
+      task_instructions: ["instruction"],
+      timeout_ms: 100,
+    },
+  );
+  assert.equal(assembled.response.status, 200);
+  assert.equal(assembled.body.data?.status, "READY");
+  assert.deepEqual(assembled.body.data?.scope, {
+    agent_id: "agent-1",
+    project_id: "project-1",
+    system_id: "system-1",
+    task_id: "task-1",
+  });
+
+  const health = await post(api.baseUrl, "/api/v1/memory-gateways/health", {
+    gateway_id: "memory-gateway-1",
+  });
+  assert.equal(health.response.status, 200);
+  assert.equal(health.body.data?.health, "HEALTHY");
+  assert.equal(health.body.data?.ready, true);
+  assert.equal(JSON.stringify(health.body).includes("credential_ref"), false);
+});
+
+test("keeps memory candidate creation, human review, and gateway submission as separate API operations", async (t) => {
+  const api = await startApi("HUMAN");
+  t.after(api.close);
+  const created = await post(api.baseUrl, "/api/v1/memory-candidates/create", {
+    content_hash: `sha256:${"b".repeat(64)}`,
+    content_reference: "artifact://task-1/improvement-1",
+    evidence_ids: ["evidence-1"],
+    gateway_id: "memory-gateway-1",
+    id: "candidate-api-1",
+    project_id: "project-1",
+    task_id: "task-1",
+    type: "PROJECT",
+  });
+  assert.equal(created.response.status, 200);
+  assert.equal(created.body.data?.status, "PENDING");
+
+  const reviewed = await post(api.baseUrl, "/api/v1/memory-candidates/review", {
+    candidate_id: "candidate-api-1",
+    decision: "APPROVE",
+    validation: "HUMAN_VERIFIED",
+  });
+  assert.equal(reviewed.response.status, 200);
+  assert.equal(reviewed.body.data?.status, "APPROVED");
+
+  const submitted = await post(
+    api.baseUrl,
+    "/api/v1/memory-candidates/submit",
+    {
+      candidate_id: "candidate-api-1",
+    },
+  );
+  assert.equal(submitted.response.status, 200);
+  assert.equal(submitted.body.data?.status, "MERGED");
+  assert.equal(
+    submitted.body.data?.merged_external_memory_id,
+    "gateway-candidate-1",
+  );
+});
+
+test("rejects malformed context and memory-candidate contracts at the service boundary", async (t) => {
+  const api = await startApi("HUMAN");
+  t.after(api.close);
+  const malformedContext = await post(
+    api.baseUrl,
+    "/api/v1/memory/context-packages/assemble",
+    {
+      agent_id: "agent-1",
+      allow_partial: false,
+      approved_decisions: [],
+      categories: "RELEVANT_MEMORY",
+      gateway_id: "memory-gateway-1",
+      general_corporate_policy: [],
+      limit: 5,
+      max_age_ms: 1000,
+      namespace: "/projects",
+      privacy: { allow_private_personal: false },
+      project_constraints: [],
+      project_id: "project-1",
+      query: "query",
+      requested_classifications: ["INTERNAL"],
+      require_provenance: true,
+      required_artifacts: [],
+      system_id: "system-1",
+      task_id: "task-1",
+      task_instructions: [],
+      timeout_ms: 100,
+    },
+  );
+  assert.equal(malformedContext.response.status, 422);
+  assert.equal(
+    malformedContext.body.error?.code,
+    "INVALID_TASK_CONTEXT_REQUEST",
+  );
+
+  const malformedCandidate = await post(
+    api.baseUrl,
+    "/api/v1/memory-candidates/create",
+    {
+      content_hash: `sha256:${"c".repeat(64)}`,
+      content_reference: "artifact://task-1/candidate",
+      evidence_ids: ["evidence-1"],
+      gateway_id: "memory-gateway-1",
+      id: "candidate-invalid",
+      project_id: "project-1",
+      task_id: "task-1",
+      type: "RAW_CHAT",
+    },
+  );
+  assert.equal(malformedCandidate.response.status, 422);
+  assert.equal(malformedCandidate.body.error?.code, "INVALID_MEMORY_CANDIDATE");
 });

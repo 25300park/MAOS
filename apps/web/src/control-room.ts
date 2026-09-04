@@ -38,6 +38,17 @@ export interface ControlPlaneView {
   }[];
 }
 
+export interface MemoryIntegrationView {
+  average_latency_ms: number;
+  failure_rate: number;
+  gateway_id: string;
+  health: string;
+  last_context_status: "DEGRADED" | "FAILED" | "READY" | "UNKNOWN";
+  provenance_issues: number;
+  ready: boolean;
+  request_count: number;
+}
+
 export interface ControlRoomRenderInput {
   context?: {
     correlation_id: string;
@@ -48,6 +59,7 @@ export interface ControlRoomRenderInput {
   control_plane?: ControlPlaneView | undefined;
   development_snapshot?: Phase1VerificationSnapshot | undefined;
   identity: ControlRoomIdentity | null;
+  memory_integration?: MemoryIntegrationView | undefined;
   path: string;
   state?: ViewState;
   supplemental?: Record<string, unknown>;
@@ -301,9 +313,22 @@ function controlPlaneScope(view: ControlPlaneView): string {
   return `<section aria-label="Control Plane scope"><div class="section-title"><h2>Control Plane scope</h2><span class="permission-note">Permission-scoped projection · domain ownership preserved</span></div><section class="metric-grid" aria-label="Control Plane summary"><article class="metric metric-working"><div class="metric-top"><span>Systems</span><span>registered</span></div><strong class="metric-value">${view.summary.systems}</strong><div class="metric-note">${view.summary.systems} systems</div></article><article class="metric metric-working"><div class="metric-top"><span>Projects</span><span>in scope</span></div><strong class="metric-value">${view.summary.projects}</strong><div class="metric-note">${view.summary.projects} projects</div></article><article class="metric metric-working"><div class="metric-top"><span>Runs</span><span>current</span></div><strong class="metric-value">${view.summary.runs}</strong><div class="metric-note">${view.summary.runs} runs</div></article><article class="metric metric-critical"><div class="metric-top"><span>Alerts</span><span>attention</span></div><strong class="metric-value">${view.summary.alerts}</strong><div class="metric-note">Unknown is never healthy</div></article></section><section class="panel"><div class="table-wrap"><table class="data-table"><caption>Authorized systems</caption><thead><tr><th>System</th><th>Lifecycle</th><th>Health</th><th>Owner</th><th>Source of truth</th></tr></thead><tbody>${rows}</tbody></table></div></section><div class="detail-grid" style="margin-top:18px"><section class="panel"><div class="panel-head"><h2>Blockers</h2></div><div class="panel-body"><ul>${blockers || "<li>No blockers in scope</li>"}</ul></div></section><section class="panel"><div class="panel-head"><h2>Next actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No pending actions</li>"}</ul></div></section></div></section>`;
 }
 
-function systemsPage(controlPlane?: ControlPlaneView): string {
+function memoryIntegrationPanel(view?: MemoryIntegrationView): string {
+  if (!view) return "";
+  const style = view.ready
+    ? "healthy"
+    : view.health === "UNAVAILABLE"
+      ? "failed"
+      : "waiting";
+  return `<div class="section-title"><h2>AI Memory Gateway Integration</h2><span class="permission-note">AI Memory Gateway is source of truth · MAOS stores references and governance metadata only</span></div><section class="panel" aria-label="AI Memory Gateway integration"><div class="panel-head"><h2>${escapeHtml(view.gateway_id)}</h2>${status(view.health, style)}</div><dl class="fact-grid"><div class="fact"><dt>Context status</dt><dd>${status(view.last_context_status, style)}</dd></div><div class="fact"><dt>Provenance issues</dt><dd>${view.provenance_issues}</dd></div><div class="fact"><dt>Requests</dt><dd>${view.request_count}</dd></div><div class="fact"><dt>Failure / latency</dt><dd>${Math.round(view.failure_rate * 100)}% · ${Math.round(view.average_latency_ms)} ms</dd></div></dl></section>`;
+}
+
+function systemsPage(
+  controlPlane?: ControlPlaneView,
+  memoryIntegration?: MemoryIntegrationView,
+): string {
   const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
-  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}${memoryIntegrationPanel(memoryIntegration)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
 }
 
 function statePage(state: Exclude<ViewState, "ready">): string {
@@ -375,12 +400,12 @@ function deploymentsPage(identity: ControlRoomIdentity): string {
 function routeContent(input: ControlRoomRenderInput): string {
   const path = input.path === "/" ? "/today" : input.path;
   if (path === "/development" || path.startsWith("/development/"))
-    return renderDevelopmentWorkspace({
+    return `${renderDevelopmentWorkspace({
       identity: input.identity!,
       path,
       snapshot: input.development_snapshot,
       state: input.state,
-    });
+    })}${memoryIntegrationPanel(input.memory_integration)}`;
   if (input.state && input.state !== "ready") return statePage(input.state);
   if (path === "/today") return todayPage(input.identity!);
   if (path === "/projects" || path.startsWith("/projects/"))
@@ -393,7 +418,8 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path.startsWith("/runs/")) return runDetail(path);
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
-  if (path === "/systems") return systemsPage(input.control_plane);
+  if (path === "/systems")
+    return systemsPage(input.control_plane, input.memory_integration);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }
