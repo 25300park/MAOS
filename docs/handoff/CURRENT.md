@@ -4,11 +4,11 @@ Last updated: 2026-09-04
 
 ## Current Phase
 
-**Phase 1P Final — Production Go / No-Go**
+**Phase 2 — MAOS Core Control Plane MVP**
 
-Status: **COMPLETE**
+Status: **NOT COMPLETE**
 
-Phase 1 MVP and Phase 1P Production Readiness Preparation are complete. Phase 1P Final evaluates production Go / No-Go evidence without performing production deployment.
+Phase 1 MVP and Phase 1P are complete. Phase 2 generalizes the accepted vertical-slice foundations into a reusable MAOS Core Control Plane without changing production approval or domain-system ownership.
 
 ## Completed
 
@@ -46,29 +46,29 @@ Phase 1 MVP and Phase 1P Production Readiness Preparation are complete. Phase 1P
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `ea0557ebc17b5b581ca3d41dc109cfa71d55eccc`
+- Commit: `9ca625dd55b101262c7a2b056e6d4d1464b0c8ff`
 - Root: `D:\10. MAOS`
 
-## Phase 1P Final Goal
+## Phase 2 Goal
 
-Evaluate verified, simulated, not-run, blocked, and human-action-required production evidence and issue an explicit Production Go / No-Go recommendation without deploying.
-
-Final gate result: Phase 1P Final is complete. Production is a no-go until the tracked human and real-environment prerequisites are satisfied. Phase 2 may begin under separate controls because frozen v1.0 does not require production deployment approval before Phase 2.
+Generalize and harden the Phase 1 vertical-slice foundations into the reusable MAOS Core Control Plane without changing existing domain-system ownership or production approval status.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-1P-final.md`
+- Phase manifest: `docs/context/phase-2.md`
 - Production readiness evidence: `docs/implementation/phase-1P-production-readiness-evidence.md`
 - Production gate evidence: `docs/implementation/phase-1P-final-production-gate-evidence.md`
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
+- Production gaps remain separately tracked and are not silently resolved by Phase 2 work.
 - External and domain systems remain independent systems and repositories by default.
 
 ## Guardrails
 
-- Do not implement new runtime functionality, perform real production deployment, or start Phase 2.
+- Do not implement Phase 2 until its implementation work is explicitly started on a short-lived task branch.
+- Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin the next phase automatically.
+- Do not begin Phase 3 or later work automatically.
