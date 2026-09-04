@@ -453,6 +453,99 @@ test("shows internal-only AI-MLS intake, candidate, verification, and task visib
   assert.doesNotMatch(html, /data-action="AI_MLS_PUBLISH"/);
 });
 
+test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
+  const html = controlRoom.renderControlRoom({
+    crm: {
+      blockers: 1,
+      contract_deadlines: 2,
+      health: "HEALTHY",
+      next_actions: [
+        "Confirm owner availability",
+        "Send reviewed viewing draft",
+      ],
+      overdue_tasks: 1,
+      source_reference: "crm://workspaces/employee-1/today",
+      tasks_due_today: 4,
+      upcoming_viewings: 2,
+      workload: "BALANCED",
+    },
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "CRM:READ"],
+    },
+    path: "/crm",
+  });
+  for (const text of [
+    "Human Work",
+    "Today",
+    "My Tasks",
+    "Customers",
+    "Listings",
+    "Calendar",
+    "Documents",
+    "Reports",
+    "Search",
+    "Natural-language work capture",
+    "Confirm owner availability",
+    "PRIVATE — ONLY YOU",
+    "CRM remains source of truth",
+  ])
+    assert.match(html, new RegExp(text.replaceAll("—", "—")));
+  assert.doesNotMatch(html, /ToolCall|MemoryCandidate|unrestricted shell/i);
+  assert.match(html, /crm-work-nav/);
+  assert.match(html, /overflow-x:auto/);
+});
+
+test("covers three employee workflows and keeps uncertain writes review-only", () => {
+  const html = controlRoom.renderControlRoom({
+    crm: {
+      blockers: 0,
+      contract_deadlines: 1,
+      health: "DEGRADED",
+      next_actions: ["Review captured work"],
+      overdue_tasks: 0,
+      source_reference: "crm://workspaces/employee-1/today",
+      tasks_due_today: 3,
+      upcoming_viewings: 1,
+      workload: "HIGH",
+    },
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "CRM:READ", "CRM:CAPTURE"],
+    },
+    path: "/crm",
+  });
+  for (const text of [
+    "Client / Lead handling",
+    "Listing / Owner handling",
+    "Contract / Documentation / Support",
+    "Employee review required",
+    "No duplicate entry",
+    "AI-MLS internal search",
+    "No autonomous sending",
+  ])
+    assert.match(html, new RegExp(text.replaceAll("/", "\\/")));
+  assert.match(html, /data-action="CRM:CAPTURE"/);
+  assert.doesNotMatch(html, /data-action="CRM:SEND"/);
+});
+
+test("hides CRM navigation and capture action without exact permissions", () => {
+  const hidden = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/today",
+  });
+  assert.doesNotMatch(hidden, />Human Work</);
+  const readOnly = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "CRM:READ"],
+    },
+    path: "/crm",
+  });
+  assert.doesNotMatch(readOnly, /data-action="CRM:CAPTURE"/);
+  assert.match(readOnly, /Read-only work visibility/);
+});
+
 test("shows AI Memory Gateway boundary, context provenance health, and degraded state without memory content", () => {
   const memoryIntegration = {
     average_latency_ms: 42,

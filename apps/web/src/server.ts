@@ -5,6 +5,7 @@ import {
   type AiMlsView,
   type ControlPlaneView,
   type ControlRoomIdentity,
+  type CrmView,
 } from "./control-room.js";
 
 export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
@@ -22,6 +23,8 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "ALERT:READ",
     "SYSTEM:READ",
     "AI_MLS:READ",
+    "CRM:READ",
+    "CRM:CAPTURE",
     "DEVELOPMENT:READ",
     "LOCAL_EXECUTION:EXECUTE",
     "LOCAL_EXECUTION:CANCEL",
@@ -92,10 +95,26 @@ export const CONTROL_ROOM_PREVIEW_AI_MLS: AiMlsView = {
   verification_backlog: 6,
 };
 
+export const CONTROL_ROOM_PREVIEW_CRM: CrmView = {
+  blockers: 1,
+  contract_deadlines: 2,
+  health: "HEALTHY",
+  next_actions: [
+    "Confirm owner availability",
+    "Review viewing confirmation draft",
+  ],
+  overdue_tasks: 1,
+  source_reference: "crm://workspaces/employee-1/today",
+  tasks_due_today: 4,
+  upcoming_viewings: 2,
+  workload: "BALANCED",
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
     control_plane?: ControlPlaneView | undefined;
+    crm?: CrmView | undefined;
     identity?: ControlRoomIdentity | null;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
@@ -113,6 +132,7 @@ export function createControlRoomServer(
     const html = renderControlRoom({
       ai_mls: options.ai_mls,
       control_plane: options.control_plane,
+      crm: options.crm,
       context: {
         correlation_id: correlationId,
         request_id: requestId,
@@ -145,6 +165,7 @@ if (process.argv[1]?.endsWith("server.js")) {
   const server = createControlRoomServer({
     ai_mls: preview ? CONTROL_ROOM_PREVIEW_AI_MLS : undefined,
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
+    crm: preview ? CONTROL_ROOM_PREVIEW_CRM : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION

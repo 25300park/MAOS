@@ -76,8 +76,21 @@ export interface AiMlsView {
   verification_backlog: number;
 }
 
+export interface CrmView {
+  blockers: number;
+  contract_deadlines: number;
+  health: string;
+  next_actions: readonly string[];
+  overdue_tasks: number;
+  source_reference: string;
+  tasks_due_today: number;
+  upcoming_viewings: number;
+  workload: string;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
+  crm?: CrmView | undefined;
   context?: {
     correlation_id: string;
     request_id: string;
@@ -178,6 +191,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "AI-MLS",
     path: "/ai-mls",
     permission: "AI_MLS:READ",
+    section: "OPERATE",
+  },
+  {
+    icon: "◒",
+    label: "Human Work",
+    path: "/crm",
+    permission: "CRM:READ",
     section: "OPERATE",
   },
   {
@@ -465,8 +485,29 @@ function routeContent(input: ControlRoomRenderInput): string {
     return systemsPage(input.control_plane, input.memory_integration);
   if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
+  if (path === "/crm") return crmPage(input.identity!, input.crm);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
+}
+
+function crmPage(identity: ControlRoomIdentity, view?: CrmView): string {
+  if (!view)
+    return `${pageHeading("CRM / Brokerage", "Human Work", "Your daily customer, listing, contract, schedule, and document work in one clear place.")}<section class="panel state-view"><div><div class="state-icon">◒</div><h2>No work snapshot yet</h2><p>CRM remains source of truth. Refresh when the independent CRM integration is available.</p><span class="permission-note">Read-only work visibility</span></div></section>`;
+  const capture = identity.permissions.includes("CRM:CAPTURE")
+    ? '<button class="btn btn-primary" type="button" data-action="CRM:CAPTURE">Review captured work</button><span class="permission-note">Employee review required before uncertain writes</span>'
+    : '<span class="permission-note">Read-only work visibility</span>';
+  const nextActions = view.next_actions
+    .map(
+      (action, index) =>
+        `<div class="attention-item"><span class="signal${index === 0 ? " red" : ""}"></span><div><h3>${escapeHtml(action)}</h3><p>Clear next action · owned by you</p></div><div class="attention-meta"><strong>${index === 0 ? "Today" : "Next"}</strong>CRM</div></div>`,
+    )
+    .join("");
+  return `${pageHeading("CRM / Brokerage · Human Work", "Today", "Focus on what needs attention now. CRM remains source of truth; MAOS receives privacy-safe operational summaries only.")}
+  <nav class="utility-row crm-work-nav" aria-label="Human Work navigation"><a class="btn btn-primary" href="/crm">Today</a><a class="btn" href="/crm/tasks">My Tasks</a><a class="btn" href="/crm/customers">Customers</a><a class="btn" href="/crm/listings">Listings</a><a class="btn" href="/crm/calendar">Calendar</a><a class="btn" href="/crm/documents">Documents</a><a class="btn" href="/crm/reports">Reports</a><a class="btn" href="/crm/search">Search</a></nav>
+  <section class="metric-grid" aria-label="Today's work summary"><article class="metric metric-working"><div class="metric-top"><span>Today’s tasks</span><span>${escapeHtml(view.health)}</span></div><strong class="metric-value">${view.tasks_due_today}</strong><div class="metric-note">Workload · ${escapeHtml(view.workload)}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Viewings</span><span>Schedule</span></div><strong class="metric-value">${view.upcoming_viewings}</strong><div class="metric-note">Upcoming appointments</div></article><article class="metric metric-critical"><div class="metric-top"><span>Overdue</span><span>Needs action</span></div><strong class="metric-value">${view.overdue_tasks}</strong><div class="metric-note">Blockers · ${view.blockers}</div></article><article class="metric metric-risk"><div class="metric-top"><span>Contracts</span><span>Deadlines</span></div><strong class="metric-value">${view.contract_deadlines}</strong><div class="metric-note">Review due dates</div></article></section>
+  <div class="content-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>Next actions</h2>${status("LIVE WORK", "active")}</div><div class="panel-body">${nextActions || '<p class="permission-note">Nothing urgent. Your next action will appear here.</p>'}</div></section><section class="panel"><div class="panel-head"><h2>Natural-language work capture</h2><span class="permission-note">No duplicate entry</span></div><div class="panel-body"><p>Describe completed work, a viewing, follow-up, or deadline once. The CRM structures Customer, Activity, Listing, Task, Calendar, and Report links.</p><div class="callout"><strong>Employee review required</strong><p>Low-confidence dates, owners, contacts, and writes remain candidates until you correct or confirm them. Original-input provenance stays in CRM.</p></div><div class="workspace-actions">${capture}</div></div></section></div>
+  <aside class="stack"><section class="panel"><div class="panel-head"><h2>Work modes</h2><span class="permission-note">3 employee personas</span></div><div class="panel-body persona-list"><p><strong>Client / Lead handling</strong><span>Customer context → follow-up → schedule → report</span></p><p><strong>Listing / Owner handling</strong><span>Listing context → owner check → viewing → next action</span></p><p><strong>Contract / Documentation / Support</strong><span>Deadline → AI draft → employee review → evidence</span></p></div></section><section class="panel"><div class="panel-head"><h2>Privacy & governed assistance</h2>${status("PRIVATE — ONLY YOU", "approval")}</div><div class="panel-body"><p><strong>Employee AI Assistant</strong></p><p>Contextual summaries, missing information, stale-listing warnings, document drafts, and next-best-action suggestions stay attached to work objects.</p><p><strong>AI-MLS internal search</strong></p><p>CRM requirement references may request verified or candidate results for employee review. No public publication.</p><div class="callout"><strong>No autonomous sending</strong><p>Drafting is separate from external communication. Private notes, journal, mood, and reflections are excluded from management visibility.</p></div><p class="permission-note">Source · ${escapeHtml(view.source_reference)}</p></div></section></aside></div>
+  <section class="section-title"><h2>Activity timeline</h2><span class="permission-note">Human action → AI draft → teammate result → next action</span></section><section class="panel"><div class="panel-body timeline"><div class="activity"><time>Today</time><strong>Work record synchronized by reference</strong><p>CRM task, schedule, document, and report links reuse the original work record.</p></div><div class="activity"><time>Next</time><strong>${escapeHtml(view.next_actions[0] ?? "No pending action")}</strong><p>Operational evidence and correlation stay linked without exposing private content.</p></div></div></section>`;
 }
 
 function aiMlsPage(view?: AiMlsView): string {

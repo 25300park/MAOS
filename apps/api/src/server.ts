@@ -4,15 +4,18 @@ import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import {
   AiMlsIntegrationService,
+  CrmHumanWorkService,
   MARKETING_ROLES,
   MarketingIntegrationService,
   RbsAdminPilotService,
   type DomainReadAdapter,
   type AiMlsAdapter,
+  type CrmAdapter,
   type MarketingAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
+import { createCrmRoutes } from "./crm-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
@@ -60,6 +63,38 @@ aiMls.registerSystem({
   version_reference: "gitref://ai-mls/main",
   visibility: "INTERNAL_ONLY",
   workroot_reference: "workroot://ai-mls",
+});
+const unavailableCrmAdapter: CrmAdapter = {
+  mode: "GOVERNED_REFERENCE_ONLY",
+  observeWork: async () => {
+    throw new Error("No external CRM adapter is configured");
+  },
+  structureCapture: async () => {
+    throw new Error("No external CRM adapter is configured");
+  },
+};
+const crm = new CrmHumanWorkService(unavailableCrmAdapter);
+crm.registerSystem({
+  actor: { id: "human-crm-owner", type: "HUMAN" },
+  capabilities: [
+    "READ_WORK",
+    "CAPTURE_WORK",
+    "DRAFT_DOCUMENT",
+    "SIMULATE_AI_MLS_SEARCH",
+  ],
+  correlation_id: "bootstrap:crm-integration",
+  credential_reference: "secretref://crm/integration",
+  environment_reference: "configref://crm/development",
+  health: "UNKNOWN",
+  id: "crm",
+  integration_state: "REGISTERED",
+  name: "CRM / Brokerage",
+  owner_actor_id: "human-crm-owner",
+  repository_reference: "registry://crm/repository",
+  source_of_truth: "DOMAIN_SYSTEM",
+  type: "DOMAIN_APPLICATION",
+  version_reference: "gitref://crm/main",
+  workroot_reference: "workroot://crm",
 });
 const unavailableMarketingAdapter: MarketingAdapter = {
   mode: "READ_ONLY_SIMULATION",
@@ -160,6 +195,10 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createCrmRoutes(crm, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
   ...createAiMlsRoutes(aiMls, {
     environment: config.environment,
     scope: "project-maos",

@@ -35,6 +35,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0013_ai_memory_knowledge_integration",
       "0014_marketing_automation_integration",
       "0015_ai_mls_integration",
+      "0016_crm_human_work_integration",
     ],
     skipped: [],
   });
@@ -790,6 +791,52 @@ test("persists only internal AI-MLS references and immutable observation metadat
   );
 });
 
+test("stores only CRM references and privacy-safe operational metadata", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+  const tables = await database.query<{ table_name: string }>(`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'integration' AND table_name LIKE 'crm_%'
+    ORDER BY table_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ table_name }) => table_name),
+    [
+      "crm_capture_candidates",
+      "crm_employee_scope_references",
+      "crm_work_observations",
+    ],
+  );
+  await database.exec(`
+    INSERT INTO integration.systems (id, name, system_type, source_of_truth, lifecycle, owner_actor_type, owner_actor_id)
+    VALUES ('crm', 'CRM', 'DOMAIN_APPLICATION', 'DOMAIN_SYSTEM', 'ACTIVE', 'HUMAN', 'owner');
+    INSERT INTO core.organizations (id, name, slug) VALUES ('00000000-0000-4000-8000-000000000601', 'CRM Org', 'crm-org');
+    INSERT INTO core.departments (id, organization_id, name) VALUES ('00000000-0000-4000-8000-000000000602', '00000000-0000-4000-8000-000000000601', 'Brokerage');
+    INSERT INTO core.projects (id, organization_id, department_id, name) VALUES ('00000000-0000-4000-8000-000000000603', '00000000-0000-4000-8000-000000000601', '00000000-0000-4000-8000-000000000602', 'CRM integration');
+    INSERT INTO integration.crm_employee_scope_references (system_id, employee_id, project_id, source_reference)
+    VALUES ('crm', 'employee-1', '00000000-0000-4000-8000-000000000603', 'crm://employees/employee-1');
+    INSERT INTO integration.crm_capture_candidates (system_id, employee_id, candidate_id, original_input_reference, deduplication_key, confidence, review_required, evidence_references, correlation_id)
+    VALUES ('crm', 'employee-1', 'candidate-1', 'crm://captures/capture-1', 'dedupe-1', 0.82, true, ARRAY['evidence://crm/capture-1'], 'corr-1');
+    INSERT INTO integration.crm_work_observations (system_id, employee_id, source_reference, workload, tasks_due_today, overdue_tasks, upcoming_viewings, contract_deadlines, blockers, evidence_references, correlation_id, observed_at)
+    VALUES ('crm', 'employee-1', 'crm://workspaces/employee-1/today', 'BALANCED', 4, 1, 2, 1, 1, ARRAY['evidence://crm/today'], 'corr-1', CURRENT_TIMESTAMP);
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE integration.crm_work_observations SET blockers = 0",
+      ),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(
+        "INSERT INTO integration.crm_capture_candidates (system_id, employee_id, candidate_id, original_input_reference, deduplication_key, confidence, review_required, evidence_references, correlation_id) VALUES ('crm', 'employee-1', 'candidate-private', 'crm://captures/private', 'dedupe-private', 1, false, ARRAY['evidence://crm/private'], 'corr-private')",
+      ),
+    /check constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -814,6 +861,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0013_ai_memory_knowledge_integration",
       "0014_marketing_automation_integration",
       "0015_ai_mls_integration",
+      "0016_crm_human_work_integration",
     ],
   });
 
@@ -831,8 +879,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 15);
-  assert.equal(version.latest_id, "0015_ai_mls_integration");
+  assert.equal(version.applied_count, 16);
+  assert.equal(version.latest_id, "0016_crm_human_work_integration");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(
