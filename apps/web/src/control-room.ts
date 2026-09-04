@@ -49,6 +49,20 @@ export interface MemoryIntegrationView {
   request_count: number;
 }
 
+export interface MarketingView {
+  approval_state: string;
+  campaign_id: string;
+  channels: readonly string[];
+  health: string;
+  kpi: { leads: number; reach: number };
+  next_action: string;
+  publisher_state: string;
+  qa_state: string;
+  roles: readonly string[];
+  source_reference: string;
+  status: string;
+}
+
 export interface ControlRoomRenderInput {
   context?: {
     correlation_id: string;
@@ -60,6 +74,7 @@ export interface ControlRoomRenderInput {
   development_snapshot?: Phase1VerificationSnapshot | undefined;
   identity: ControlRoomIdentity | null;
   memory_integration?: MemoryIntegrationView | undefined;
+  marketing?: MarketingView | undefined;
   path: string;
   state?: ViewState;
   supplemental?: Record<string, unknown>;
@@ -136,6 +151,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     path: "/systems",
     permission: "SYSTEM:READ",
     section: "GOVERN",
+  },
+  {
+    icon: "◈",
+    label: "Marketing",
+    path: "/marketing",
+    permission: "MARKETING:READ",
+    section: "OPERATE",
   },
   {
     icon: "⌘",
@@ -420,8 +442,29 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/systems")
     return systemsPage(input.control_plane, input.memory_integration);
+  if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
+}
+
+function marketingPage(view?: MarketingView): string {
+  if (!view)
+    return `${pageHeading("Independent system", "Marketing Automation", "MAOS coordinates governed visibility; Marketing remains source of truth.")}<section class="panel state-view"><div><div class="state-icon">◈</div><h2>No campaign observation</h2><p>The integration is registered without importing Marketing domain data.</p></div></section>`;
+  const roles = view.roles
+    .map(
+      (role) =>
+        `<span class="status status-working">${escapeHtml(role)}</span>`,
+    )
+    .join(" ");
+  const channels = view.channels
+    .map(
+      (channel) =>
+        `<span class="status status-active">${escapeHtml(channel)}</span>`,
+    )
+    .join(" ");
+  return `${pageHeading("Independent AI team", "Marketing Automation", "MAOS monitors and coordinates safely; Marketing remains source of truth.")}
+  <section class="metric-grid" aria-label="Marketing integration summary"><article class="metric metric-working"><div class="metric-top"><span>Campaign</span><span>${escapeHtml(view.health)}</span></div><strong class="metric-value" style="font-size:21px">${escapeHtml(view.campaign_id)}</strong><div class="metric-note">${escapeHtml(view.status)}</div></article><article class="metric metric-working"><div class="metric-top"><span>Reach</span><span>KPI feed</span></div><strong class="metric-value">${view.kpi.reach.toLocaleString("en-US")}</strong><div class="metric-note">Leads · ${view.kpi.leads}</div></article><article class="metric metric-approval"><div class="metric-top"><span>QA</span><span>Review only</span></div><strong class="metric-value" style="font-size:21px">${escapeHtml(view.qa_state)}</strong><div class="metric-note">QA PASS ≠ CEO / Production Approval</div></article><article class="metric metric-approval"><div class="metric-top"><span>Publisher</span><span>Governed</span></div><strong class="metric-value" style="font-size:18px">${escapeHtml(view.publisher_state).replaceAll("_", " ")}</strong><div class="metric-note">Publisher capability ≠ authority</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Campaign visibility</h2>${status(view.approval_state, "approval")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Source reference</dt><dd><code>${escapeHtml(view.source_reference)}</code></dd></div><div class="fact"><dt>Next action</dt><dd>${escapeHtml(view.next_action)}</dd></div><div class="fact"><dt>Channels</dt><dd>${channels}</dd></div><div class="fact"><dt>Boundary</dt><dd>Observation and simulation only</dd></div></dl><div class="callout"><strong>External publishing is unavailable.</strong><p>Exact human approval is required before Publisher progression; no production credentials or publish action exist here.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>10-role external team</h2><span class="permission-note">Registry visibility</span></div><div class="panel-body"><p>${roles}</p><p class="permission-note">Agent status and work references are observed; MAOS does not replace the Marketing workflow runtime.</p></div></aside></div>`;
 }
 
 function authenticationPage(): string {

@@ -33,6 +33,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0011_rbs_admin_pilot_foundation",
       "0012_core_control_plane_generalization",
       "0013_ai_memory_knowledge_integration",
+      "0014_marketing_automation_integration",
     ],
     skipped: [],
   });
@@ -694,6 +695,54 @@ test("creates generalized Control Plane registry, scope, and bounded-loop persis
   );
 });
 
+test("persists only governed Marketing references and immutable observations", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+  const tables = await database.query<{ table_name: string }>(`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'integration' AND table_name IN (
+      'marketing_team_members', 'marketing_campaign_links', 'marketing_observations'
+    ) ORDER BY table_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ table_name }) => table_name),
+    [
+      "marketing_campaign_links",
+      "marketing_observations",
+      "marketing_team_members",
+    ],
+  );
+  await database.exec(`
+    INSERT INTO integration.systems (id, name, system_type, source_of_truth, lifecycle, owner_actor_type, owner_actor_id)
+    VALUES ('marketing-automation', 'Marketing Automation', 'AI_AGENT_SYSTEM', 'DOMAIN_SYSTEM', 'ACTIVE', 'HUMAN', 'owner');
+    INSERT INTO core.organizations (id, name, slug) VALUES ('00000000-0000-4000-8000-000000000401', 'Marketing Org', 'marketing-org');
+    INSERT INTO core.departments (id, organization_id, name) VALUES ('00000000-0000-4000-8000-000000000402', '00000000-0000-4000-8000-000000000401', 'Marketing');
+    INSERT INTO core.projects (id, organization_id, department_id, name) VALUES ('00000000-0000-4000-8000-000000000403', '00000000-0000-4000-8000-000000000401', '00000000-0000-4000-8000-000000000402', 'Campaign visibility');
+    INSERT INTO work.tasks (id, project_id, title, task_type, status) VALUES ('00000000-0000-4000-8000-000000000404', '00000000-0000-4000-8000-000000000403', 'Observe campaign', 'DEVELOPMENT', 'IN_PROGRESS');
+    INSERT INTO integration.marketing_team_members (system_id, external_agent_id, role, current_work_reference, health, status)
+    VALUES ('marketing-automation', 'marketing-cmo', 'CMO', 'marketing://agents/cmo', 'HEALTHY', 'AVAILABLE');
+    INSERT INTO integration.marketing_campaign_links (system_id, campaign_id, project_id, task_id, source_reference, external_version, target_hash)
+    VALUES ('marketing-automation', 'campaign-4', '00000000-0000-4000-8000-000000000403', '00000000-0000-4000-8000-000000000404', 'marketing://campaigns/campaign-4', 'v4', 'sha256:${"a".repeat(64)}');
+    INSERT INTO integration.marketing_observations (system_id, campaign_id, source_reference, external_version, target_hash, campaign_status, qa_state, approval_state, publisher_state, evidence_references, correlation_id, observed_at)
+    VALUES ('marketing-automation', 'campaign-4', 'marketing://campaigns/campaign-4', 'v4', 'sha256:${"a".repeat(64)}', 'WAITING_APPROVAL', 'PASS', 'APPROVED', 'WAITING_AUTHORIZATION', ARRAY['evidence://marketing/qa'], 'corr-4', CURRENT_TIMESTAMP);
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE integration.marketing_observations SET qa_state = 'REVISE'",
+      ),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(
+        "INSERT INTO integration.marketing_team_members (system_id, external_agent_id, role, current_work_reference, health, status) VALUES ('marketing-automation', 'other-cmo', 'CMO', 'marketing://agents/other', 'HEALTHY', 'AVAILABLE')",
+      ),
+    /unique constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -716,6 +765,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0011_rbs_admin_pilot_foundation",
       "0012_core_control_plane_generalization",
       "0013_ai_memory_knowledge_integration",
+      "0014_marketing_automation_integration",
     ],
   });
 
@@ -733,8 +783,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 13);
-  assert.equal(version.latest_id, "0013_ai_memory_knowledge_integration");
+  assert.equal(version.applied_count, 14);
+  assert.equal(version.latest_id, "0014_marketing_automation_integration");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

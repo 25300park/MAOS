@@ -21,6 +21,7 @@ const operator = {
     "APPROVAL:DECIDE",
     "ALERT:READ",
     "SYSTEM:READ",
+    "MARKETING:READ",
     "DEVELOPMENT:READ",
     "RELEASE:READ",
     "AUDIT:READ",
@@ -367,6 +368,54 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
   ])
     assert.match(workspace, new RegExp(text));
   assert.doesNotMatch(workspace, /data-action="RBS_PRODUCTION_DEPLOY"/);
+});
+
+test("shows Marketing team, campaign, KPI, and governed publisher boundaries", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/marketing",
+    marketing: {
+      approval_state: "APPROVED",
+      campaign_id: "campaign-4",
+      channels: ["BLOG", "TIKTOK", "INSTAGRAM", "YOUTUBE"],
+      health: "HEALTHY",
+      kpi: { leads: 18, reach: 4200 },
+      next_action: "Publisher simulation after exact human approval",
+      publisher_state: "WAITING_AUTHORIZATION",
+      qa_state: "PASS",
+      roles: [
+        "CMO",
+        "STRATEGY",
+        "DATA_ANALYSIS",
+        "ADS",
+        "CONTENT",
+        "COPY",
+        "DESIGN",
+        "YOUTUBE",
+        "QA",
+        "PUBLISHER",
+      ],
+      source_reference: "marketing://campaigns/campaign-4",
+      status: "WAITING_APPROVAL",
+    },
+  });
+  for (const text of [
+    "Marketing Automation",
+    "Independent AI team",
+    "campaign-4",
+    "BLOG",
+    "TIKTOK",
+    "INSTAGRAM",
+    "YOUTUBE",
+    "QA PASS ≠ CEO / Production Approval",
+    "Publisher capability ≠ authority",
+    "Marketing remains source of truth",
+    "WAITING AUTHORIZATION",
+    "4,200",
+    "18",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /data-action="MARKETING_PUBLISH"/);
 });
 
 test("shows AI Memory Gateway boundary, context provenance health, and degraded state without memory content", () => {

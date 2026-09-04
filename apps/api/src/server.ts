@@ -3,12 +3,16 @@ import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import {
+  MARKETING_ROLES,
+  MarketingIntegrationService,
   RbsAdminPilotService,
   type DomainReadAdapter,
+  type MarketingAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
+import { createMarketingRoutes } from "./marketing-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
@@ -20,6 +24,49 @@ const unavailableAdapter: DomainReadAdapter = {
   },
 };
 const pilot = new RbsAdminPilotService(unavailableAdapter);
+const unavailableMarketingAdapter: MarketingAdapter = {
+  mode: "READ_ONLY_SIMULATION",
+  observeCampaign: async () => {
+    throw new Error("No external Marketing adapter is configured");
+  },
+};
+const marketing = new MarketingIntegrationService(unavailableMarketingAdapter);
+marketing.registerSystem({
+  actor: { id: "human-marketing-owner", type: "HUMAN" },
+  capabilities: [
+    "READ_CAMPAIGN_STATUS",
+    "READ_TEAM_STATUS",
+    "READ_KPI_STATUS",
+    "SIMULATE_PUBLISH",
+  ],
+  correlation_id: "bootstrap:marketing-integration",
+  credential_reference: "secretref://marketing-automation/readonly",
+  environment_reference: "configref://marketing-automation/preview",
+  health: "UNKNOWN",
+  id: "marketing-automation",
+  integration_state: "REGISTERED",
+  name: "Marketing Automation",
+  owner_actor_id: "human-marketing-owner",
+  repository_reference: "registry://marketing-automation/repository",
+  source_of_truth: "DOMAIN_SYSTEM",
+  type: "AI_AGENT_SYSTEM",
+  version_reference: "gitref://marketing-automation/main",
+  workroot_reference: "workroot://marketing-automation",
+});
+marketing.registerTeam({
+  actor: { id: "human-marketing-owner", type: "HUMAN" },
+  correlation_id: "bootstrap:marketing-integration",
+  members: MARKETING_ROLES.map((role) => ({
+    assignment_state: "UNASSIGNED" as const,
+    capabilities: ["STATUS_VISIBILITY"],
+    current_work_reference: `marketing://agents/${role.toLowerCase()}`,
+    external_agent_id: `marketing-${role.toLowerCase()}`,
+    health: "UNKNOWN" as const,
+    role,
+    status: "OFFLINE" as const,
+  })),
+  system_id: "marketing-automation",
+});
 for (const system of [
   { id: "rbs-homes", name: "RBS Homes", type: "PUBLIC_PLATFORM" as const },
   {
@@ -76,6 +123,10 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createMarketingRoutes(marketing, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
   ...createRbsAdminPilotRoutes(pilot, {
     environment: config.environment,
     scope: "project-maos",

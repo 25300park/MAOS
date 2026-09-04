@@ -1,5 +1,7 @@
 import type { ActorType, GovernanceDecision } from "@maos/contracts";
 
+export * from "./marketing-automation.js";
+
 export const INTEGRATION_MODULE = Object.freeze({
   name: "integration",
   status: "ACTIVE",
