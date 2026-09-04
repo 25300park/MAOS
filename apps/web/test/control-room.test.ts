@@ -62,6 +62,55 @@ test("renders a semantic Control Room shell and the complete authorized navigati
   assert.match(html, /What happens next/);
 });
 
+test("renders a permission-scoped multi-system Control Plane projection", () => {
+  const html = controlRoom.renderControlRoom({
+    control_plane: {
+      blockers: [
+        {
+          id: "task-blocked",
+          owner: { id: "human-owner", type: "HUMAN" },
+          status: "WAITING_APPROVAL",
+        },
+      ],
+      next_actions: [{ action: "HUMAN_APPROVAL", id: "task-blocked" }],
+      summary: { alerts: 1, projects: 2, runs: 3, systems: 2, tasks: 4 },
+      systems: [
+        {
+          health: "HEALTHY",
+          id: "maos",
+          lifecycle: "ACTIVE",
+          name: "MAOS Core",
+          owner: { id: "platform-owner", type: "HUMAN" },
+          source_of_truth: "MAOS",
+        },
+        {
+          health: "UNKNOWN",
+          id: "crm",
+          lifecycle: "ACTIVE",
+          name: "CRM <script>alert(1)</script>",
+          owner: { id: "revenue-owner", type: "HUMAN" },
+          source_of_truth: "DOMAIN_SYSTEM",
+        },
+      ],
+    },
+    identity: operator,
+    path: "/systems",
+  });
+
+  for (const text of [
+    "Control Plane scope",
+    "2 systems",
+    "2 projects",
+    "3 runs",
+    "task-blocked",
+    "HUMAN_APPROVAL",
+    "DOMAIN_SYSTEM",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.match(html, /CRM &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /CRM <script>/);
+});
+
 test("renders a permission-aware Deployment Center with immutable artifact and human approval boundaries", () => {
   const readOnly = controlRoom.renderControlRoom({
     identity: {
@@ -520,4 +569,45 @@ test("renders the actual Phase 1 verification snapshot without trusting snapshot
     html,
     /phase-1\.15A|task-dev-115a|loop-run-115a|pilot-rbs-118/,
   );
+});
+
+test("shows the generalized system, environment, repository, and workroot scope in Development", () => {
+  const html = controlRoom.renderControlRoom({
+    development_snapshot: {
+      approval_status: "NOT_REQUIRED",
+      artifact_hash: "sha256:phase2",
+      assigned_agent: "agent-platform",
+      blocker: null,
+      branch: "codex/phase-2-core-control-plane",
+      changed_files: ["modules/control-plane/src/index.ts"],
+      deployment_status: "NOT_APPROVED",
+      environment_id: "maos-development",
+      evidence_ids: ["evidence-phase2"],
+      loop_stage: "VERIFY",
+      next_action: "Human review",
+      owner: "human-platform-owner",
+      project_id: "project-maos",
+      qa_status: "PASS",
+      release_status: "NOT_REQUESTED",
+      repository_reference: "registry://maos/repository",
+      run_id: "run-phase2",
+      run_status: "RUNNING",
+      source_commit: "working-tree",
+      system_id: "maos",
+      task_id: "task-phase2",
+      task_status: "IN_PROGRESS",
+      test_status: "PASS",
+      verification_status: "PASS",
+      workroot_reference: "workroot://maos",
+    },
+    identity: operator,
+    path: "/development",
+  });
+  for (const value of [
+    "Control Plane Work Scope",
+    "maos-development",
+    "registry://maos/repository",
+    "workroot://maos",
+  ])
+    assert.match(html, new RegExp(value.replaceAll("/", "\\/")));
 });

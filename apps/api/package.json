@@ -13,6 +13,7 @@
     "@maos/contracts": "0.0.0",
     "@maos/logging": "0.0.0",
     "@maos/module-agent-runtime": "0.0.0",
+    "@maos/module-control-plane": "0.0.0",
     "@maos/module-governance": "0.0.0",
     "@maos/module-identity": "0.0.0",
     "@maos/module-integration": "0.0.0",

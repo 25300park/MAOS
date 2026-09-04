@@ -1,10 +1,12 @@
 import { loadApiConfig } from "@maos/config";
 import { createLogger } from "@maos/logging";
+import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import {
   RbsAdminPilotService,
   type DomainReadAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
+import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
@@ -46,10 +48,25 @@ for (const system of [
     workroot_reference: `workroot://${system.id}`,
     ...system,
   });
-const routes = createRbsAdminPilotRoutes(pilot, {
-  environment: config.environment,
-  scope: "project-maos",
+const controlPlane = new ControlPlaneRegistry();
+controlPlane.registerSystem({
+  id: "maos",
+  lifecycle: "ACTIVE",
+  name: "MAOS",
+  owner: { id: "human-platform-owner", type: "HUMAN" },
+  source_of_truth: "MAOS",
+  type: "INTERNAL_PLATFORM",
 });
+const routes = [
+  ...createRbsAdminPilotRoutes(pilot, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
+  ...createControlPlaneRoutes(controlPlane, {
+    environment: config.environment,
+    system_ids: ["maos"],
+  }),
+];
 const server = createApiServer({ ...config, logger, routes });
 
 server.listen(config.port, "0.0.0.0", () => {

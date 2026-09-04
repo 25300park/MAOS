@@ -31,6 +31,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0009_observability_audit_foundation",
       "0010_release_deployment_foundation",
       "0011_rbs_admin_pilot_foundation",
+      "0012_core_control_plane_generalization",
     ],
     skipped: [],
   });
@@ -78,6 +79,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "core.departments",
       "core.organizations",
       "core.project_members",
+      "core.project_system_links",
       "core.projects",
       "core.schema_migrations",
       "governance.approvals",
@@ -605,6 +607,60 @@ test("creates the read-only RBS/Admin pilot persistence boundary", async (t) => 
   );
 });
 
+test("creates generalized Control Plane registry, scope, and bounded-loop persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0012_core_control_plane_generalization"));
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('integration', 'systems'),
+      ('operations', 'system_environments'),
+      ('operations', 'repositories'),
+      ('operations', 'workroots'),
+      ('operations', 'runner_system_bindings'),
+      ('operations', 'runner_workroot_bindings'),
+      ('core', 'project_system_links'),
+      ('execution', 'control_loop_policies'),
+      ('execution', 'control_loop_runs')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "core.project_system_links",
+      "execution.control_loop_policies",
+      "execution.control_loop_runs",
+      "integration.systems",
+      "operations.repositories",
+      "operations.runner_system_bindings",
+      "operations.runner_workroot_bindings",
+      "operations.system_environments",
+      "operations.workroots",
+    ],
+  );
+
+  await assert.rejects(
+    database.exec(`
+      INSERT INTO integration.systems (
+        id, name, system_type, source_of_truth, lifecycle,
+        owner_actor_type, owner_actor_id
+      ) VALUES (
+        'crm', 'CRM', 'DOMAIN_APPLICATION', 'MAOS', 'ACTIVE',
+        'HUMAN', 'human-owner'
+      )
+    `),
+    /check constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -625,6 +681,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0009_observability_audit_foundation",
       "0010_release_deployment_foundation",
       "0011_rbs_admin_pilot_foundation",
+      "0012_core_control_plane_generalization",
     ],
   });
 
@@ -642,8 +699,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 11);
-  assert.equal(version.latest_id, "0011_rbs_admin_pilot_foundation");
+  assert.equal(version.applied_count, 12);
+  assert.equal(version.latest_id, "0012_core_control_plane_generalization");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

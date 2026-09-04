@@ -14,6 +14,30 @@ export interface ControlRoomIdentity {
 
 export type ViewState = DevelopmentWorkspaceState;
 
+export interface ControlPlaneView {
+  blockers: readonly {
+    id: string;
+    owner: { id: string; type: string };
+    status: string;
+  }[];
+  next_actions: readonly { action: string; id: string }[];
+  summary: {
+    alerts: number;
+    projects: number;
+    runs: number;
+    systems: number;
+    tasks: number;
+  };
+  systems: readonly {
+    health: string;
+    id: string;
+    lifecycle: string;
+    name: string;
+    owner: { id: string; type: string };
+    source_of_truth: string;
+  }[];
+}
+
 export interface ControlRoomRenderInput {
   context?: {
     correlation_id: string;
@@ -21,6 +45,7 @@ export interface ControlRoomRenderInput {
     span_id: string;
     trace_id: string;
   };
+  control_plane?: ControlPlaneView | undefined;
   development_snapshot?: Phase1VerificationSnapshot | undefined;
   identity: ControlRoomIdentity | null;
   path: string;
@@ -249,8 +274,36 @@ function alertsPage(supplemental?: Record<string, unknown>): string {
   return `${pageHeading("Operational signals", "Alerts", "Actionable conditions with severity, owner, scope, and the next safe response.")}<section class="card-grid"><article class="entity-card"><span class="status status-failed">CRITICAL · OPEN</span><h3>Runner latency threshold</h3><p>local-runner-2 · owner Platform Team</p><div class="entity-foot"><span>Started 09:30</span><strong>Inspect health</strong></div></article><article class="entity-card"><span class="status status-waiting">WARNING · OPEN</span><h3>Approval aging</h3><p>2 requests older than policy threshold</p><div class="entity-foot"><span>Owner Ops Lead</span><strong>Review queue</strong></div></article><article class="entity-card"><span class="status status-healthy">NOTICE · ACKNOWLEDGED</span><h3>Memory gateway recovery</h3><p>Readiness returned to HEALTHY</p><div class="entity-foot"><span>09:12</span><strong>View event</strong></div></article></section>${safe ? `<div class="section-title"><h2>Sanitized diagnostic context</h2></div><pre class="supplemental">${safe}</pre>` : ""}`;
 }
 
-function systemsPage(): string {
-  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+function controlPlaneScope(view: ControlPlaneView): string {
+  const rows = view.systems
+    .map((system) => {
+      const style =
+        system.health === "HEALTHY"
+          ? "healthy"
+          : system.health === "UNAVAILABLE"
+            ? "failed"
+            : "waiting";
+      return `<tr><td><strong>${escapeHtml(system.name)}</strong><br><small>${escapeHtml(system.id)}</small></td><td>${status(system.lifecycle, "active")}</td><td>${status(system.health, style)}</td><td>${escapeHtml(system.owner.id)} · ${escapeHtml(system.owner.type)}</td><td>${escapeHtml(system.source_of_truth)}</td></tr>`;
+    })
+    .join("");
+  const blockers = view.blockers
+    .map(
+      (blocker) =>
+        `<li><strong>${escapeHtml(blocker.id)}</strong> · ${escapeHtml(blocker.status)} · owner ${escapeHtml(blocker.owner.id)}</li>`,
+    )
+    .join("");
+  const nextActions = view.next_actions
+    .map(
+      (item) =>
+        `<li><strong>${escapeHtml(item.id)}</strong> · ${escapeHtml(item.action)}</li>`,
+    )
+    .join("");
+  return `<section aria-label="Control Plane scope"><div class="section-title"><h2>Control Plane scope</h2><span class="permission-note">Permission-scoped projection · domain ownership preserved</span></div><section class="metric-grid" aria-label="Control Plane summary"><article class="metric metric-working"><div class="metric-top"><span>Systems</span><span>registered</span></div><strong class="metric-value">${view.summary.systems}</strong><div class="metric-note">${view.summary.systems} systems</div></article><article class="metric metric-working"><div class="metric-top"><span>Projects</span><span>in scope</span></div><strong class="metric-value">${view.summary.projects}</strong><div class="metric-note">${view.summary.projects} projects</div></article><article class="metric metric-working"><div class="metric-top"><span>Runs</span><span>current</span></div><strong class="metric-value">${view.summary.runs}</strong><div class="metric-note">${view.summary.runs} runs</div></article><article class="metric metric-critical"><div class="metric-top"><span>Alerts</span><span>attention</span></div><strong class="metric-value">${view.summary.alerts}</strong><div class="metric-note">Unknown is never healthy</div></article></section><section class="panel"><div class="table-wrap"><table class="data-table"><caption>Authorized systems</caption><thead><tr><th>System</th><th>Lifecycle</th><th>Health</th><th>Owner</th><th>Source of truth</th></tr></thead><tbody>${rows}</tbody></table></div></section><div class="detail-grid" style="margin-top:18px"><section class="panel"><div class="panel-head"><h2>Blockers</h2></div><div class="panel-body"><ul>${blockers || "<li>No blockers in scope</li>"}</ul></div></section><section class="panel"><div class="panel-head"><h2>Next actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No pending actions</li>"}</ul></div></section></div></section>`;
+}
+
+function systemsPage(controlPlane?: ControlPlaneView): string {
+  const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
+  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
 }
 
 function statePage(state: Exclude<ViewState, "ready">): string {
@@ -340,7 +393,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path.startsWith("/runs/")) return runDetail(path);
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
-  if (path === "/systems") return systemsPage();
+  if (path === "/systems") return systemsPage(input.control_plane);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }

@@ -22,6 +22,7 @@ export interface Phase1VerificationSnapshot {
   branch: string;
   changed_files: readonly string[];
   deployment_status: string;
+  environment_id?: string;
   evidence_ids: readonly string[];
   loop_stage: string;
   next_action: string;
@@ -29,13 +30,16 @@ export interface Phase1VerificationSnapshot {
   project_id: string;
   qa_status: string;
   release_status: string;
+  repository_reference?: string;
   run_id: string;
   run_status: string;
   source_commit: string;
+  system_id?: string;
   task_id: string;
   task_status: string;
   test_status: string;
   verification_status: string;
+  workroot_reference?: string;
 }
 
 export interface DevelopmentWorkspaceInput {
@@ -68,7 +72,14 @@ function verificationPanel(snapshot?: Phase1VerificationSnapshot): string {
   const evidence = snapshot.evidence_ids.map(value).join(" · ");
   const statusStyle =
     snapshot.verification_status === "PASS" ? "healthy" : "working";
-  return `<section class="panel" aria-label="Phase 1 E2E verification"><div class="panel-head"><h2>Phase 1 E2E Verification</h2>${badge(value(snapshot.verification_status), statusStyle)}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Project</dt><dd>${value(snapshot.project_id)}</dd></div><div class="fact"><dt>Task</dt><dd>${value(snapshot.task_id)} · ${value(snapshot.task_status)}</dd></div><div class="fact"><dt>Owner / Agent</dt><dd>${value(snapshot.owner)} · ${value(snapshot.assigned_agent)}</dd></div><div class="fact"><dt>Run / Loop stage</dt><dd>${value(snapshot.run_id)} · ${value(snapshot.run_status)} · ${value(snapshot.loop_stage)}</dd></div><div class="fact"><dt>Blocker / Approval</dt><dd>${value(blocker)} · ${value(snapshot.approval_status)}</dd></div><div class="fact"><dt>Test / QA</dt><dd>${value(snapshot.test_status)} · ${value(snapshot.qa_status)}</dd></div><div class="fact"><dt>Release / Deployment</dt><dd>${value(snapshot.release_status)} · ${value(snapshot.deployment_status)}</dd></div><div class="fact"><dt>Artifact binding</dt><dd>${value(snapshot.artifact_hash)} · ${value(snapshot.source_commit)}</dd></div></dl><div class="repository-boundary"><strong>Branch and changed files</strong><span>${value(snapshot.branch)}</span><ul>${files}</ul></div><p><strong>Next action</strong> · ${value(snapshot.next_action)}</p><p class="permission-note"><strong>Evidence</strong> · ${evidence}</p></div></section>`;
+  const scope =
+    snapshot.system_id &&
+    snapshot.environment_id &&
+    snapshot.repository_reference &&
+    snapshot.workroot_reference
+      ? `<div class="repository-boundary"><strong>Control Plane Work Scope</strong><span>${value(snapshot.system_id)} · ${value(snapshot.environment_id)}</span><span>${value(snapshot.repository_reference)}</span><span>${value(snapshot.workroot_reference)}</span></div>`
+      : "";
+  return `<section class="panel" aria-label="Phase 1 E2E verification"><div class="panel-head"><h2>Phase 1 E2E Verification</h2>${badge(value(snapshot.verification_status), statusStyle)}</div><div class="panel-body">${scope}<dl class="fact-grid"><div class="fact"><dt>Project</dt><dd>${value(snapshot.project_id)}</dd></div><div class="fact"><dt>Task</dt><dd>${value(snapshot.task_id)} · ${value(snapshot.task_status)}</dd></div><div class="fact"><dt>Owner / Agent</dt><dd>${value(snapshot.owner)} · ${value(snapshot.assigned_agent)}</dd></div><div class="fact"><dt>Run / Loop stage</dt><dd>${value(snapshot.run_id)} · ${value(snapshot.run_status)} · ${value(snapshot.loop_stage)}</dd></div><div class="fact"><dt>Blocker / Approval</dt><dd>${value(blocker)} · ${value(snapshot.approval_status)}</dd></div><div class="fact"><dt>Test / QA</dt><dd>${value(snapshot.test_status)} · ${value(snapshot.qa_status)}</dd></div><div class="fact"><dt>Release / Deployment</dt><dd>${value(snapshot.release_status)} · ${value(snapshot.deployment_status)}</dd></div><div class="fact"><dt>Artifact binding</dt><dd>${value(snapshot.artifact_hash)} · ${value(snapshot.source_commit)}</dd></div></dl><div class="repository-boundary"><strong>Branch and changed files</strong><span>${value(snapshot.branch)}</span><ul>${files}</ul></div><p><strong>Next action</strong> · ${value(snapshot.next_action)}</p><p class="permission-note"><strong>Evidence</strong> · ${evidence}</p></div></section>`;
 }
 
 function workspaceState(
