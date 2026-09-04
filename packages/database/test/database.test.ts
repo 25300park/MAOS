@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { applyMigrations, loadMigrations } from "../src/index.js";
+import {
+  applyMigrations,
+  getSchemaVersion,
+  loadMigrations,
+  validateMigrationSafety,
+} from "../src/index.js";
 
 const migrationsDirectory = resolve("packages/database/migrations");
 
@@ -629,5 +634,74 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
   await assert.rejects(
     applyMigrations(database, drifted),
     /checksum mismatch.*0001_canonical_schemas/i,
+  );
+});
+
+test("reports the applied schema version and rolls back a failed migration", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  await applyMigrations(database, await loadMigrations(migrationsDirectory));
+  const version = await getSchemaVersion(database);
+  assert.equal(version.applied_count, 11);
+  assert.equal(version.latest_id, "0011_rbs_admin_pilot_foundation");
+  assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
+
+  await assert.rejects(
+    applyMigrations(database, [
+      {
+        checksum: "f".repeat(64),
+        id: "0012_failure_probe",
+        sql: "CREATE TABLE core.partial_probe(id text); SELECT * FROM core.missing_probe;",
+      },
+    ]),
+  );
+  const partial = await database.query<{ count: string }>(`
+    SELECT count(*)::text AS count FROM information_schema.tables
+    WHERE table_schema = 'core' AND table_name = 'partial_probe'
+  `);
+  assert.equal(partial.rows[0]?.count, "0");
+});
+
+test("requires lock, fresh verified backup, and recovery strategy for production migrations", () => {
+  assert.deepEqual(
+    validateMigrationSafety({
+      automatic: false,
+      backup_age_ms: 30_000,
+      backup_status: "VERIFIED",
+      destructive: false,
+      environment: "PRODUCTION",
+      lock_required: true,
+      max_backup_age_ms: 60_000,
+      recovery_strategy: "FORWARD_FIX",
+    }),
+    { allowed: true, requires_human_approval: true },
+  );
+  assert.throws(
+    () =>
+      validateMigrationSafety({
+        automatic: true,
+        backup_age_ms: 30_000,
+        backup_status: "VERIFIED",
+        destructive: true,
+        environment: "PRODUCTION",
+        lock_required: true,
+        max_backup_age_ms: 60_000,
+        recovery_strategy: "FORWARD_FIX",
+      }),
+    /DESTRUCTIVE_AUTO_MIGRATION_FORBIDDEN/,
+  );
+  assert.throws(
+    () =>
+      validateMigrationSafety({
+        automatic: false,
+        backup_age_ms: 90_000,
+        backup_status: "VERIFIED",
+        destructive: false,
+        environment: "PRODUCTION",
+        lock_required: true,
+        max_backup_age_ms: 60_000,
+        recovery_strategy: "FORWARD_FIX",
+      }),
+    /FRESH_BACKUP_REQUIRED/,
   );
 });

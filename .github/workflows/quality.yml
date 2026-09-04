@@ -23,4 +23,6 @@ jobs:
       - run: npm run db:verify
       - run: npm run check:boundaries
       - run: npm run smoke:health
+      - run: npm run verify:production-readiness
+      - run: npm run scan:repository
       - run: npm audit --audit-level=high

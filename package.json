@@ -22,7 +22,9 @@
     "db:migrate": "tsx scripts/database-verify.ts",
     "db:verify": "tsx scripts/database-verify.ts",
     "smoke:api": "tsx scripts/smoke-api.ts",
-    "smoke:health": "tsx scripts/smoke-health.ts"
+    "smoke:health": "tsx scripts/smoke-health.ts",
+    "scan:repository": "tsx scripts/repository-safety-scan.ts",
+    "verify:production-readiness": "tsx scripts/production-readiness-verify.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
