@@ -4,22 +4,23 @@ Last updated: 2026-09-04
 
 ## Current Phase
 
-**Phase 2 — MAOS Core Control Plane MVP**
+**Phase 3 — AI Memory & Knowledge Integration**
 
 Status: **NOT COMPLETE**
 
-Phase 1 MVP and Phase 1P are complete. Phase 2 generalizes the accepted vertical-slice foundations into a reusable MAOS Core Control Plane without changing production approval or domain-system ownership.
+Phase 1 MVP, Phase 1P, and Phase 2 are complete. Phase 3 will integrate governed memory and knowledge context while preserving AI Memory Gateway as the external memory source of truth and MAOS as the enterprise work and AI control plane.
 
 ## Completed
 
 - Phase 1 Final — MVP Go / No-Go: **COMPLETE**
 - Phase 1P — Production Readiness Preparation: **COMPLETE**
 - Phase 1P Final — Production Go / No-Go: **COMPLETE**
+- Phase 2 — MAOS Core Control Plane MVP: **COMPLETE**
 - MVP_READY: **YES**
 - PRODUCTION_PREPARATION_COMPLETE: **YES**
 - PRODUCTION_READY: **NO**
 - PRODUCTION_DEPLOYMENT_APPROVED: **NO**
-- PHASE_2_READY: **YES — separate Phase 2 control authorization required**
+- PHASE_2_READY: **YES — completed under separate Phase 2 controls**
 - Phase 0 — Architecture Foundation: **COMPLETE / FROZEN v1.0**
 - Phase 1.1 — MVP Scope Definition: **COMPLETE**
 - Phase 1.2 — Implementation Breakdown: **COMPLETE**
@@ -46,29 +47,32 @@ Phase 1 MVP and Phase 1P are complete. Phase 2 generalizes the accepted vertical
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `9ca625dd55b101262c7a2b056e6d4d1464b0c8ff`
+- Commit: `039a917625bfd3515b284c5c5c6bfbef7ea66b44`
 - Root: `D:\10. MAOS`
 
-## Phase 2 Goal
+## Phase 3 Goal
 
-Generalize and harden the Phase 1 vertical-slice foundations into the reusable MAOS Core Control Plane without changing existing domain-system ownership or production approval status.
+Generalize the governed AI Memory Gateway integration into reusable task-scoped memory and knowledge context services without moving memory ownership into MAOS or duplicating memory storage.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-2.md`
+- Phase manifest: `docs/context/phase-3.md`
+- Phase 2 evidence: `docs/implementation/phase-2-core-control-plane-evidence.md`
 - Production readiness evidence: `docs/implementation/phase-1P-production-readiness-evidence.md`
 - Production gate evidence: `docs/implementation/phase-1P-final-production-gate-evidence.md`
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
-- Production gaps remain separately tracked and are not silently resolved by Phase 2 work.
+- Production gaps remain separately tracked and are not silently resolved by Phase 3 work.
 - External and domain systems remain independent systems and repositories by default.
+- AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.
+- Any overlap with a Personal Agent remains separately governed and cannot silently enter enterprise context.
 
 ## Guardrails
 
-- Do not implement Phase 2 until its implementation work is explicitly started on a short-lived task branch.
+- Do not implement Phase 3 until its implementation work is explicitly started on a short-lived task branch.
 - Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 3 or later work automatically.
+- Do not begin Phase 4 or later work automatically.
