@@ -145,6 +145,22 @@ export interface HrLaborView {
   workload: string;
 }
 
+export interface LegalComplianceView {
+  blocked_reviews: number;
+  external_actions_enabled: false;
+  high_risk_issues: number;
+  last_verified_at: string;
+  next_deadline: string;
+  next_action: string;
+  open_deadlines: number;
+  owners: readonly string[];
+  source_states: { current: number; stale_or_unverified: number };
+  source_status: "CURRENT" | "NOT_VERIFIED" | "VERIFICATION_REQUIRED";
+  team_roles: readonly string[];
+  waiting_human_approval: number;
+  workload: number;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -159,6 +175,7 @@ export interface ControlRoomRenderInput {
   erp_finance?: ErpFinanceView | undefined;
   hr_labor?: HrLaborView | undefined;
   identity: ControlRoomIdentity | null;
+  legal_compliance?: LegalComplianceView | undefined;
   memory_integration?: MemoryIntegrationView | undefined;
   marketing?: MarketingView | undefined;
   path: string;
@@ -272,6 +289,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "HR & Labor",
     path: "/hr-labor",
     permission: "HR:READ",
+    section: "GOVERN",
+  },
+  {
+    icon: "§",
+    label: "Legal & Regulatory",
+    path: "/legal-compliance",
+    permission: "LEGAL:READ",
     section: "GOVERN",
   },
   {
@@ -505,6 +529,17 @@ function hrLaborPage(view?: HrLaborView): string {
   <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Labor compliance posture</h2>${status("REFERENCE ONLY", "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Deadline risks</dt><dd>${view.deadline_risks}</dd></div><div class="fact"><dt>Next deadline</dt><dd>${escapeHtml(view.next_deadline)}</dd></div><div class="fact"><dt>Last verified</dt><dd>${escapeHtml(view.last_verified_at)}</dd></div><div class="fact"><dt>ERP / HR boundary</dt><dd>ERP / HR remains source of truth</dd></div></dl><div class="callout"><strong>Human HR authority remains final</strong><p>Labor Compliance Agent output supports analysis, review, and drafting only. No filing, payment, discipline, termination, or hiring action is available in Phase 9.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>Labor Compliance Agent</h2><span class="permission-note">Separated analysis and review</span></div><div class="panel-body"><p>${agents}</p><p class="permission-note">Private employee content, payroll values, medical information, and disciplinary details remain outside this management projection.</p></div></aside></div>`;
 }
 
+function legalCompliancePage(view?: LegalComplianceView): string {
+  if (!view)
+    return `${pageHeading("Human legal authority", "PH Legal &amp; Regulatory", "Governed legal research, drafting, review, risk, and deadline visibility without exposing privileged matter content.")}<section class="panel state-view"><div><div class="state-icon">§</div><h2>No authorized legal workload</h2><p>Bind an approved matter and purpose scope to view privacy-safe operational status.</p><span class="permission-note">Official-source verification required</span></div></section>`;
+  const roles = view.team_roles
+    .map((role) => escapeHtml(role.replaceAll("_", " ")))
+    .join(" · ");
+  return `${pageHeading("Human legal authority", "PH Legal &amp; Regulatory", "Current-source research, drafting, independent QA, and human legal review with privileged details excluded from management views.")}
+  <section class="metric-grid" aria-label="PH legal and regulatory management summary"><article class="metric metric-working"><div class="metric-top"><span>Legal workload</span><span>Internal support</span></div><strong class="metric-value">${view.workload}</strong><div class="metric-note">Official source verification · ${view.source_states.current} current</div></article><article class="metric metric-critical"><div class="metric-top"><span>High-risk issues</span><span>Needs review</span></div><strong class="metric-value">${view.high_risk_issues}</strong><div class="metric-note">Blocked reviews · ${view.blocked_reviews}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Human approval required</span><span>Final authority</span></div><strong class="metric-value">${view.waiting_human_approval}</strong><div class="metric-note">AI and QA cannot self-approve</div></article><article class="metric metric-risk"><div class="metric-top"><span>Open deadlines</span><span>Monitored</span></div><strong class="metric-value">${view.open_deadlines}</strong><div class="metric-note">Next · ${escapeHtml(view.next_deadline)}</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Source and review posture</h2>${status(view.source_status.replaceAll("_", " "), view.source_status === "CURRENT" ? "healthy" : "approval")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Current sources</dt><dd>${view.source_states.current}</dd></div><div class="fact"><dt>Stale / unverified</dt><dd>${view.source_states.stale_or_unverified}</dd></div><div class="fact"><dt>Last verified result</dt><dd>${escapeHtml(view.last_verified_at)}</dd></div><div class="fact"><dt>Owner</dt><dd>${escapeHtml(view.owners.join(", ") || "UNASSIGNED")}</dd></div><div class="fact"><dt>Next action</dt><dd>${escapeHtml(view.next_action.replaceAll("_", " "))}</dd></div><div class="fact"><dt>External action</dt><dd>DENIED</dd></div></dl><div class="callout"><strong>Human legal authority remains final</strong><p>AI supports research, drafting, review, risk identification, and compliance preparation only. No filing, signing, payment, submission, or legal representation is available.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>PH Legal / Regulatory AI Team</h2><span class="permission-note">Explicit role separation</span></div><div class="panel-body"><p>${roles}</p><p class="permission-note">Matter content, contract clauses, employee details, and privilege-sensitive material are not exposed in this management projection.</p></div></aside></div>`;
+}
+
 function statePage(state: Exclude<ViewState, "ready">): string {
   const states = {
     loading: [
@@ -604,6 +639,8 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/finance-compliance")
     return financeCompliancePage(input.erp_finance);
   if (path === "/hr-labor") return hrLaborPage(input.hr_labor);
+  if (path === "/legal-compliance")
+    return legalCompliancePage(input.legal_compliance);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }

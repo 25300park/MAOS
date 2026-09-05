@@ -8,6 +8,7 @@ import {
   type CrmView,
   type ErpFinanceView,
   type HrLaborView,
+  type LegalComplianceView,
   type RbsAdminView,
 } from "./control-room.js";
 
@@ -30,6 +31,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "CRM:CAPTURE",
     "ERP:READ",
     "HR:READ",
+    "LEGAL:READ",
     "DEVELOPMENT:READ",
     "LOCAL_EXECUTION:EXECUTE",
     "LOCAL_EXECUTION:CANCEL",
@@ -197,6 +199,30 @@ export const CONTROL_ROOM_PREVIEW_HR_LABOR: HrLaborView = {
   workload: "HIGH",
 };
 
+export const CONTROL_ROOM_PREVIEW_LEGAL_COMPLIANCE: LegalComplianceView = {
+  blocked_reviews: 1,
+  external_actions_enabled: false,
+  high_risk_issues: 2,
+  last_verified_at: "2026-09-06T10:00:00Z",
+  next_deadline: "2026-09-30T00:00:00Z",
+  next_action: "HUMAN_APPROVAL",
+  open_deadlines: 4,
+  owners: ["human-lawyer"],
+  source_states: { current: 7, stale_or_unverified: 1 },
+  source_status: "VERIFICATION_REQUIRED",
+  team_roles: [
+    "FINANCE_COMPLIANCE_LEAD",
+    "CORPORATE_LEGAL_AGENT",
+    "CONTRACT_REVIEW_AGENT",
+    "REAL_ESTATE_LEGAL_AGENT",
+    "REGULATORY_RESEARCH_AGENT",
+    "LABOR_COMPLIANCE_AGENT",
+    "COMPLIANCE_QA_AGENT",
+  ],
+  waiting_human_approval: 2,
+  workload: 8,
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
@@ -205,6 +231,7 @@ export function createControlRoomServer(
     erp_finance?: ErpFinanceView | undefined;
     hr_labor?: HrLaborView | undefined;
     identity?: ControlRoomIdentity | null;
+    legal_compliance?: LegalComplianceView | undefined;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
     rbs_admin?: RbsAdminView | undefined;
@@ -232,6 +259,7 @@ export function createControlRoomServer(
         trace_id: traceId,
       },
       identity,
+      legal_compliance: options.legal_compliance,
       memory_integration: options.memory_integration,
       path,
       rbs_admin: options.rbs_admin,
@@ -262,6 +290,9 @@ if (process.argv[1]?.endsWith("server.js")) {
     erp_finance: preview ? CONTROL_ROOM_PREVIEW_ERP_FINANCE : undefined,
     hr_labor: preview ? CONTROL_ROOM_PREVIEW_HR_LABOR : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
+    legal_compliance: preview
+      ? CONTROL_ROOM_PREVIEW_LEGAL_COMPLIANCE
+      : undefined,
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION
       : undefined,

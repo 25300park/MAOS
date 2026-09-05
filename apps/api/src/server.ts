@@ -12,8 +12,11 @@ import {
   HR_CAPABILITIES,
   HrLaborService,
   LABOR_AGENT_CAPABILITIES,
+  LEGAL_ROLE_CAPABILITIES,
+  LEGAL_TEAM_ROLES,
   MARKETING_ROLES,
   MarketingIntegrationService,
+  PhLegalRegulatoryService,
   InMemoryHandoffEvidenceRegistry,
   RbsAdminPilotService,
   type DomainReadAdapter,
@@ -22,12 +25,14 @@ import {
   type ErpAccountingTaxAdapter,
   type HrLaborAdapter,
   type MarketingAdapter,
+  type OfficialSourceAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
 import { createHrLaborRoutes } from "./hr-labor-routes.js";
+import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
@@ -300,6 +305,74 @@ hr.registerLaborAgents({
   correlation_id: "bootstrap:hr-labor",
   system_id: "erp-hr",
 });
+const unavailableOfficialSourceAdapter: OfficialSourceAdapter = {
+  health: "UNAVAILABLE",
+  mode: "OFFICIAL_SOURCE_REFERENCE_ONLY",
+  verify: async () => {
+    throw new Error("No approved official-source adapter is configured");
+  },
+};
+const legal = new PhLegalRegulatoryService(
+  unavailableOfficialSourceAdapter,
+  undefined,
+  (event) =>
+    erpObservability.recordEvent({
+      context: erpObservationContext(
+        event.correlation_id,
+        "ph-legal-regulatory",
+        event.project_id,
+      ),
+      name: event.name,
+      payload: {
+        evidence_refs: event.evidence_refs,
+        ...(event.error_code ? { error_code: event.error_code } : {}),
+        ...(event.governance ? { governance: event.governance } : {}),
+        ...(event.work_id ? { work_id: event.work_id } : {}),
+      },
+    }),
+  {
+    record: (record) =>
+      erpObservability.recordAudit({
+        action: record.action.includes(".")
+          ? record.action
+          : `LEGAL.${record.action}`,
+        actor: record.actor,
+        context: erpObservationContext(
+          record.correlation_id,
+          "ph-legal-regulatory",
+          record.project_id,
+        ),
+        evidence_refs: record.evidence_refs,
+        ...(record.error_code || record.governance
+          ? {
+              metadata: {
+                ...(record.error_code ? { error_code: record.error_code } : {}),
+                ...(record.governance ? { governance: record.governance } : {}),
+              },
+            }
+          : {}),
+        result: record.result,
+        target: record.target,
+      }),
+  },
+  {
+    evaluate: () => ({
+      allowed: false,
+      authority: "UNKNOWN",
+      validity: "AUTHORITY_INVALID",
+    }),
+  },
+);
+legal.registerTeam({
+  actor: { id: "human-legal-owner", type: "HUMAN" },
+  correlation_id: "bootstrap:ph-legal-regulatory",
+  members: LEGAL_TEAM_ROLES.map((role) => ({
+    agent_id: `agent-${role.toLowerCase()}`,
+    capabilities: LEGAL_ROLE_CAPABILITIES[role],
+    role,
+    status: "OFFLINE" as const,
+  })),
+});
 const unavailableMarketingAdapter: MarketingAdapter = {
   mode: "READ_ONLY_SIMULATION",
   observeCampaign: async () => {
@@ -409,6 +482,10 @@ const routes = [
     scope: "project-maos",
   }),
   ...createHrLaborRoutes(hr, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
+  ...createPhLegalRegulatoryRoutes(legal, {
     environment: config.environment,
     scope: "project-maos",
   }),

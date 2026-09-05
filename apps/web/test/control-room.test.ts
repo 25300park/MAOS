@@ -636,6 +636,70 @@ test("hides HR and Labor navigation without exact permission", () => {
   assert.match(denied, /Screen not available/);
 });
 
+test("shows privilege-safe PH legal and regulatory workload with human authority", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "LEGAL:READ"],
+    },
+    legal_compliance: {
+      blocked_reviews: 2,
+      external_actions_enabled: false,
+      high_risk_issues: 3,
+      last_verified_at: "2026-09-06T10:00:00Z",
+      next_deadline: "2026-09-30T00:00:00Z",
+      next_action: "HUMAN_APPROVAL",
+      open_deadlines: 4,
+      owners: ["human-lawyer"],
+      source_states: { current: 7, stale_or_unverified: 1 },
+      source_status: "VERIFICATION_REQUIRED",
+      team_roles: [
+        "FINANCE_COMPLIANCE_LEAD",
+        "CORPORATE_LEGAL_AGENT",
+        "CONTRACT_REVIEW_AGENT",
+        "REAL_ESTATE_LEGAL_AGENT",
+        "REGULATORY_RESEARCH_AGENT",
+        "LABOR_COMPLIANCE_AGENT",
+        "COMPLIANCE_QA_AGENT",
+      ],
+      waiting_human_approval: 2,
+      workload: 8,
+    },
+    path: "/legal-compliance",
+  });
+  for (const text of [
+    "PH Legal &amp; Regulatory",
+    "Official source verification",
+    "High-risk issues",
+    "Human approval required",
+    "Blocked reviews",
+    "2026-09-30",
+    "Human legal authority remains final",
+    "human-lawyer",
+    "HUMAN APPROVAL",
+    "No filing, signing, payment, submission, or legal representation",
+    "COMPLIANCE QA AGENT",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(
+    html,
+    /client_name|contract_clause|employee_name|privileged_content/i,
+  );
+  assert.doesNotMatch(
+    html,
+    /data-action="(?:SEC_SUBMISSION|LEGAL_SIGNING|PAYMENT|REPRESENTATION)"/,
+  );
+});
+
+test("hides PH legal and regulatory navigation without exact permission", () => {
+  const denied = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/legal-compliance",
+  });
+  assert.doesNotMatch(denied, />Legal &amp; Regulatory</);
+  assert.match(denied, /Screen not available/);
+});
+
 test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
   const html = controlRoom.renderControlRoom({
     crm: {
