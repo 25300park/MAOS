@@ -1,14 +1,14 @@
 # MAOS CURRENT STATE
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 ## Current Phase
 
-**Phase 7 — RBS / Admin Integration**
+**Phase 8 — ERP / Accounting / Tax Integration**
 
 Status: **NOT COMPLETE**
 
-Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, and Phase 6 are complete. Phase 7 will integrate the independent RBS consumer platform and Admin system through governed MAOS contracts without relocating their source-of-truth data or AWS infrastructure.
+Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, and Phase 7 are complete. Phase 8 will integrate the independently owned ERP with a governed PH Accounting/Tax AI Team while preserving ERP source-of-truth ownership and final human authority.
 
 ## Completed
 
@@ -20,6 +20,7 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, and Phase 6 are compl
 - Phase 4 — Marketing Automation Integration: **COMPLETE**
 - Phase 5 — AI-MLS Integration: **COMPLETE**
 - Phase 6 — CRM / Brokerage / Human Work Integration: **COMPLETE**
+- Phase 7 — RBS / Admin Integration: **COMPLETE**
 - MVP_READY: **YES**
 - PRODUCTION_PREPARATION_COMPLETE: **YES**
 - PRODUCTION_READY: **NO**
@@ -51,16 +52,18 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, and Phase 6 are compl
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `7aab7f79f066d3ff01bc9251798c23777d3dbe32`
+- Commit: `35d4451713d7623f5b3de0fbacb4e0ef6a916720`
 - Root: `D:\10. MAOS`
 
-## Phase 7 Goal
+## Phase 8 Goal
 
-Integrate RBS and Admin as separate independently owned systems that MAOS can monitor and coordinate through governed contracts while preserving existing AWS infrastructure, domain source-of-truth ownership, and explicit human approval for every production mutation.
+Integrate the independently owned ERP with governed accounting and tax analysis, review, and drafting workflows while preserving ERP operational source-of-truth ownership, final human authority, and explicit approval before any real filing, payment, or submission.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-7.md`
+- Phase manifest: `docs/context/phase-8.md`
+- Phase 7 control commit: `eec8e81631a52ee2672fa02173a2fed41cb7cb08`
+- Phase 7 implementation commit: `35d4451713d7623f5b3de0fbacb4e0ef6a916720`
 - Phase 6 evidence: `docs/implementation/phase-6-crm-human-work-integration-evidence.md`
 - Phase 5 evidence: `docs/implementation/phase-5-ai-mls-integration-evidence.md`
 - Phase 4 evidence: `docs/implementation/phase-4-marketing-automation-integration-evidence.md`
@@ -71,7 +74,7 @@ Integrate RBS and Admin as separate independently owned systems that MAOS can mo
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
-- Production gaps remain separately tracked and are not silently resolved by Phase 7 work.
+- Production gaps remain separately tracked and are not silently resolved by Phase 8 work.
 - External and domain systems remain independent systems and repositories by default.
 - AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.
 - Any overlap with a Personal Agent remains separately governed and cannot silently enter enterprise context.
@@ -82,12 +85,15 @@ Integrate RBS and Admin as separate independently owned systems that MAOS can mo
 - RBS, Admin, and their existing AWS infrastructure remain independently owned; MAOS integrates and monitors without relocating infrastructure or taking over domain source-of-truth ownership.
 - CRM, AI-MLS, and Marketing remain separate governed systems rather than becoming RBS/Admin internals.
 - Production mutation requires explicit human approval and production deployment remains not approved.
+- ERP remains the independently owned operational source of truth for accounting and tax records.
+- The PH Accounting/Tax AI Team may provide analysis, review, and drafting support but cannot become the final authority.
+- Real filing, payment, or submission requires explicit human approval and remains unavailable during Phase 8 control preparation.
 
 ## Guardrails
 
-- Do not implement Phase 7 until its implementation work is explicitly started on a short-lived task branch.
+- Do not implement Phase 8 until its implementation work is explicitly started on a short-lived task branch.
 - Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 8 or later work automatically.
+- Do not begin Phase 9 or later work automatically.
