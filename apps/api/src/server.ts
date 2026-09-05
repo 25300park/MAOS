@@ -9,6 +9,9 @@ import {
   ACCOUNTING_TAX_ROLE_CAPABILITIES,
   CrmHumanWorkService,
   ErpAccountingTaxService,
+  HR_CAPABILITIES,
+  HrLaborService,
+  LABOR_AGENT_CAPABILITIES,
   MARKETING_ROLES,
   MarketingIntegrationService,
   InMemoryHandoffEvidenceRegistry,
@@ -17,12 +20,14 @@ import {
   type AiMlsAdapter,
   type CrmAdapter,
   type ErpAccountingTaxAdapter,
+  type HrLaborAdapter,
   type MarketingAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
+import { createHrLaborRoutes } from "./hr-labor-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
@@ -211,6 +216,90 @@ erp.registerTeam({
   })),
   system_id: "erp",
 });
+const unavailableHrAdapter: HrLaborAdapter = {
+  mode: "GOVERNED_REFERENCE_ONLY",
+  observeOperations: async () => {
+    throw new Error("No external ERP/HR adapter is configured");
+  },
+  observeStatutoryObligations: async () => {
+    throw new Error("No external ERP/HR adapter is configured");
+  },
+};
+const hr = new HrLaborService(
+  unavailableHrAdapter,
+  undefined,
+  (event) =>
+    erpObservability.recordEvent({
+      context: erpObservationContext(
+        event.correlation_id,
+        event.system_id,
+        event.project_id,
+      ),
+      name: event.name,
+      payload: {
+        evidence_refs: event.evidence_refs,
+        ...(event.error_code ? { error_code: event.error_code } : {}),
+        ...(event.work_id ? { work_id: event.work_id } : {}),
+      },
+    }),
+  {
+    record: (record) =>
+      erpObservability.recordAudit({
+        action: record.action.includes(".")
+          ? record.action
+          : `HR.${record.action}`,
+        actor: record.actor,
+        context: erpObservationContext(
+          record.correlation_id,
+          record.system_id ?? "erp-hr",
+          record.project_id,
+        ),
+        evidence_refs: record.evidence_refs,
+        ...(record.error_code
+          ? { metadata: { error_code: record.error_code } }
+          : {}),
+        result: record.result,
+        target: record.target,
+      }),
+  },
+  {
+    evaluate: () => ({
+      allowed: false,
+      authority: "UNKNOWN",
+      validity: "AUTHORITY_INVALID",
+    }),
+  },
+);
+hr.registerSystem({
+  actor: { id: "human-hr-owner", type: "HUMAN" },
+  capabilities: HR_CAPABILITIES,
+  correlation_id: "bootstrap:hr-labor",
+  credential_reference: "secretref://erp-hr/readonly",
+  environment_reference: "configref://erp-hr/development",
+  health: "UNKNOWN",
+  id: "erp-hr",
+  integration_state: "REGISTERED",
+  name: "ERP / HR",
+  owner_actor_id: "human-hr-owner",
+  repository_reference: "registry://erp-hr/repository",
+  source_of_truth: "DOMAIN_SYSTEM",
+  type: "DOMAIN_APPLICATION",
+  version_reference: "gitref://erp-hr/main",
+  workroot_reference: "workroot://erp-hr",
+});
+hr.registerLaborAgents({
+  actor: { id: "human-hr-owner", type: "HUMAN" },
+  agents: (["ANALYSIS_DRAFT", "COMPLIANCE_REVIEW"] as const).map(
+    (assignment) => ({
+      agent_id: `agent-labor-${assignment.toLowerCase()}`,
+      assignment,
+      capabilities: LABOR_AGENT_CAPABILITIES[assignment],
+      status: "OFFLINE" as const,
+    }),
+  ),
+  correlation_id: "bootstrap:hr-labor",
+  system_id: "erp-hr",
+});
 const unavailableMarketingAdapter: MarketingAdapter = {
   mode: "READ_ONLY_SIMULATION",
   observeCampaign: async () => {
@@ -316,6 +405,10 @@ const routes = [
     scope: "project-maos",
   }),
   ...createErpAccountingTaxRoutes(erp, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
+  ...createHrLaborRoutes(hr, {
     environment: config.environment,
     scope: "project-maos",
   }),

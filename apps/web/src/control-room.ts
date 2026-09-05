@@ -128,6 +128,23 @@ export interface ErpFinanceView {
   work_items: number;
 }
 
+export interface HrLaborView {
+  attendance_exceptions: number;
+  blocked_approvals: number;
+  blocked_items: number;
+  deadline_risks: number;
+  hr_health: string;
+  kpi_risks: number;
+  labor_agents: readonly string[];
+  last_verified_at: string;
+  leave_conflicts: number;
+  next_deadline: string;
+  open_obligations: number;
+  production_external_actions_enabled: false;
+  team_capacity: string;
+  workload: string;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -140,6 +157,7 @@ export interface ControlRoomRenderInput {
   control_plane?: ControlPlaneView | undefined;
   development_snapshot?: Phase1VerificationSnapshot | undefined;
   erp_finance?: ErpFinanceView | undefined;
+  hr_labor?: HrLaborView | undefined;
   identity: ControlRoomIdentity | null;
   memory_integration?: MemoryIntegrationView | undefined;
   marketing?: MarketingView | undefined;
@@ -247,6 +265,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "Finance & Compliance",
     path: "/finance-compliance",
     permission: "ERP:READ",
+    section: "GOVERN",
+  },
+  {
+    icon: "♙",
+    label: "HR & Labor",
+    path: "/hr-labor",
+    permission: "HR:READ",
     section: "GOVERN",
   },
   {
@@ -469,6 +494,17 @@ function financeCompliancePage(view?: ErpFinanceView): string {
   <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Tax and compliance workload</h2>${status("REFERENCE ONLY", "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Work items</dt><dd>${view.work_items}</dd></div><div class="fact"><dt>Stale / unverified</dt><dd>${view.risk_summary.stale_or_unverified}</dd></div><div class="fact"><dt>ERP boundary</dt><dd>ERP remains source of truth</dd></div><div class="fact"><dt>External action</dt><dd>DISABLED</dd></div></dl><div class="callout"><strong>Human authority remains final</strong><p>AI analysis, calculations, and drafts require Compliance QA and human accountant review. No filing, payment, or submission is available in Phase 8.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>PH Accounting / Tax AI Team</h2><span class="permission-note">Analysis · review · drafting</span></div><div class="panel-body"><p>${roles}</p><p class="permission-note">Agent capability does not grant accounting, tax, filing, payment, or regulatory authority.</p></div></aside></div>`;
 }
 
+function hrLaborPage(view?: HrLaborView): string {
+  if (!view)
+    return `${pageHeading("ERP / HR", "HR &amp; Labor", "Privacy-safe operational visibility. ERP / HR remains source of truth.")}<section class="panel state-view"><div><div class="state-icon">♙</div><h2>No authorized HR observation</h2><p>Connect an approved reference-only HR scope to view management-level status.</p><span class="permission-note">Private employee content is excluded by default</span></div></section>`;
+  const agents = view.labor_agents
+    .map((agent) => status(agent, "working"))
+    .join(" ");
+  return `${pageHeading("ERP / HR · Human authority", "HR &amp; Labor", "Management-level workforce and labor-compliance visibility with employee privacy and ERP / HR source ownership preserved.")}
+  <section class="metric-grid" aria-label="HR and labor management summary"><article class="metric metric-working"><div class="metric-top"><span>Workload</span><span>${escapeHtml(view.hr_health)}</span></div><strong class="metric-value" style="font-size:20px">${escapeHtml(view.workload)}</strong><div class="metric-note">Team capacity · ${escapeHtml(view.team_capacity)}</div></article><article class="metric metric-risk"><div class="metric-top"><span>Attendance exceptions</span><span>Operational</span></div><strong class="metric-value">${view.attendance_exceptions}</strong><div class="metric-note">Leave conflicts · ${view.leave_conflicts}</div></article><article class="metric metric-critical"><div class="metric-top"><span>Blocked items</span><span>Needs review</span></div><strong class="metric-value">${view.blocked_items}</strong><div class="metric-note">KPI risks · ${view.kpi_risks}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Statutory obligations</span><span>Human authority</span></div><strong class="metric-value">${view.open_obligations}</strong><div class="metric-note">Blocked approvals · ${view.blocked_approvals}</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Labor compliance posture</h2>${status("REFERENCE ONLY", "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Deadline risks</dt><dd>${view.deadline_risks}</dd></div><div class="fact"><dt>Next deadline</dt><dd>${escapeHtml(view.next_deadline)}</dd></div><div class="fact"><dt>Last verified</dt><dd>${escapeHtml(view.last_verified_at)}</dd></div><div class="fact"><dt>ERP / HR boundary</dt><dd>ERP / HR remains source of truth</dd></div></dl><div class="callout"><strong>Human HR authority remains final</strong><p>Labor Compliance Agent output supports analysis, review, and drafting only. No filing, payment, discipline, termination, or hiring action is available in Phase 9.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>Labor Compliance Agent</h2><span class="permission-note">Separated analysis and review</span></div><div class="panel-body"><p>${agents}</p><p class="permission-note">Private employee content, payroll values, medical information, and disciplinary details remain outside this management projection.</p></div></aside></div>`;
+}
+
 function statePage(state: Exclude<ViewState, "ready">): string {
   const states = {
     loading: [
@@ -567,6 +603,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/crm") return crmPage(input.identity!, input.crm);
   if (path === "/finance-compliance")
     return financeCompliancePage(input.erp_finance);
+  if (path === "/hr-labor") return hrLaborPage(input.hr_labor);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }

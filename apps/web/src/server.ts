@@ -7,6 +7,7 @@ import {
   type ControlRoomIdentity,
   type CrmView,
   type ErpFinanceView,
+  type HrLaborView,
   type RbsAdminView,
 } from "./control-room.js";
 
@@ -28,6 +29,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "CRM:READ",
     "CRM:CAPTURE",
     "ERP:READ",
+    "HR:READ",
     "DEVELOPMENT:READ",
     "LOCAL_EXECUTION:EXECUTE",
     "LOCAL_EXECUTION:CANCEL",
@@ -178,12 +180,30 @@ export const CONTROL_ROOM_PREVIEW_ERP_FINANCE: ErpFinanceView = {
   work_items: 4,
 };
 
+export const CONTROL_ROOM_PREVIEW_HR_LABOR: HrLaborView = {
+  attendance_exceptions: 2,
+  blocked_approvals: 1,
+  blocked_items: 3,
+  deadline_risks: 2,
+  hr_health: "HEALTHY",
+  kpi_risks: 1,
+  labor_agents: ["ANALYSIS / DRAFT", "COMPLIANCE REVIEW"],
+  last_verified_at: "2026-09-06T10:00:00Z",
+  leave_conflicts: 1,
+  next_deadline: "2026-09-30",
+  open_obligations: 4,
+  production_external_actions_enabled: false,
+  team_capacity: "CONSTRAINED",
+  workload: "HIGH",
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
     control_plane?: ControlPlaneView | undefined;
     crm?: CrmView | undefined;
     erp_finance?: ErpFinanceView | undefined;
+    hr_labor?: HrLaborView | undefined;
     identity?: ControlRoomIdentity | null;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
@@ -204,6 +224,7 @@ export function createControlRoomServer(
       control_plane: options.control_plane,
       crm: options.crm,
       erp_finance: options.erp_finance,
+      hr_labor: options.hr_labor,
       context: {
         correlation_id: correlationId,
         request_id: requestId,
@@ -239,6 +260,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
     crm: preview ? CONTROL_ROOM_PREVIEW_CRM : undefined,
     erp_finance: preview ? CONTROL_ROOM_PREVIEW_ERP_FINANCE : undefined,
+    hr_labor: preview ? CONTROL_ROOM_PREVIEW_HR_LABOR : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION

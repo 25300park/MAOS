@@ -579,6 +579,63 @@ test("hides finance and compliance navigation without ERP permission", () => {
   assert.match(denied, /Screen not available/);
 });
 
+test("shows privacy-safe HR and Labor Compliance visibility with human authority", () => {
+  const html = controlRoom.renderControlRoom({
+    hr_labor: {
+      attendance_exceptions: 2,
+      blocked_approvals: 1,
+      blocked_items: 3,
+      deadline_risks: 2,
+      hr_health: "HEALTHY",
+      kpi_risks: 1,
+      labor_agents: ["ANALYSIS / DRAFT", "COMPLIANCE REVIEW"],
+      last_verified_at: "2026-09-06T10:00:00Z",
+      leave_conflicts: 1,
+      next_deadline: "2026-09-30",
+      open_obligations: 4,
+      production_external_actions_enabled: false,
+      team_capacity: "CONSTRAINED",
+      workload: "HIGH",
+    },
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "HR:READ"],
+    },
+    path: "/hr-labor",
+  });
+  for (const text of [
+    "HR &amp; Labor",
+    "ERP / HR remains source of truth",
+    "Workload",
+    "Attendance exceptions",
+    "Leave conflicts",
+    "Statutory obligations",
+    "Labor Compliance Agent",
+    "Human HR authority remains final",
+    "No filing, payment, discipline, termination, or hiring action",
+    "2026-09-30",
+    "COMPLIANCE REVIEW",
+  ])
+    assert.match(html, new RegExp(text.replaceAll("/", "\\/")));
+  assert.doesNotMatch(
+    html,
+    /private_notes|private_journal|payroll_amount|disciplinary_notes|medical_record/i,
+  );
+  assert.doesNotMatch(
+    html,
+    /data-action="(?:DOLE_SUBMISSION|SSS_SUBMISSION|PHILHEALTH_SUBMISSION|PAG_IBIG_SUBMISSION|DISCIPLINARY_ACTION|TERMINATION|HIRING_DECISION)"/,
+  );
+});
+
+test("hides HR and Labor navigation without exact permission", () => {
+  const denied = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/hr-labor",
+  });
+  assert.doesNotMatch(denied, />HR &amp; Labor</);
+  assert.match(denied, /Screen not available/);
+});
+
 test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
   const html = controlRoom.renderControlRoom({
     crm: {
