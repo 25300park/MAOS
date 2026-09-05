@@ -4,11 +4,11 @@ Last updated: 2026-09-05
 
 ## Current Phase
 
-**Phase 8 — ERP / Accounting / Tax Integration**
+**Phase 9 — HR / Labor Integration**
 
 Status: **NOT COMPLETE**
 
-Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, and Phase 7 are complete. Phase 8 will integrate the independently owned ERP with a governed PH Accounting/Tax AI Team while preserving ERP source-of-truth ownership and final human authority.
+Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, Phase 7, and Phase 8 are complete. Phase 9 will integrate the independently owned ERP/HR system with governed HR and labor-compliance support while preserving operational source-of-truth ownership, employee privacy, and final human authority.
 
 ## Completed
 
@@ -21,6 +21,7 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, and Phase 7 
 - Phase 5 — AI-MLS Integration: **COMPLETE**
 - Phase 6 — CRM / Brokerage / Human Work Integration: **COMPLETE**
 - Phase 7 — RBS / Admin Integration: **COMPLETE**
+- Phase 8 — ERP / Accounting / Tax Integration: **COMPLETE**
 - MVP_READY: **YES**
 - PRODUCTION_PREPARATION_COMPLETE: **YES**
 - PRODUCTION_READY: **NO**
@@ -52,16 +53,18 @@ Phase 1 MVP, Phase 1P, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6, and Phase 7 
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `35d4451713d7623f5b3de0fbacb4e0ef6a916720`
+- Commit: `18bac003239273cb28194b338738dd2049ad9cad`
 - Root: `D:\10. MAOS`
 
-## Phase 8 Goal
+## Phase 9 Goal
 
-Integrate the independently owned ERP with governed accounting and tax analysis, review, and drafting workflows while preserving ERP operational source-of-truth ownership, final human authority, and explicit approval before any real filing, payment, or submission.
+Integrate the independently owned ERP/HR system with governed HR and labor-compliance analysis, review, and drafting support while preserving employee privacy, operational source-of-truth ownership, and final authority for human HR or authorized management.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-8.md`
+- Phase manifest: `docs/context/phase-9.md`
+- Phase 8 control commit: `4c9e17847266842aeb6c5121d2d02ffecc9fe67e`
+- Phase 8 implementation commit: `18bac003239273cb28194b338738dd2049ad9cad`
 - Phase 7 control commit: `eec8e81631a52ee2672fa02173a2fed41cb7cb08`
 - Phase 7 implementation commit: `35d4451713d7623f5b3de0fbacb4e0ef6a916720`
 - Phase 6 evidence: `docs/implementation/phase-6-crm-human-work-integration-evidence.md`
@@ -74,7 +77,7 @@ Integrate the independently owned ERP with governed accounting and tax analysis,
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
-- Production gaps remain separately tracked and are not silently resolved by Phase 8 work.
+- Production gaps remain separately tracked and are not silently resolved by Phase 9 work.
 - External and domain systems remain independent systems and repositories by default.
 - AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.
 - Any overlap with a Personal Agent remains separately governed and cannot silently enter enterprise context.
@@ -87,13 +90,18 @@ Integrate the independently owned ERP with governed accounting and tax analysis,
 - Production mutation requires explicit human approval and production deployment remains not approved.
 - ERP remains the independently owned operational source of truth for accounting and tax records.
 - The PH Accounting/Tax AI Team may provide analysis, review, and drafting support but cannot become the final authority.
-- Real filing, payment, or submission requires explicit human approval and remains unavailable during Phase 8 control preparation.
+- Real filing, payment, or submission requires explicit human approval and remained unavailable throughout Phase 8.
+- The ERP/HR system remains the independently owned operational source of truth for HR and labor records; MAOS integrates and monitors through governed references.
+- The Labor Compliance Agent may support analysis, review, and drafting but cannot become final HR, labor, or regulatory authority.
+- Employee private data remains protected and is not exposed through management-level MAOS views without explicit policy and authority.
+- Human HR or authorized management retains final authority.
+- Real DOLE, SSS, PhilHealth, or Pag-IBIG submission is outside Phase 9, as are production deployment and Phase 9A implementation.
 
 ## Guardrails
 
-- Do not implement Phase 8 until its implementation work is explicitly started on a short-lived task branch.
+- Do not implement Phase 9 until its implementation work is explicitly started on a short-lived task branch.
 - Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 9 or later work automatically.
+- Do not begin Phase 9A or later work automatically.
