@@ -113,6 +113,21 @@ export interface RbsAdminView {
   }[];
 }
 
+export interface ErpFinanceView {
+  blocked_items: number;
+  deadline_risks: number;
+  erp_health: string;
+  last_verified_at: string;
+  missing_approvals: number;
+  next_deadline: string;
+  open_obligations: number;
+  period_status: string;
+  production_external_actions_enabled: false;
+  risk_summary: { missing_data: number; stale_or_unverified: number };
+  team_roles: readonly string[];
+  work_items: number;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -124,6 +139,7 @@ export interface ControlRoomRenderInput {
   };
   control_plane?: ControlPlaneView | undefined;
   development_snapshot?: Phase1VerificationSnapshot | undefined;
+  erp_finance?: ErpFinanceView | undefined;
   identity: ControlRoomIdentity | null;
   memory_integration?: MemoryIntegrationView | undefined;
   marketing?: MarketingView | undefined;
@@ -227,6 +243,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     section: "OPERATE",
   },
   {
+    icon: "₱",
+    label: "Finance & Compliance",
+    path: "/finance-compliance",
+    permission: "ERP:READ",
+    section: "GOVERN",
+  },
+  {
     icon: "⌘",
     label: "Development",
     path: "/development",
@@ -286,7 +309,7 @@ function navigation(identity: ControlRoomIdentity, path: string): string {
       return `<div class="nav-section">${section}</div>${items
         .map(
           (item) =>
-            `<a class="nav-link" href="${item.path}"${currentPath(item.path, path) ? ' aria-current="page"' : ""}><span class="nav-icon" aria-hidden="true">${item.icon}</span><span>${item.label}</span></a>`,
+            `<a class="nav-link" href="${item.path}"${currentPath(item.path, path) ? ' aria-current="page"' : ""}><span class="nav-icon" aria-hidden="true">${item.icon}</span><span>${escapeHtml(item.label)}</span></a>`,
         )
         .join("")}`;
     })
@@ -435,6 +458,17 @@ function rbsAdminPanel(view?: RbsAdminView): string {
   return `<div class="section-title"><h2>RBS / Admin Operations</h2><span class="permission-note">Read-only governance view · separate systems and independent AWS infrastructure</span></div><section class="metric-grid" aria-label="RBS and Admin governance summary"><article class="metric metric-approval"><div class="metric-top"><span>Listing handoff</span><span>Simulation only</span></div><strong class="metric-value" style="font-size:18px">${escapeHtml(view.handoff_status)}</strong><div class="metric-note">CRM → AI-MLS → employee → CRM → Admin/RBS</div></article><article class="metric metric-critical"><div class="metric-top"><span>Production deployment</span><span>Human authority</span></div><strong class="metric-value" style="font-size:18px">NOT APPROVED</strong><div class="metric-note">No publish, deploy, rollback, or AWS action</div></article></section><section class="panel"><div class="table-wrap"><table class="data-table"><caption>RBS and Admin operational status</caption><thead><tr><th>System</th><th>Health / API health</th><th>Environment / commit</th><th>Release / artifact</th><th>QA / approval</th><th>Readiness / rollback</th><th>Owner / boundary</th><th>Last verified</th></tr></thead><tbody>${rows}</tbody></table></div></section><div class="detail-grid" style="margin-top:18px"><section class="panel"><div class="panel-head"><h2>Blockers and alerts</h2></div><div class="panel-body"><ul>${blockers || "<li>No active blocker in authorized scope</li>"}</ul></div></section><section class="panel"><div class="panel-head"><h2>Next action</h2></div><div class="panel-body"><p>${escapeHtml(view.next_action)}</p><p class="permission-note">Production deployment: ${view.production_deployment_approved ? "APPROVED" : "NOT APPROVED"}</p></div></section></div>`;
 }
 
+function financeCompliancePage(view?: ErpFinanceView): string {
+  if (!view)
+    return `${pageHeading("ERP / Accounting / Tax", "Finance &amp; Compliance", "Governed accounting and tax visibility. ERP remains source of truth.")}<section class="panel state-view"><div><div class="state-icon">₱</div><h2>No authorized finance observation</h2><p>Connect an approved reference-only ERP scope to view management-level status.</p><span class="permission-note">No ledger or payroll detail is stored in MAOS</span></div></section>`;
+  const roles = view.team_roles
+    .map((role) => status(role.replaceAll("_", " "), "working"))
+    .join(" ");
+  return `${pageHeading("ERP / Accounting / Tax", "Finance &amp; Compliance", "Management-level work visibility with ERP source ownership and final human authority preserved.")}
+  <section class="metric-grid" aria-label="Finance and compliance summary"><article class="metric metric-working"><div class="metric-top"><span>Accounting period</span><span>${escapeHtml(view.erp_health)}</span></div><strong class="metric-value" style="font-size:20px">${escapeHtml(view.period_status)}</strong><div class="metric-note">Last verified · ${escapeHtml(view.last_verified_at)}</div></article><article class="metric metric-risk"><div class="metric-top"><span>Upcoming deadlines</span><span>7-day risk</span></div><strong class="metric-value">${view.deadline_risks}</strong><div class="metric-note">Next · ${escapeHtml(view.next_deadline)}</div></article><article class="metric metric-critical"><div class="metric-top"><span>Blocked items</span><span>Missing data</span></div><strong class="metric-value">${view.blocked_items}</strong><div class="metric-note">Missing references · ${view.risk_summary.missing_data}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Missing approvals</span><span>Human authority</span></div><strong class="metric-value">${view.missing_approvals}</strong><div class="metric-note">Open obligations · ${view.open_obligations}</div></article></section>
+  <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Tax and compliance workload</h2>${status("REFERENCE ONLY", "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Work items</dt><dd>${view.work_items}</dd></div><div class="fact"><dt>Stale / unverified</dt><dd>${view.risk_summary.stale_or_unverified}</dd></div><div class="fact"><dt>ERP boundary</dt><dd>ERP remains source of truth</dd></div><div class="fact"><dt>External action</dt><dd>DISABLED</dd></div></dl><div class="callout"><strong>Human authority remains final</strong><p>AI analysis, calculations, and drafts require Compliance QA and human accountant review. No filing, payment, or submission is available in Phase 8.</p></div></div></section><aside class="panel"><div class="panel-head"><h2>PH Accounting / Tax AI Team</h2><span class="permission-note">Analysis · review · drafting</span></div><div class="panel-body"><p>${roles}</p><p class="permission-note">Agent capability does not grant accounting, tax, filing, payment, or regulatory authority.</p></div></aside></div>`;
+}
+
 function statePage(state: Exclude<ViewState, "ready">): string {
   const states = {
     loading: [
@@ -531,6 +565,8 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
   if (path === "/crm") return crmPage(input.identity!, input.crm);
+  if (path === "/finance-compliance")
+    return financeCompliancePage(input.erp_finance);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
 }

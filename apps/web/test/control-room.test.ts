@@ -521,6 +521,64 @@ test("shows internal-only AI-MLS intake, candidate, verification, and task visib
   assert.doesNotMatch(html, /data-action="AI_MLS_PUBLISH"/);
 });
 
+test("shows ERP accounting and tax governance without sensitive ledger or external actions", () => {
+  const html = controlRoom.renderControlRoom({
+    erp_finance: {
+      blocked_items: 2,
+      deadline_risks: 1,
+      erp_health: "HEALTHY",
+      last_verified_at: "2026-09-05T10:00:00Z",
+      missing_approvals: 1,
+      next_deadline: "2026-09-10",
+      open_obligations: 3,
+      period_status: "OBSERVED",
+      production_external_actions_enabled: false,
+      risk_summary: { missing_data: 2, stale_or_unverified: 1 },
+      team_roles: [
+        "FINANCE_COMPLIANCE_LEAD",
+        "PH_ACCOUNTING_AGENT",
+        "PH_TAX_AGENT",
+        "PAYROLL_STATUTORY_AGENT",
+        "COMPLIANCE_QA_AGENT",
+      ],
+      work_items: 4,
+    },
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "ERP:READ"],
+    },
+    path: "/finance-compliance",
+  });
+  for (const text of [
+    "Finance &amp; Compliance",
+    "ERP remains source of truth",
+    "Accounting period",
+    "Upcoming deadlines",
+    "Blocked items",
+    "Missing approvals",
+    "PH Accounting / Tax AI Team",
+    "Human authority remains final",
+    "No filing, payment, or submission",
+    "2026-09-10",
+    "COMPLIANCE QA AGENT",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(html, /journal_entries|payroll_record|bank_account/i);
+  assert.doesNotMatch(
+    html,
+    /data-action="(?:BIR_FILING|TAX_PAYMENT|SEC_SUBMISSION|BANK_TRANSACTION)"/,
+  );
+});
+
+test("hides finance and compliance navigation without ERP permission", () => {
+  const denied = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/finance-compliance",
+  });
+  assert.doesNotMatch(denied, />Finance &amp; Compliance</);
+  assert.match(denied, /Screen not available/);
+});
+
 test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
   const html = controlRoom.renderControlRoom({
     crm: {

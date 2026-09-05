@@ -4,6 +4,7 @@ import type { ActorType, GovernanceDecision } from "@maos/contracts";
 export * from "./marketing-automation.js";
 export * from "./ai-mls.js";
 export * from "./crm-human-work.js";
+export * from "./erp-accounting-tax.js";
 
 export const INTEGRATION_MODULE = Object.freeze({
   name: "integration",

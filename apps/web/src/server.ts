@@ -6,6 +6,7 @@ import {
   type ControlPlaneView,
   type ControlRoomIdentity,
   type CrmView,
+  type ErpFinanceView,
   type RbsAdminView,
 } from "./control-room.js";
 
@@ -26,6 +27,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "AI_MLS:READ",
     "CRM:READ",
     "CRM:CAPTURE",
+    "ERP:READ",
     "DEVELOPMENT:READ",
     "LOCAL_EXECUTION:EXECUTE",
     "LOCAL_EXECUTION:CANCEL",
@@ -155,11 +157,33 @@ export const CONTROL_ROOM_PREVIEW_RBS_ADMIN: RbsAdminView = {
   ],
 };
 
+export const CONTROL_ROOM_PREVIEW_ERP_FINANCE: ErpFinanceView = {
+  blocked_items: 2,
+  deadline_risks: 1,
+  erp_health: "HEALTHY",
+  last_verified_at: "2026-09-05T10:00:00Z",
+  missing_approvals: 1,
+  next_deadline: "2026-09-10",
+  open_obligations: 3,
+  period_status: "OBSERVED",
+  production_external_actions_enabled: false,
+  risk_summary: { missing_data: 2, stale_or_unverified: 1 },
+  team_roles: [
+    "FINANCE_COMPLIANCE_LEAD",
+    "PH_ACCOUNTING_AGENT",
+    "PH_TAX_AGENT",
+    "PAYROLL_STATUTORY_AGENT",
+    "COMPLIANCE_QA_AGENT",
+  ],
+  work_items: 4,
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
     control_plane?: ControlPlaneView | undefined;
     crm?: CrmView | undefined;
+    erp_finance?: ErpFinanceView | undefined;
     identity?: ControlRoomIdentity | null;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
@@ -179,6 +203,7 @@ export function createControlRoomServer(
       ai_mls: options.ai_mls,
       control_plane: options.control_plane,
       crm: options.crm,
+      erp_finance: options.erp_finance,
       context: {
         correlation_id: correlationId,
         request_id: requestId,
@@ -213,6 +238,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     ai_mls: preview ? CONTROL_ROOM_PREVIEW_AI_MLS : undefined,
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
     crm: preview ? CONTROL_ROOM_PREVIEW_CRM : undefined,
+    erp_finance: preview ? CONTROL_ROOM_PREVIEW_ERP_FINANCE : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION

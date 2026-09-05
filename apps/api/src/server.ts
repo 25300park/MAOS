@@ -2,9 +2,13 @@ import { loadApiConfig } from "@maos/config";
 import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
+import { ObservabilityAuditService } from "@maos/module-observability";
 import {
   AiMlsIntegrationService,
+  ACCOUNTING_TAX_ROLES,
+  ACCOUNTING_TAX_ROLE_CAPABILITIES,
   CrmHumanWorkService,
+  ErpAccountingTaxService,
   MARKETING_ROLES,
   MarketingIntegrationService,
   InMemoryHandoffEvidenceRegistry,
@@ -12,14 +16,17 @@ import {
   type DomainReadAdapter,
   type AiMlsAdapter,
   type CrmAdapter,
+  type ErpAccountingTaxAdapter,
   type MarketingAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
+import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
+import { createObservabilityRoutes } from "./observability-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
@@ -103,6 +110,106 @@ crm.registerSystem({
   type: "DOMAIN_APPLICATION",
   version_reference: "gitref://crm/main",
   workroot_reference: "workroot://crm",
+});
+const unavailableErpAdapter: ErpAccountingTaxAdapter = {
+  mode: "GOVERNED_REFERENCE_ONLY",
+  observeFinance: async () => {
+    throw new Error("No external ERP adapter is configured");
+  },
+  observeObligations: async () => {
+    throw new Error("No external ERP adapter is configured");
+  },
+};
+const erpObservability = new ObservabilityAuditService();
+const erpObservationContext = (
+  correlationId: string,
+  systemId: string,
+  projectId?: string,
+) => ({
+  correlation_id: correlationId,
+  ...(projectId ? { project_id: projectId } : {}),
+  request_id: `erp:${correlationId}`,
+  span_id: `erp:${correlationId}:span`,
+  system_id: systemId,
+  trace_id: `erp:${correlationId}:trace`,
+});
+const erp = new ErpAccountingTaxService(
+  unavailableErpAdapter,
+  undefined,
+  (event) =>
+    erpObservability.recordEvent({
+      context: erpObservationContext(
+        event.correlation_id,
+        event.system_id,
+        event.project_id,
+      ),
+      name: event.name,
+      payload: {
+        evidence_refs: event.evidence_refs,
+        ...(event.error_code ? { error_code: event.error_code } : {}),
+        ...(event.work_id ? { work_id: event.work_id } : {}),
+      },
+    }),
+  {
+    record: (record) =>
+      erpObservability.recordAudit({
+        action: record.action.includes(".")
+          ? record.action
+          : `ERP.${record.action}`,
+        actor: record.actor,
+        context: erpObservationContext(
+          record.correlation_id,
+          record.system_id ?? "erp",
+          record.project_id,
+        ),
+        evidence_refs: record.evidence_refs,
+        ...(record.error_code
+          ? { metadata: { error_code: record.error_code } }
+          : {}),
+        result: record.result,
+        target: record.target,
+      }),
+  },
+  {
+    evaluate: () => ({
+      allowed: false,
+      authority: "UNKNOWN",
+      validity: "AUTHORITY_INVALID",
+    }),
+  },
+);
+erp.registerSystem({
+  actor: { id: "human-finance-owner", type: "HUMAN" },
+  capabilities: [
+    "READ_FINANCE_SUMMARY",
+    "READ_OBLIGATIONS",
+    "PREPARE_COMPLIANCE_WORK",
+  ],
+  correlation_id: "bootstrap:erp-accounting-tax",
+  credential_reference: "secretref://erp/readonly",
+  environment_reference: "configref://erp/development",
+  health: "UNKNOWN",
+  id: "erp",
+  integration_state: "REGISTERED",
+  name: "ERP / Accounting",
+  owner_actor_id: "human-finance-owner",
+  repository_reference: "registry://erp/repository",
+  source_of_truth: "DOMAIN_SYSTEM",
+  type: "DOMAIN_APPLICATION",
+  version_reference: "gitref://erp/main",
+  workroot_reference: "workroot://erp",
+});
+erp.registerTeam({
+  actor: { id: "human-finance-owner", type: "HUMAN" },
+  correlation_id: "bootstrap:erp-accounting-tax",
+  members: ACCOUNTING_TAX_ROLES.map((role) => ({
+    agent_id: `agent-${role.toLowerCase()}`,
+    assignment_state: "UNASSIGNED" as const,
+    capabilities: ACCOUNTING_TAX_ROLE_CAPABILITIES[role],
+    role,
+    status: "OFFLINE" as const,
+  })),
+  system_id: "erp",
 });
 const unavailableMarketingAdapter: MarketingAdapter = {
   mode: "READ_ONLY_SIMULATION",
@@ -203,6 +310,15 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createObservabilityRoutes(erpObservability, {
+    environment: config.environment,
+    project_ids: ["project-maos"],
+    scope: "project-maos",
+  }),
+  ...createErpAccountingTaxRoutes(erp, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
   ...createCrmRoutes(crm, {
     environment: config.environment,
     scope: "project-maos",
