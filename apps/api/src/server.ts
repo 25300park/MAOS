@@ -4,6 +4,10 @@ import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import { ObservabilityAuditService } from "@maos/module-observability";
 import {
+  MonitoringReadiness,
+  OperationsHardeningService,
+} from "@maos/module-operations";
+import {
   EnterpriseOrchestrationService,
   type EnterpriseSystemReference,
 } from "@maos/module-orchestration";
@@ -42,6 +46,7 @@ import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
 import { createObservabilityRoutes } from "./observability-routes.js";
+import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
@@ -452,6 +457,11 @@ for (const system of [
     ...system,
   });
 const controlPlane = new ControlPlaneRegistry();
+const operationsMonitoring = new MonitoringReadiness();
+const operations = new OperationsHardeningService(
+  () => new Date(),
+  operationsMonitoring,
+);
 const enterpriseSystems: EnterpriseSystemReference[] = [
   { health: "HEALTHY", id: "maos", source_of_truth: "MAOS" },
   {
@@ -491,6 +501,18 @@ const enterprise = new EnterpriseOrchestrationService(
     }),
   },
 );
+for (const system of enterpriseSystems)
+  operations.registerTarget({
+    environment: "DEVELOPMENT",
+    health: system.health,
+    id: `${system.id}-integration`,
+    kind: system.id === "maos" ? "APPLICATION" : "INTEGRATION",
+    owner_reference:
+      system.id === "maos"
+        ? "role:platform-operations"
+        : "role:integration-owner",
+    system_id: system.id,
+  });
 const memoryGateway = new MemoryGatewayIntegration();
 memoryGateway.registerGateway(
   {
@@ -516,6 +538,14 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createOperationsRoutes(
+    operations,
+    {
+      environment: config.environment,
+      scope: "project-maos",
+    },
+    erpObservability,
+  ),
   ...createObservabilityRoutes(erpObservability, {
     environment: config.environment,
     project_ids: ["project-maos"],

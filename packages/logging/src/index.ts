@@ -22,10 +22,15 @@ interface LoggerOptions {
 }
 
 const SENSITIVE_FIELD =
-  /^(?:api_?key|client_secret|secret|password|credentials?|authorization|cookie|set_cookie|access_token|refresh_token|session_token|token|private_journal|chain_of_thought)$/i;
+  /(?:^|[_-])(?:api[_-]?key|client[_-]?secret|secret(?:[_-]?value)?|password|credentials?|authorization(?:[_-]?header)?|cookies?|set[_-]?cookie|access[_-]?token|refresh[_-]?token|session[_-]?token|token|private[_-]?journal|chain[_-]?of[_-]?thought)(?:$|[_-])/i;
 
 function sanitizeValue(key: string, value: unknown): unknown {
   if (SENSITIVE_FIELD.test(key)) return "[REDACTED]";
+  if (
+    /^headers?$/i.test(key) &&
+    (typeof value === "string" || Array.isArray(value))
+  )
+    return "[REDACTED]";
   if (Array.isArray(value)) {
     return value.map((entry) => sanitizeValue("", entry));
   }

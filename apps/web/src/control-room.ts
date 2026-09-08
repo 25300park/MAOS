@@ -181,6 +181,26 @@ export interface EnterpriseOrchestrationView {
   tasks: { active: number; total: number };
 }
 
+export interface OperationsView {
+  active_incidents: number;
+  alerts: readonly {
+    affected_system: string;
+    owner_reference: string;
+    severity: string;
+    state: string;
+  }[];
+  backup: { last_verified_at: string; status: string };
+  degraded_systems: readonly string[];
+  dr: { classification: "SIMULATED"; status: string };
+  emergency_stops: number;
+  next_actions: readonly string[];
+  overall_health: string;
+  production_deployment_approved: false;
+  production_gaps_open: number;
+  recovery_state: string;
+  security_warnings: number;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -198,6 +218,7 @@ export interface ControlRoomRenderInput {
   identity: ControlRoomIdentity | null;
   legal_compliance?: LegalComplianceView | undefined;
   memory_integration?: MemoryIntegrationView | undefined;
+  operations?: OperationsView | undefined;
   marketing?: MarketingView | undefined;
   path: string;
   rbs_admin?: RbsAdminView | undefined;
@@ -275,6 +296,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "Alerts",
     path: "/alerts",
     permission: "ALERT:READ",
+    section: "GOVERN",
+  },
+  {
+    icon: "◌",
+    label: "Operations",
+    path: "/operations",
+    permission: "OPERATIONS:READ",
     section: "GOVERN",
   },
   {
@@ -475,6 +503,32 @@ function alertsPage(supplemental?: Record<string, unknown>): string {
   return `${pageHeading("Operational signals", "Alerts", "Actionable conditions with severity, owner, scope, and the next safe response.")}<section class="card-grid"><article class="entity-card"><span class="status status-failed">CRITICAL · OPEN</span><h3>Runner latency threshold</h3><p>local-runner-2 · owner Platform Team</p><div class="entity-foot"><span>Started 09:30</span><strong>Inspect health</strong></div></article><article class="entity-card"><span class="status status-waiting">WARNING · OPEN</span><h3>Approval aging</h3><p>2 requests older than policy threshold</p><div class="entity-foot"><span>Owner Ops Lead</span><strong>Review queue</strong></div></article><article class="entity-card"><span class="status status-healthy">NOTICE · ACKNOWLEDGED</span><h3>Memory gateway recovery</h3><p>Readiness returned to HEALTHY</p><div class="entity-foot"><span>09:12</span><strong>View event</strong></div></article></section>${safe ? `<div class="section-title"><h2>Sanitized diagnostic context</h2></div><pre class="supplemental">${safe}</pre>` : ""}`;
 }
 
+function operationsPage(view?: OperationsView): string {
+  if (!view)
+    return `${pageHeading("Operations & reliability", "Operations", "Governed operational health, incidents, recovery, and security readiness without implying production approval.")}<section class="panel state-view"><div><div class="state-icon">◌</div><h2>No operations snapshot yet</h2><p>Health remains UNKNOWN until fresh authorized evidence is available.</p><span class="permission-note">Production deployment remains separately approved</span></div></section>`;
+  const healthStyle =
+    view.overall_health === "HEALTHY"
+      ? "healthy"
+      : view.overall_health === "UNAVAILABLE"
+        ? "failed"
+        : "approval";
+  const alerts = view.alerts
+    .map(
+      (alert) =>
+        `<tr><td>${status(alert.severity, alert.severity === "CRITICAL" ? "failed" : "approval")}</td><td><strong>${escapeHtml(alert.affected_system)}</strong></td><td>${escapeHtml(alert.state)}</td><td>${escapeHtml(alert.owner_reference)}</td></tr>`,
+    )
+    .join("");
+  const degraded = view.degraded_systems
+    .map((system) => `<li><strong>${escapeHtml(system)}</strong></li>`)
+    .join("");
+  const nextActions = view.next_actions
+    .map((action) => `<li>${escapeHtml(action)}</li>`)
+    .join("");
+  return `${pageHeading("Operations & reliability", "Operations", "Current health, incidents, recovery, security, and human-owned next actions. UNKNOWN never means healthy.")}
+  <section class="metric-grid" aria-label="Operations summary"><article class="metric metric-working"><div class="metric-top"><span>Overall health</span><span>Evidence-based</span></div><strong class="metric-value" style="font-size:20px">${status(view.overall_health, healthStyle)}</strong><div class="metric-note">Degraded systems · ${view.degraded_systems.length}</div></article><article class="metric metric-critical"><div class="metric-top"><span>Active incidents</span><span>Human-owned</span></div><strong class="metric-value">${view.active_incidents}</strong><div class="metric-note">Recovery · ${escapeHtml(view.recovery_state)}</div></article><article class="metric metric-risk"><div class="metric-top"><span>Security warnings</span><span>Fail closed</span></div><strong class="metric-value">${view.security_warnings}</strong><div class="metric-note">Emergency stops · ${view.emergency_stops}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Production gaps</span><span>Separately tracked</span></div><strong class="metric-value">${view.production_gaps_open}</strong><div class="metric-note">Production deployment · NOT APPROVED</div></article></section>
+  <div class="content-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>Alerts and incidents</h2>${status(`${view.alerts.length} ALERTS`, view.alerts.length ? "approval" : "healthy")}</div><div class="table-wrap"><table class="data-table"><caption>Current operational alerts</caption><thead><tr><th>Severity</th><th>Affected system</th><th>Status</th><th>Owner</th></tr></thead><tbody>${alerts || '<tr><td colspan="4">No active alerts</td></tr>'}</tbody></table></div></section><section class="panel"><div class="panel-head"><h2>Degraded systems</h2></div><div class="panel-body"><ul>${degraded || "<li>No degraded system</li>"}</ul></div></section></div><aside class="stack"><section class="panel"><div class="panel-head"><h2>Recovery readiness</h2>${status(view.recovery_state, "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Backup</dt><dd>${escapeHtml(view.backup.status)}</dd></div><div class="fact"><dt>Last verified</dt><dd>${escapeHtml(view.backup.last_verified_at)}</dd></div><div class="fact"><dt>DR exercise</dt><dd>${escapeHtml(view.dr.status)}</dd></div><div class="fact"><dt>Evidence</dt><dd>${escapeHtml(view.dr.classification)}</dd></div></dl><div class="callout"><strong>Simulated evidence remains simulated.</strong><p>No real production restore, RPO/RTO measurement, or deployment approval is claimed.</p></div></div></section><section class="panel"><div class="panel-head"><h2>Next safe actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No pending action</li>"}</ul></div></section></aside></div>`;
+}
+
 function controlPlaneScope(view: ControlPlaneView): string {
   const rows = view.systems
     .map((system) => {
@@ -656,6 +710,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path.startsWith("/runs/")) return runDetail(path);
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
+  if (path === "/operations") return operationsPage(input.operations);
   if (path === "/systems")
     return systemsPage(
       input.control_plane,

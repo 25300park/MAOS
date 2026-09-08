@@ -10,6 +10,7 @@ import {
   type EnterpriseOrchestrationView,
   type HrLaborView,
   type LegalComplianceView,
+  type OperationsView,
   type RbsAdminView,
 } from "./control-room.js";
 
@@ -27,6 +28,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "APPROVAL:READ",
     "APPROVAL:DECIDE",
     "ALERT:READ",
+    "OPERATIONS:READ",
     "SYSTEM:READ",
     "AI_MLS:READ",
     "CRM:READ",
@@ -245,6 +247,31 @@ export const CONTROL_ROOM_PREVIEW_ENTERPRISE: EnterpriseOrchestrationView = {
   tasks: { active: 7, total: 12 },
 };
 
+export const CONTROL_ROOM_PREVIEW_OPERATIONS: OperationsView = {
+  active_incidents: 1,
+  alerts: [
+    {
+      affected_system: "ai-memory-gateway",
+      owner_reference: "role:knowledge-operations",
+      severity: "WARNING",
+      state: "ACKNOWLEDGED",
+    },
+  ],
+  backup: {
+    last_verified_at: "2026-09-09T03:55:00Z",
+    status: "RESTORE_ELIGIBLE",
+  },
+  degraded_systems: ["ai-memory-gateway"],
+  dr: { classification: "SIMULATED", status: "EXERCISED_SIMULATED" },
+  emergency_stops: 0,
+  next_actions: ["Review integration recovery evidence"],
+  overall_health: "DEGRADED",
+  production_deployment_approved: false,
+  production_gaps_open: 10,
+  recovery_state: "MITIGATING",
+  security_warnings: 1,
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
@@ -257,6 +284,7 @@ export function createControlRoomServer(
     legal_compliance?: LegalComplianceView | undefined;
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
+    operations?: OperationsView | undefined;
     rbs_admin?: RbsAdminView | undefined;
   } = {},
 ): Server {
@@ -285,6 +313,7 @@ export function createControlRoomServer(
       identity,
       legal_compliance: options.legal_compliance,
       memory_integration: options.memory_integration,
+      operations: options.operations,
       path,
       rbs_admin: options.rbs_admin,
     });
@@ -321,6 +350,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     memory_integration: preview
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION
       : undefined,
+    operations: preview ? CONTROL_ROOM_PREVIEW_OPERATIONS : undefined,
     rbs_admin: preview ? CONTROL_ROOM_PREVIEW_RBS_ADMIN : undefined,
   });
   server.listen(port, "127.0.0.1", () => {

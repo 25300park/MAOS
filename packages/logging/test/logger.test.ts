@@ -74,6 +74,28 @@ test("redacts security-sensitive fields nested in structured context", () => {
   assert.equal(records[0]?.includes("sensitive-value"), false);
 });
 
+test("redacts secret aliases and opaque header collections", () => {
+  const records: string[] = [];
+  const logger = createLogger({
+    environment: "development",
+    service: "api",
+    write: (line) => records.push(line),
+  });
+
+  logger.warn("credentials rejected", {
+    access_token: "access-secret",
+    authorization_header: "Bearer hidden",
+    headers: ["authorization: Bearer hidden", "x-api-key: hidden"],
+    nested: { "x-api-key": "api-secret", secret_value: "secret-value" },
+  });
+
+  const output = records[0] ?? "";
+  assert.equal(output.includes("access-secret"), false);
+  assert.equal(output.includes("Bearer hidden"), false);
+  assert.equal(output.includes("api-secret"), false);
+  assert.equal(output.includes("secret-value"), false);
+});
+
 test("preserves trace continuity while redacting bearer-like values", () => {
   const records: string[] = [];
   const logger = createLogger({

@@ -13,6 +13,7 @@
       "@maos/module-identity": ["modules/identity/src/index.ts"],
       "@maos/module-knowledge": ["modules/knowledge/src/index.ts"],
       "@maos/module-observability": ["modules/observability/src/index.ts"],
+      "@maos/module-operations": ["modules/operations/src/index.ts"],
       "@maos/module-orchestration": ["modules/orchestration/src/index.ts"],
       "@maos/module-tooling": ["modules/tooling/src/index.ts"],
       "@maos/request-context": ["packages/request-context/src/index.ts"],
