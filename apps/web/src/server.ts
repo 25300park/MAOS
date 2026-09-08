@@ -7,6 +7,7 @@ import {
   type ControlRoomIdentity,
   type CrmView,
   type ErpFinanceView,
+  type EnterpriseOrchestrationView,
   type HrLaborView,
   type LegalComplianceView,
   type RbsAdminView,
@@ -20,6 +21,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "PROJECT:READ",
     "TASK:READ",
     "AI_COMPANY:READ",
+    "ENTERPRISE:READ",
     "AGENT:READ",
     "RUN:READ",
     "APPROVAL:READ",
@@ -223,12 +225,33 @@ export const CONTROL_ROOM_PREVIEW_LEGAL_COMPLIANCE: LegalComplianceView = {
   workload: 8,
 };
 
+export const CONTROL_ROOM_PREVIEW_ENTERPRISE: EnterpriseOrchestrationView = {
+  approvals_required: 2,
+  blockers: 3,
+  briefing: {
+    completed_work: 4,
+    current_work: 7,
+    failures: 1,
+    major_risks: 2,
+    recommended_next_actions: ["REVIEW_APPROVALS", "RESOLVE_BLOCKERS"],
+    upcoming_deadlines: ["2026-09-12T00:00:00Z"],
+    what_changed: ["ENTERPRISE_SIGNAL.RECORDED"],
+  },
+  external_mutations_enabled: false,
+  goals: { active: 3, at_risk: 1, total: 5 },
+  loops: { active: 2, total: 3 },
+  plans: { active: 4, total: 6 },
+  systems: { healthy: 7, total: 9, unhealthy: 2 },
+  tasks: { active: 7, total: 12 },
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
     control_plane?: ControlPlaneView | undefined;
     crm?: CrmView | undefined;
     erp_finance?: ErpFinanceView | undefined;
+    enterprise?: EnterpriseOrchestrationView | undefined;
     hr_labor?: HrLaborView | undefined;
     identity?: ControlRoomIdentity | null;
     legal_compliance?: LegalComplianceView | undefined;
@@ -251,6 +274,7 @@ export function createControlRoomServer(
       control_plane: options.control_plane,
       crm: options.crm,
       erp_finance: options.erp_finance,
+      enterprise: options.enterprise,
       hr_labor: options.hr_labor,
       context: {
         correlation_id: correlationId,
@@ -288,6 +312,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
     crm: preview ? CONTROL_ROOM_PREVIEW_CRM : undefined,
     erp_finance: preview ? CONTROL_ROOM_PREVIEW_ERP_FINANCE : undefined,
+    enterprise: preview ? CONTROL_ROOM_PREVIEW_ENTERPRISE : undefined,
     hr_labor: preview ? CONTROL_ROOM_PREVIEW_HR_LABOR : undefined,
     identity: preview ? CONTROL_ROOM_PREVIEW_IDENTITY : null,
     legal_compliance: preview

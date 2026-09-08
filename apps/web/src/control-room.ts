@@ -161,6 +161,26 @@ export interface LegalComplianceView {
   workload: number;
 }
 
+export interface EnterpriseOrchestrationView {
+  approvals_required: number;
+  blockers: number;
+  briefing: {
+    completed_work: number;
+    current_work: number;
+    failures: number;
+    major_risks: number;
+    recommended_next_actions: readonly string[];
+    upcoming_deadlines: readonly string[];
+    what_changed: readonly string[];
+  };
+  external_mutations_enabled: false;
+  goals: { active: number; at_risk: number; total: number };
+  loops: { active: number; total: number };
+  plans: { active: number; total: number };
+  systems: { healthy: number; total: number; unhealthy: number };
+  tasks: { active: number; total: number };
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -173,6 +193,7 @@ export interface ControlRoomRenderInput {
   control_plane?: ControlPlaneView | undefined;
   development_snapshot?: Phase1VerificationSnapshot | undefined;
   erp_finance?: ErpFinanceView | undefined;
+  enterprise?: EnterpriseOrchestrationView | undefined;
   hr_labor?: HrLaborView | undefined;
   identity: ControlRoomIdentity | null;
   legal_compliance?: LegalComplianceView | undefined;
@@ -219,6 +240,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "AI Company",
     path: "/ai-company",
     permission: "AI_COMPANY:READ",
+    section: "OPERATE",
+  },
+  {
+    icon: "◆",
+    label: "Enterprise",
+    path: "/enterprise",
+    permission: "ENTERPRISE:READ",
     section: "OPERATE",
   },
   {
@@ -622,6 +650,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/tasks") return tasksPage();
   if (path.startsWith("/tasks/")) return taskDetail(path, input.identity!);
   if (path === "/ai-company") return aiCompanyPage();
+  if (path === "/enterprise") return enterprisePage(input.enterprise);
   if (path === "/agents") return agentsPage();
   if (path === "/runs") return runsPage();
   if (path.startsWith("/runs/")) return runDetail(path);
@@ -643,6 +672,28 @@ function routeContent(input: ControlRoomRenderInput): string {
     return legalCompliancePage(input.legal_compliance);
   if (path === "/deployments") return deploymentsPage(input.identity!);
   return notFound();
+}
+
+function enterprisePage(view?: EnterpriseOrchestrationView): string {
+  if (!view)
+    return `${pageHeading("Enterprise orchestration", "Executive Control Room", "Privacy-safe company goals, cross-system work, governance gates, and next actions.")}<section class="panel state-view"><div><div class="state-icon">◆</div><h2>No enterprise snapshot yet</h2><p>Source systems remain authoritative. MAOS shows management-level references only.</p></div></section>`;
+
+  const nextActions = view.briefing.recommended_next_actions
+    .map(
+      (action) =>
+        `<li><strong>${escapeHtml(action.replaceAll("_", " "))}</strong></li>`,
+    )
+    .join("");
+  const changes = view.briefing.what_changed
+    .map((change) => `<li>${escapeHtml(change)}</li>`)
+    .join("");
+  const deadlines = view.briefing.upcoming_deadlines
+    .map((deadline) => `<li><time>${escapeHtml(deadline)}</time></li>`)
+    .join("");
+
+  return `${pageHeading("Enterprise orchestration", "Executive Control Room", "Company goals, governed loops, cross-system work, blockers, approvals, and evidence without copying domain-system records.")}
+  <section class="metric-grid" aria-label="Enterprise operating summary"><article class="metric metric-working"><div class="metric-top"><span>Company Goals</span><span>${view.goals.active} active</span></div><strong class="metric-value">${view.goals.total}</strong><div class="metric-note">At risk · ${view.goals.at_risk}</div></article><article class="metric metric-working"><div class="metric-top"><span>Enterprise loops</span><span>${view.loops.active} active</span></div><strong class="metric-value">${view.loops.total}</strong><div class="metric-note">Bounded and governed</div></article><article class="metric metric-approval"><div class="metric-top"><span>Approvals</span><span>Human authority</span></div><strong class="metric-value">${view.approvals_required}</strong><div class="metric-note">Exact target approval required</div></article><article class="metric metric-critical"><div class="metric-top"><span>Blockers</span><span>Needs attention</span></div><strong class="metric-value">${view.blockers}</strong><div class="metric-note">Failures · ${view.briefing.failures}</div></article></section>
+  <div class="content-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>Cross-system work</h2>${status(`${view.tasks.active} ACTIVE`, "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Plans</dt><dd>${view.plans.active} active / ${view.plans.total} total</dd></div><div class="fact"><dt>Tasks</dt><dd>${view.tasks.active} active / ${view.tasks.total} total</dd></div><div class="fact"><dt>Systems</dt><dd>${view.systems.healthy} healthy / ${view.systems.total} total</dd></div><div class="fact"><dt>Unavailable systems</dt><dd>${view.systems.unhealthy}</dd></div></dl><div class="callout"><strong>Production actions disabled</strong><p>Observation, planning, simulation, and governed evidence only. Capability does not grant authority.</p></div></div></section><section class="panel"><div class="panel-head"><h2>Daily AI Company Briefing</h2><span class="permission-note">Management-level abstraction</span></div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Current work</dt><dd>${view.briefing.current_work}</dd></div><div class="fact"><dt>Completed work</dt><dd>${view.briefing.completed_work}</dd></div><div class="fact"><dt>Major risks</dt><dd>${view.briefing.major_risks}</dd></div><div class="fact"><dt>Failures</dt><dd>${view.briefing.failures}</dd></div></dl></div></section></div><aside class="stack"><section class="panel"><div class="panel-head"><h2>Recommended next actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No action required</li>"}</ul></div></section><section class="panel"><div class="panel-head"><h2>What changed</h2></div><div class="panel-body"><ul>${changes || "<li>No material change</li>"}</ul><h3>Upcoming deadlines</h3><ul>${deadlines || "<li>No tracked deadline</li>"}</ul></div></section></aside></div>`;
 }
 
 function crmPage(identity: ControlRoomIdentity, view?: CrmView): string {

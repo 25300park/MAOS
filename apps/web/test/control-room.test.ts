@@ -700,6 +700,58 @@ test("hides PH legal and regulatory navigation without exact permission", () => 
   assert.match(denied, /Screen not available/);
 });
 
+test("renders a privacy-safe Executive Control Room and Daily AI Company Briefing", () => {
+  const html = controlRoom.renderControlRoom({
+    enterprise: {
+      approvals_required: 2,
+      blockers: 3,
+      briefing: {
+        completed_work: 4,
+        current_work: 7,
+        failures: 1,
+        major_risks: 2,
+        recommended_next_actions: ["REVIEW_APPROVALS", "RESOLVE_BLOCKERS"],
+        upcoming_deadlines: ["2026-09-12T00:00:00Z"],
+        what_changed: ["ENTERPRISE_SIGNAL.RECORDED"],
+      },
+      external_mutations_enabled: false,
+      goals: { active: 3, at_risk: 1, total: 5 },
+      loops: { active: 2, total: 3 },
+      plans: { active: 4, total: 6 },
+      systems: { healthy: 7, total: 9, unhealthy: 2 },
+      tasks: { active: 7, total: 12 },
+    },
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "ENTERPRISE:READ"],
+    },
+    path: "/enterprise",
+  } as never);
+  for (const text of [
+    "Executive Control Room",
+    "Company Goals",
+    "Enterprise loops",
+    "Cross-system work",
+    "Daily AI Company Briefing",
+    "REVIEW APPROVALS",
+    "Production actions disabled",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.doesNotMatch(
+    html,
+    /private_notes|payroll_amount|contract_clause|legal_matter_content/i,
+  );
+});
+
+test("hides Enterprise orchestration navigation without exact permission", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/enterprise",
+  });
+  assert.doesNotMatch(html, />Enterprise</);
+  assert.match(html, /Screen not available/);
+});
+
 test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
   const html = controlRoom.renderControlRoom({
     crm: {

@@ -4,6 +4,10 @@ import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import { ObservabilityAuditService } from "@maos/module-observability";
 import {
+  EnterpriseOrchestrationService,
+  type EnterpriseSystemReference,
+} from "@maos/module-orchestration";
+import {
   AiMlsIntegrationService,
   ACCOUNTING_TAX_ROLES,
   ACCOUNTING_TAX_ROLE_CAPABILITIES,
@@ -31,6 +35,7 @@ import { createApiServer } from "./app.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
+import { createEnterpriseOrchestrationRoutes } from "./enterprise-orchestration-routes.js";
 import { createHrLaborRoutes } from "./hr-labor-routes.js";
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
@@ -447,6 +452,45 @@ for (const system of [
     ...system,
   });
 const controlPlane = new ControlPlaneRegistry();
+const enterpriseSystems: EnterpriseSystemReference[] = [
+  { health: "HEALTHY", id: "maos", source_of_truth: "MAOS" },
+  {
+    health: "UNKNOWN",
+    id: "ai-memory-gateway",
+    source_of_truth: "DOMAIN_SYSTEM",
+  },
+  {
+    health: "UNKNOWN",
+    id: "marketing-automation",
+    source_of_truth: "DOMAIN_SYSTEM",
+  },
+  { health: "UNKNOWN", id: "ai-mls", source_of_truth: "DOMAIN_SYSTEM" },
+  { health: "UNKNOWN", id: "crm", source_of_truth: "DOMAIN_SYSTEM" },
+  { health: "UNKNOWN", id: "rbs-homes", source_of_truth: "DOMAIN_SYSTEM" },
+  {
+    health: "UNKNOWN",
+    id: "admin-rbs-homes",
+    source_of_truth: "DOMAIN_SYSTEM",
+  },
+  { health: "UNKNOWN", id: "erp", source_of_truth: "DOMAIN_SYSTEM" },
+  { health: "UNKNOWN", id: "erp-hr", source_of_truth: "DOMAIN_SYSTEM" },
+  {
+    health: "UNKNOWN",
+    id: "ph-legal-regulatory",
+    source_of_truth: "DOMAIN_SYSTEM",
+  },
+];
+const enterprise = new EnterpriseOrchestrationService(
+  enterpriseSystems,
+  undefined,
+  {
+    evaluate: ({ approval_id }) => ({
+      allowed: false,
+      approval_id,
+      authority: "UNKNOWN",
+    }),
+  },
+);
 const memoryGateway = new MemoryGatewayIntegration();
 memoryGateway.registerGateway(
   {
@@ -475,6 +519,10 @@ const routes = [
   ...createObservabilityRoutes(erpObservability, {
     environment: config.environment,
     project_ids: ["project-maos"],
+    scope: "project-maos",
+  }),
+  ...createEnterpriseOrchestrationRoutes(enterprise, {
+    environment: config.environment,
     scope: "project-maos",
   }),
   ...createErpAccountingTaxRoutes(erp, {
