@@ -21,21 +21,42 @@ MAOS Control Plane ≠ IDE Extension.
 
 MAOS는 Web/Server 기반 Enterprise Control Plane을 유지한다.
 IDE Extension 또는 Local Daemon은 MAOS의 Runner/Tool Provider 중 하나로 동작한다.
+The Tool Gateway is the mandatory execution path for every bridge action. Device identity, runner
+identity, registration, health and local possession expose capability only; they do not grant Tool
+Permission, Approval or production authority.
 
 ## 3. Responsibilities
 
-Local Execution Bridge may provide:
+Implemented MVP capability foundation:
 - READ_FILE
 - WRITE_FILE
-- CREATE_FILE
-- DELETE_FILE
-- LIST_DIRECTORY
 - RUN_COMMAND
-- GIT_STATUS / DIFF / COMMIT / BRANCH / WORKTREE
-- LOCAL_BROWSER / UI INSPECTION hook
+- GIT_STATUS
+- GIT_DIFF
+
+Optional capabilities requiring separate implementation and security evidence:
+- CREATE_FILE / DELETE_FILE / LIST_DIRECTORY
+- GIT_COMMIT / GIT_BRANCH / GIT_WORKTREE
+- LOCAL_BROWSER / UI_INSPECTION
 - LOCAL_MODEL access (Ollama / LM Studio)
-- local service health inspection
-- local artifact collection
+- LOCAL_SERVICE_INSPECTION / LOCAL_SERVICE_CONTROL
+- LOCAL_ARTIFACT_COLLECTION / ARTIFACT_UPLOAD
+
+The following table defines minimum risk and default Approval treatment. Environment, data
+classification, command, target and policy may raise risk but may never lower it.
+
+| Capability | Minimum Tool Risk | Approval rule |
+|---|---|---|
+| READ_FILE, LIST_DIRECTORY, GIT_STATUS, GIT_DIFF, LOCAL_SERVICE_INSPECTION | R0 READ_ONLY | No Approval by default; exact permission and scope remain required |
+| WRITE_FILE, CREATE_FILE, RUN_COMMAND, GIT_COMMIT, GIT_BRANCH, GIT_WORKTREE | R2 CONTROLLED_WRITE | Exact human Approval required by default |
+| DELETE_FILE, LOCAL_SERVICE_CONTROL | R2 CONTROLLED_WRITE | Exact human Approval required; elevate broad, destructive or protected-target actions to R4 |
+| UI_INSPECTION, LOCAL_BROWSER read-only inspection | R0 READ_ONLY | No Approval by default; exact permission and scope remain required |
+| LOCAL_BROWSER external action, ARTIFACT_UPLOAD | R3 EXTERNAL_ACTION | Exact human Approval required |
+| LOCAL_MODEL local inference | R0 READ_ONLY | No Approval by default; data-classification and context-export policy remain required |
+| Any production, credential, security-control or irreversible action | R4 CRITICAL_ACTION | Independent exact human Approval and production authority required |
+
+An optional capability is unavailable by default until registered with its exact action type,
+environment, risk, command/path policy and evidence contract.
 
 ## 4. Governance
 
@@ -50,6 +71,10 @@ Identity
 → Audit
 
 The bridge never grants authority by itself.
+Each request binds an exact ToolCall to project, Task, Run, environment, device, runner, workroot,
+capability, Tool/Policy version and, when required, Approval target/version/hash. The Tool Gateway
+revalidates current provider/runner health, permission, risk, Approval and revocation state before
+execution. A mismatch or missing value fails closed.
 
 ## 5. Security
 
@@ -62,7 +87,30 @@ The bridge never grants authority by itself.
 - destructive actions require elevated risk classification
 - production credentials remain external secret references
 - kill switch and session revocation
-- signed/identified runner registration
+- signed and identified runner registration
+
+Device identity and runner identity are distinct. Registration must bind both identities to an
+approved provider, capability set, workroots, policy version and credential/attestation lifecycle.
+Metadata may be recorded for an identified but unverified runner, but it is non-executable until
+its signed registration or approved equivalent is verified. Enrollment, rotation, expiry, replay
+protection and revocation freshness are required; runner health never substitutes for identity or
+authorization.
+
+Filesystem containment uses canonical filesystem identity, not lexical prefix checks alone:
+
+- canonicalize and verify the configured workroot and existing target before access;
+- resolve symlinks, Windows junctions and reparse points and deny any target whose resolved object
+  leaves the approved workroot;
+- normalize drive, separator and case semantics for the host filesystem;
+- for creation, canonicalize the existing parent and verify the final child remains contained;
+- bind the opened object to the validated target and revalidate where needed to prevent
+  time-of-check/time-of-use replacement.
+
+Command execution is an executable-plus-arguments contract bound to the approved workroot. The
+policy allowlists executables, arguments, working directory and environment variables, limits
+output, and rejects shell composition/metacharacters by default. Results and evidence are redacted
+before logging or persistence. Timeout, cancellation, kill and revocation remain enforceable while
+the command is active.
 
 ## 6. UX
 
@@ -82,24 +130,30 @@ Canonical status must always be represented by structured state, text, badges, t
 
 ## 7. Offline / Local-first
 
-The bridge may continue low-risk approved local work when MAOS policy allows.
+Online authority validation is the default. The bridge fails closed whenever current identity,
+permission, Approval, policy, task/run scope or revocation freshness cannot be verified.
+
+Offline work is limited to R0 and explicitly approved R1 actions under a short-lived, signed lease
+that binds the exact identity, runner, project, Task, Run, environment, workroot, capability,
+target, Tool/Policy version, budget and expiry. Offline execution is denied for R2–R4, production,
+destructive, credential, security-control and external actions. Expired, mismatched, consumed or
+revoked leases fail closed. On reconnection, evidence and audit records are reconciled before new
+work; reconciliation never retroactively grants authority.
+
 MAOS remains hybrid/provider-neutral, not 100% local-only.
 
 ## 8. Phase Placement
 
-Recommended insertion:
+| Implementation evidence | Candidate compatibility |
+|---|---|
+| Phase 1.10 — Skill / Tool / MCP | ToolCall, permission, risk, Approval, timeout, cancellation and evidence gates |
+| Phase 1.10A — Local Execution Bridge MVP | identified task-scoped runner, workroot, bounded capabilities, command policy, redaction, health and revocation |
+| Phase 1.13 — Control Room UI | structured runner, Run, evidence and Approval visibility |
+| Phase 2 — Core Control Plane | generalized System, Environment, Repository, Workroot and Runner registries |
 
-Phase 1.10  Skill / Tool / MCP
-→ Phase 1.10A Local Execution Bridge / IDE Companion MVP
-→ Phase 1.11 AI Memory Gateway Integration
-
-Phase 1.13 Control Room UI:
-- add Agent activity visualization
-- add Run timeline / current step visualization
-- add IDE deep link / local runner status
-
-Phase 2:
-- generalize Runner Registry and remote/local execution providers
+Signed registration, link-aware filesystem containment, offline leases and optional expanded
+capabilities require separate implementation and security evidence. Current evidence is
+non-production and does not establish production readiness.
 
 ## 9. Non-Goals
 
@@ -114,3 +168,5 @@ Phase 2:
 
 MAOS remains the enterprise brain/control plane.
 Local Execution Bridge becomes one of its hands.
+It remains a Runner/Tool Provider behind the Tool Gateway and owns no Task truth, Tool Permission,
+Approval, source-of-truth data or production authority.
