@@ -1,13 +1,15 @@
 # MAOS-019 — Local Execution Bridge / IDE Companion Architecture
-## v1.1 Candidate
+## MAOS Architecture v1.1
 
 | 항목 | 값 |
 |---|---|
 | Document ID | MAOS-019 |
-| Version | v1.1 Candidate |
-| Status | PROPOSED |
+| Version | 1.1 |
+| Status | APPROVED / FROZEN |
 | Change Class | C2 Minor Architecture |
-| Baseline | MAOS Architecture v1.0 FROZEN |
+| Previous Baseline | MAOS Architecture v1.0 FROZEN |
+| Approval | MAOS-CR-002 |
+| Freeze Record | MAOS-FRZ-002 |
 
 ## 1. Purpose
 

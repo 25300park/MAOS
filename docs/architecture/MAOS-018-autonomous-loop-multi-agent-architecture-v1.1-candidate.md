@@ -1,13 +1,15 @@
 # MAOS-018 — Autonomous Loop Multi-Agent Architecture
-## v1.1 Candidate
+## MAOS Architecture v1.1
 
 | 항목 | 값 |
 |---|---|
 | Document ID | MAOS-018 |
-| Version | v1.1 Candidate |
-| Status | PROPOSED |
+| Version | 1.1 |
+| Status | APPROVED / FROZEN |
 | Change Class | C2 Minor Architecture |
-| Baseline | MAOS Architecture v1.0 FROZEN |
+| Previous Baseline | MAOS Architecture v1.0 FROZEN |
+| Approval | MAOS-CR-002 |
+| Freeze Record | MAOS-FRZ-002 |
 
 ## 1. Objective
 MAOS의 Multi-Agent 구조를 일회성 Dispatch에서

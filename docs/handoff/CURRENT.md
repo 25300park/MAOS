@@ -92,10 +92,12 @@ Establish governed optimization, learning, and expansion foundations in which ve
 - Production readiness evidence: `docs/implementation/phase-1P-production-readiness-evidence.md`
 - Production gate evidence: `docs/implementation/phase-1P-final-production-gate-evidence.md`
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
-- MAOS Architecture v1.0 remains frozen.
+- MAOS Architecture v1.0 remains the historical frozen baseline; MAOS Architecture v1.1 is
+  approved/frozen by MAOS-CR-002 and MAOS-FRZ-002.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
 - Production gaps remain separately tracked and are not silently resolved by Phase 13 optimization work without real evidence.
-- MAOS-018 and MAOS-019 remain candidate architecture and are not frozen by entering Phase 13.
+- MAOS-018 and MAOS-019 are the additive MAOS Architecture v1.1 frozen documents; this status
+  grants no production-deployment approval.
 - Verified results may create improvement candidates, but no candidate changes runtime behavior without governed review and authorization.
 - External and domain systems remain independent systems and repositories by default.
 - AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.

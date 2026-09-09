@@ -6,8 +6,12 @@
 | Baseline | MAOS Architecture v1.0 FROZEN |
 | Target | Revised MAOS Architecture v1.1 Candidates |
 | Class | C2 Minor Architecture |
-| Status | PROPOSED / PENDING HUMAN APPROVAL |
+| Status | APPROVED |
 | Scope | Adopt revised MAOS-018 and MAOS-019 additively; no v1.0 redesign |
+| Decision | APPROVE MAOS v1.1 candidate adoption |
+| Approved By | HUMAN_REPOSITORY_OWNER — explicit repository-authorized human decision |
+| Approved On | 2026-09-09 |
+| Freeze Record | MAOS-FRZ-002 |
 
 ## 1. Reason for Change
 
@@ -131,10 +135,12 @@ Approval requires a named authorized human reviewer to confirm:
 Approval of this CR permits a separate controlled action to mark the approved documents as frozen
 MAOS Architecture v1.1. It does not freeze them automatically.
 
-## 11. Recommendation
+## 11. Approval Decision
 
-`APPROVE_C2_AFTER_FORMAL_HUMAN_REVIEW`
+`APPROVED_C2`
 
-The revised candidates are ready for v1.1 approval review. Until that approval and a separate
-freeze action occur, their status remains `PROPOSED` and frozen MAOS Architecture v1.0 remains
-authoritative.
+The repository-authorized human approved adoption of the exact revised MAOS-018 and MAOS-019
+documents at commits `96740b904bd1053b245fba2382c94231a3f4d9f5` and
+`0e375869d2cd14d2249047fc081f1a2302d5be41`. MAOS-FRZ-002 records the separate freeze action.
+This approval changes architecture-document status only and grants no runtime or production
+authority.

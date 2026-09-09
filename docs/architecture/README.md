@@ -1,10 +1,11 @@
-# MAOS Architecture v1.0 — Repository Index
+# MAOS Architecture — Repository Index
 
-**Status:** FROZEN
+**Effective Version:** v1.1 — APPROVED / FROZEN
 
-이 폴더는 MAOS Architecture v1.0 정본 문서 세트다.
+이 폴더는 MAOS Architecture 정본 문서 세트다. v1.0은 역사적 동결 기준선으로 유지되며,
+v1.1은 MAOS-CR-002를 통해 MAOS-018과 MAOS-019를 추가한다.
 
-## Documents
+## v1.0 Historical Frozen Baseline
 
 - [MAOS-000 Project Constitution](MAOS-000-project-constitution.md)
 - [MAOS-001 System Architecture](MAOS-001-system-architecture.md)
@@ -27,7 +28,14 @@
 - [MAOS-FRZ-001 Architecture Freeze v1.0](MAOS-FRZ-001-architecture-freeze-v1.0.md)
 - [MAOS-NRM-001 Architecture Normalization](MAOS-NRM-001-normalization.md)
 
+## v1.1 Additions
+
+- [MAOS-018 Autonomous Loop Multi-Agent Architecture](MAOS-018-autonomous-loop-multi-agent-architecture-v1.1-candidate.md)
+- [MAOS-019 Local Execution Bridge / IDE Companion Architecture](MAOS-019-local-execution-bridge-v1.1-candidate.md)
+- [MAOS-FRZ-002 Architecture Freeze v1.1](MAOS-FRZ-002-architecture-freeze-v1.1.md)
+
 ## Precedence
 
 MAOS-NRM-001 normalization correction이 이전 문서의 충돌 표현보다 우선한다.
-MAOS-FRZ-001은 Architecture Freeze v1.0의 최종 판정 문서다.
+MAOS-FRZ-001은 Architecture Freeze v1.0의 역사적 최종 판정 문서다.
+MAOS-FRZ-002는 MAOS-CR-002로 승인된 MAOS-018과 MAOS-019를 추가한 v1.1의 최종 판정 문서다.
