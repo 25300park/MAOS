@@ -4,11 +4,11 @@ Last updated: 2026-09-09
 
 ## Current Phase
 
-**Phase 12 — Enterprise Production Readiness**
+**Phase 13 — Optimization / Learning / Expansion**
 
-Status: **NOT COMPLETE**
+Status: **COMPLETE**
 
-Phase 1 MVP, Phase 1P, and Phases 2 through 11 are complete. Phase 12 will evaluate and harden enterprise production readiness using real evidence while keeping deployment authorization as a separate human-controlled gate.
+Phase 1 MVP, Phase 1P, and Phases 2 through 13 are complete. Phase 13 established governed optimization, learning, and expansion candidates without permitting uncontrolled self-improvement or changing production-readiness status.
 
 ## Completed
 
@@ -26,6 +26,8 @@ Phase 1 MVP, Phase 1P, and Phases 2 through 11 are complete. Phase 12 will evalu
 - Phase 9A — PH Legal / Regulatory AI Team Integration: **COMPLETE**
 - Phase 10 — Enterprise Cross-System Orchestration: **COMPLETE**
 - Phase 11 — Operations / Reliability / Security Hardening: **COMPLETE**
+- Phase 12 — Enterprise Production Readiness: **COMPLETE**
+- Phase 13 — Optimization / Learning / Expansion: **COMPLETE**
 - MVP_READY: **YES**
 - PRODUCTION_PREPARATION_COMPLETE: **YES**
 - PRODUCTION_READY: **NO**
@@ -57,16 +59,19 @@ Phase 1 MVP, Phase 1P, and Phases 2 through 11 are complete. Phase 12 will evalu
 ## Repository Baseline
 
 - Branch: `main`
-- Commit: `6e1d22af92256e44ab77b84bce0e7fa5975fbcf8`
+- Commit: `d4b36455330d1b1a1ce3823d0cc45f106ad4ee85`
 - Root: `D:\10. MAOS`
 
-## Phase 12 Goal
+## Phase 13 Goal
 
-Determine and harden MAOS enterprise production readiness using verifiable evidence without treating simulated evidence as real or granting production deployment authority.
+Establish governed optimization, learning, and expansion foundations in which verified results may create improvement candidates while humans retain authority over workflow, skill, model, and tool changes.
 
 ## Context
 
-- Phase manifest: `docs/context/phase-12.md`
+- Phase manifest: `docs/context/phase-13.md`
+- Phase 12 control commit: `d7cf29e48920d5365b60f67885e3bd7ceb1f21eb`
+- Phase 12 implementation/evidence commit: `d4b36455330d1b1a1ce3823d0cc45f106ad4ee85`
+- Phase 12 evidence: `docs/implementation/phase-12-enterprise-production-readiness-evidence.md`
 - Phase 11 control commit: `cb4198e4eb05c1a476faaca0ab515c9643cbe46c`
 - Phase 11 implementation commit: `6e1d22af92256e44ab77b84bce0e7fa5975fbcf8`
 - Phase 10 control commit: `a0157e2b475b1874ae1f792c3cd4674854b168ea`
@@ -89,7 +94,9 @@ Determine and harden MAOS enterprise production readiness using verifiable evide
 - Final gate evidence: `docs/implementation/phase-1-mvp-final-gate-evidence.md`
 - MAOS Architecture v1.0 remains frozen.
 - `PRODUCTION_PREPARATION_COMPLETE` does not imply `PRODUCTION_DEPLOYMENT_APPROVED`.
-- Production gaps remain separately tracked and are not silently resolved by Phase 12 readiness work without real evidence.
+- Production gaps remain separately tracked and are not silently resolved by Phase 13 optimization work without real evidence.
+- MAOS-018 and MAOS-019 remain candidate architecture and are not frozen by entering Phase 13.
+- Verified results may create improvement candidates, but no candidate changes runtime behavior without governed review and authorization.
 - External and domain systems remain independent systems and repositories by default.
 - AI Memory Gateway remains the corporate AI memory and retrieval source of truth; MAOS stores only governance metadata and references required by frozen architecture.
 - Any overlap with a Personal Agent remains separately governed and cannot silently enter enterprise context.
@@ -117,9 +124,11 @@ Determine and harden MAOS enterprise production readiness using verifiable evide
 
 ## Guardrails
 
-- Do not implement Phase 12 until its implementation work is explicitly started on a short-lived task branch.
+- Do not begin a new production or roadmap phase automatically.
+- Do not permit uncontrolled self-improvement.
+- Keep workflow, skill, model, and tool changes governed and human-authorized where required.
 - Do not perform real production deployment or imply production approval.
 - Preserve secret/configuration separation.
 - Do not modify frozen architecture without an approved Change Request.
 - Preserve Agent != Model != Runner, Task != Run, Review != Approval, QA PASS != Production Approval, role separation, task scope, permission, evidence, audit, and human authority in every operation.
-- Do not begin Phase 13 or later work automatically.
+- Do not begin Phase 14 or later work automatically.
