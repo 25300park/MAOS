@@ -36,7 +36,7 @@ export function loadApiConfig(
     throw new Error(`MAOS_ENV must be one of: ${ENVIRONMENTS.join(", ")}`);
   }
 
-  const port = Number(env.API_PORT);
+  const port = Number(env.API_PORT ?? env.PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("API_PORT must be an integer between 1 and 65535");
   }

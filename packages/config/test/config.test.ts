@@ -28,6 +28,14 @@ test("fails fast when API_PORT is outside the TCP port range", () => {
   );
 });
 
+test("accepts the provider PORT contract for staging API execution", () => {
+  assert.deepEqual(loadApiConfig({ MAOS_ENV: "staging", PORT: "8080" }), {
+    environment: "staging",
+    port: 8080,
+    service: "api",
+  });
+});
+
 test("loads a PostgreSQL database URL from runtime configuration", () => {
   assert.deepEqual(
     loadDatabaseConfig({ DATABASE_URL: "postgresql://localhost/maos" }),

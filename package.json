@@ -12,7 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "format:check": "prettier --check --end-of-line auto package.json eslint.config.mjs tsconfig.base.json tsconfig.check.json apps modules packages scripts .github",
+    "format:check": "prettier --check --end-of-line auto package.json eslint.config.mjs tsconfig.base.json tsconfig.check.json vercel.json api apps deploy modules packages scripts .github",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "test": "tsx --test \"apps/**/*.test.ts\" \"modules/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
@@ -24,7 +24,8 @@
     "smoke:api": "tsx scripts/smoke-api.ts",
     "smoke:health": "tsx scripts/smoke-health.ts",
     "scan:repository": "tsx scripts/repository-safety-scan.ts",
-    "verify:production-readiness": "tsx scripts/production-readiness-verify.ts"
+    "verify:production-readiness": "tsx scripts/production-readiness-verify.ts",
+    "verify:staging-packaging": "tsx scripts/staging-packaging.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

@@ -2,7 +2,7 @@
 
 Date: 2026-09-09
 
-Status: `STAGE_2_PREPARED / HUMAN_AND_PRODUCTION_EVIDENCE_REMAIN`
+Status: `STAGE_3_LOCAL_PREPARATION_COMPLETE / HUMAN_PROVIDER_ACTION_REQUIRED`
 
 ## Goal
 
@@ -40,10 +40,18 @@ Stage 2 provider-specific package:
 - `docs/production-readiness/stage-2-monitoring-alerting-plan.md`
 - `docs/production-readiness/stage-2-security-capacity-validation-plan.md`
 
-Approved Stage 2 planning inputs are Vercel for the frontend, Railway for API/worker/PostgreSQL,
-Railway plus company NAS for backup, a 99.9% SLO, a one-hour RPO target, a four-hour RTO target,
-email alerting, HTTPS, and one human occupying eight distinct operational roles. Provider account,
-region, resource identifiers, domain, retention, contact address, staging target, and credentials
+Stage 3 staging-readiness package:
+
+- `docs/production-readiness/stage-3-staging-readiness.md`
+- `docs/production-readiness/stage-3-provider-action-checklist.md`
+- `docs/production-readiness/production-gap-register.md`
+
+Approved Stage 3 inputs are Vercel for the frontend, Railway for API/worker/PostgreSQL with
+Singapore as the preferred Railway region, Railway plus company NAS for backup, a 99.9% SLO, a
+one-hour RPO target, a four-hour RTO target, email alerting, HTTPS, an initial USD 50-100/month
+budget guideline, and one human occupying eight distinct operational roles. Staging provisioning
+is approved. Production provisioning and deployment are not approved. Provider account, resource
+identifiers, production domain, retention, contact address, resolved staging URLs, and credentials
 remain unresolved or evidence-pending and are not invented here.
 
 ## Governing Boundaries

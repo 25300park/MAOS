@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import { createConservativePhase12ReadinessAssessment } from "@maos/module-operations";
 import {
   renderControlRoom,
@@ -313,25 +313,27 @@ export const CONTROL_ROOM_PREVIEW_OPTIMIZATION: OptimizationView = {
   ux_findings: 1,
 };
 
-export function createControlRoomServer(
-  options: {
-    ai_mls?: AiMlsView | undefined;
-    control_plane?: ControlPlaneView | undefined;
-    crm?: CrmView | undefined;
-    erp_finance?: ErpFinanceView | undefined;
-    enterprise?: EnterpriseOrchestrationView | undefined;
-    hr_labor?: HrLaborView | undefined;
-    identity?: ControlRoomIdentity | null;
-    legal_compliance?: LegalComplianceView | undefined;
-    memory_integration?:
-      typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
-    operations?: OperationsView | undefined;
-    optimization?: OptimizationView | undefined;
-    rbs_admin?: RbsAdminView | undefined;
-  } = {},
-): Server {
+export interface ControlRoomServerOptions {
+  ai_mls?: AiMlsView | undefined;
+  control_plane?: ControlPlaneView | undefined;
+  crm?: CrmView | undefined;
+  erp_finance?: ErpFinanceView | undefined;
+  enterprise?: EnterpriseOrchestrationView | undefined;
+  hr_labor?: HrLaborView | undefined;
+  identity?: ControlRoomIdentity | null;
+  legal_compliance?: LegalComplianceView | undefined;
+  memory_integration?:
+    typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
+  operations?: OperationsView | undefined;
+  optimization?: OptimizationView | undefined;
+  rbs_admin?: RbsAdminView | undefined;
+}
+
+export function createControlRoomRequestHandler(
+  options: ControlRoomServerOptions = {},
+): RequestListener {
   const identity = options.identity ?? null;
-  return createServer((request, response) => {
+  return (request, response) => {
     const requestId =
       request.headers["x-request-id"]?.toString() ?? randomUUID();
     const correlationId =
@@ -373,7 +375,13 @@ export function createControlRoomServer(
       "x-trace-id": traceId,
     });
     response.end(html);
-  });
+  };
+}
+
+export function createControlRoomServer(
+  options: ControlRoomServerOptions = {},
+): Server {
+  return createServer(createControlRoomRequestHandler(options));
 }
 
 if (process.argv[1]?.endsWith("server.js")) {
