@@ -12,10 +12,16 @@ import { createLogger } from "@maos/logging";
 import { DevelopmentAgentTeam } from "../modules/agent-runtime/src/index.js";
 import {
   BackupRecoveryService,
+  EnterpriseProductionReadinessEvaluator,
   EnvironmentRegistry,
   MonitoringReadiness,
   OperationalAuthorityRegistry,
+  ProductionReadinessEvidenceRegistry,
+  assessProductionDeploymentReadiness,
+  assessProductionEnvironmentContract,
   assessDeploymentProviderReadiness,
+  createPhase12ReadinessRequirements,
+  createPhase12RunbookCatalog,
   runBoundedLoadProfile,
   runBoundedStabilityProfile,
   simulateDisasterRecovery,
@@ -285,6 +291,98 @@ const disasterRecovery = await simulateDisasterRecovery({
   rto_target_minutes: 120,
 });
 
+const productionEnvironment = assessProductionEnvironmentContract({
+  environment_id: "production",
+});
+assert.equal(productionEnvironment.classification, "NOT_READY");
+assert.equal(productionEnvironment.missing_fields.includes("region"), true);
+
+const deploymentReadiness = assessProductionDeploymentReadiness({
+  artifact_integrity_sha256: "0".repeat(64),
+  artifact_reference: "artifact://maos/current-build",
+  commit_sha: "0000000000000000000000000000000000000000",
+  environment_contract_ready: false,
+  exact_artifact_verified: true,
+  post_deploy_verification_reference: "runbook://post-deploy-verify",
+  provider_ready: false,
+  rollback_artifact_reference: "artifact://maos/known-good",
+});
+assert.equal(deploymentReadiness.classification, "NOT_READY");
+assert.equal(deploymentReadiness.production_deployment_approved, false);
+
+const observedAt = new Date();
+const validUntil = new Date(observedAt.getTime() + 3_600_000);
+const localRequirementEvidence = [
+  ["encrypted-backup-controls", "NON_PRODUCTION"],
+  ["simulated-disaster-recovery", "SIMULATED"],
+  ["security-boundary-regression", "NON_PRODUCTION"],
+  ["bounded-load", "NON_PRODUCTION"],
+  ["retry-recovery-resilience", "NON_PRODUCTION"],
+  ["phase-12-verification-gate", "NON_PRODUCTION"],
+  ["production-monitoring", "NON_PRODUCTION"],
+  ["production-alerting", "NON_PRODUCTION"],
+  ["incident-response-exercise", "SIMULATED"],
+  ["phase-12-runbooks", "NON_PRODUCTION"],
+] as const;
+const readiness = new EnterpriseProductionReadinessEvaluator(
+  createPhase12ReadinessRequirements(),
+).evaluate({
+  deployment_readiness: deploymentReadiness,
+  enterprise_mvp_ready: true,
+  evidence_registry: (() => {
+    const registry = new ProductionReadinessEvidenceRegistry();
+    for (const [requirement_id, classification] of localRequirementEvidence) {
+      const artifactPayload = `${requirement_id}:${classification}`;
+      registry.register({
+        artifact_payload: artifactPayload,
+        classification,
+        environment: "TEST",
+        evidence_reference: `evidence://phase-12/${requirement_id}`,
+        integrity_sha256: createHash("sha256")
+          .update(artifactPayload)
+          .digest("hex"),
+        issuer_reference: "system://maos/verification",
+        observed_at: observedAt.toISOString(),
+        outcome: "PASS",
+        provenance_reference: `provenance://phase-12/${requirement_id}`,
+        requirement_id,
+        valid_until: validUntil.toISOString(),
+      });
+    }
+    return registry;
+  })(),
+  owners: [
+    "PRODUCTION_OWNER",
+    "DEPLOYMENT_APPROVER",
+    "INCIDENT_COMMANDER",
+    "BACKUP_OWNER",
+    "RESTORE_OWNER",
+    "SECURITY_OWNER",
+    "ROLLBACK_AUTHORITY",
+    "ESCALATION_CONTACT",
+  ].map((responsibility) => ({
+    actor_reference: `role:${responsibility.toLowerCase()}`,
+    actor_type: "HUMAN" as const,
+    responsibility: responsibility as
+      | "PRODUCTION_OWNER"
+      | "DEPLOYMENT_APPROVER"
+      | "INCIDENT_COMMANDER"
+      | "BACKUP_OWNER"
+      | "RESTORE_OWNER"
+      | "SECURITY_OWNER"
+      | "ROLLBACK_AUTHORITY"
+      | "ESCALATION_CONTACT",
+  })),
+  production_preparation_complete: true,
+});
+assert.equal(readiness.enterprise_mvp_ready, true);
+assert.equal(readiness.production_preparation_complete, true);
+assert.equal(readiness.production_ready, false);
+assert.equal(readiness.production_deployment_approved, false);
+assert.equal(readiness.phase_13_ready, true);
+assert.equal(readiness.matrix.length, 19);
+assert.equal(createPhase12RunbookCatalog().length, 14);
+
 const artifactChecksum = createHash("sha256")
   .update(readFileSync("apps/api/dist/app.js"))
   .digest("hex");
@@ -305,6 +403,12 @@ process.stdout.write(
       long_soak: "NOT_RUN",
       monitoring: monitoring.readiness().status,
       operational_ownership: ownership.readiness().status,
+      phase_12: {
+        deployment_readiness: deploymentReadiness,
+        production_environment: productionEnvironment,
+        readiness,
+        runbooks: createPhase12RunbookCatalog().length,
+      },
       provider: provider.status,
       stability,
     },

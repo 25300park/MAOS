@@ -6,6 +6,7 @@ import { ObservabilityAuditService } from "@maos/module-observability";
 import {
   MonitoringReadiness,
   OperationsHardeningService,
+  createConservativePhase12ReadinessAssessment,
 } from "@maos/module-operations";
 import {
   EnterpriseOrchestrationService,
@@ -462,6 +463,7 @@ const operations = new OperationsHardeningService(
   () => new Date(),
   operationsMonitoring,
 );
+const enterpriseReadiness = createConservativePhase12ReadinessAssessment();
 const enterpriseSystems: EnterpriseSystemReference[] = [
   { health: "HEALTHY", id: "maos", source_of_truth: "MAOS" },
   {
@@ -542,6 +544,7 @@ const routes = [
     operations,
     {
       environment: config.environment,
+      readiness: () => enterpriseReadiness,
       scope: "project-maos",
     },
     erpObservability,

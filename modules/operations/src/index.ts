@@ -529,3 +529,4 @@ export async function runBoundedStabilityProfile(input: {
 export * from "./hardening.js";
 export * from "./readiness.js";
 export * from "./reliability.js";
+export * from "./enterprise-readiness.js";

@@ -197,6 +197,23 @@ export interface OperationsView {
   overall_health: string;
   production_deployment_approved: false;
   production_gaps_open: number;
+  readiness?: {
+    enterprise_mvp_ready: boolean;
+    matrix: readonly {
+      area: string;
+      classification:
+        | "READY"
+        | "PARTIALLY_READY"
+        | "NOT_READY"
+        | "SIMULATED_ONLY"
+        | "HUMAN_ACTION_REQUIRED";
+      evidence_classifications?: readonly string[];
+    }[];
+    phase_13_ready: boolean;
+    production_deployment_approved: boolean;
+    production_preparation_complete: boolean;
+    production_ready: boolean;
+  };
   recovery_state: string;
   security_warnings: number;
 }
@@ -524,9 +541,25 @@ function operationsPage(view?: OperationsView): string {
   const nextActions = view.next_actions
     .map((action) => `<li>${escapeHtml(action)}</li>`)
     .join("");
+  const readiness = view.readiness
+    ? `<div class="section-title"><h2>Enterprise production readiness</h2><span class="permission-note">Evidence classification · deployment approval remains separate</span></div><section class="metric-grid" aria-label="Production readiness classifications"><article class="metric metric-working"><div class="metric-top"><span>Enterprise MVP</span><span>Validated baseline</span></div><strong class="metric-value" style="font-size:20px">${view.readiness.enterprise_mvp_ready ? "YES" : "NO"}</strong></article><article class="metric metric-working"><div class="metric-top"><span>Preparation complete</span><span>Not readiness</span></div><strong class="metric-value" style="font-size:20px">${view.readiness.production_preparation_complete ? "YES" : "NO"}</strong></article><article class="metric metric-critical"><div class="metric-top"><span>Production ready</span><span>Real evidence required</span></div><strong class="metric-value" style="font-size:20px">${view.readiness.production_ready ? "YES" : "NO"}</strong></article><article class="metric metric-critical"><div class="metric-top"><span>Deployment approved</span><span>Human authority</span></div><strong class="metric-value" style="font-size:20px">${view.readiness.production_deployment_approved ? "YES" : "NO"}</strong></article></section><section class="panel"><div class="table-wrap"><table class="data-table"><caption>Production readiness matrix</caption><thead><tr><th>Area</th><th>Classification</th></tr></thead><tbody>${view.readiness.matrix
+        .map(({ area, classification }) => {
+          const style =
+            classification === "READY"
+              ? "healthy"
+              : classification === "NOT_READY"
+                ? "failed"
+                : "approval";
+          const evidenceLabel = view.readiness?.matrix
+            .find((entry) => entry.area === area)
+            ?.evidence_classifications?.join(" / ");
+          return `<tr><td><strong>${escapeHtml(area.replaceAll("_", " "))}</strong></td><td>${status(classification, style)}${evidenceLabel ? `<br><small>Evidence: ${escapeHtml(evidenceLabel)}</small>` : ""}</td></tr>`;
+        })
+        .join("")}</tbody></table></div></section>`
+    : "";
   return `${pageHeading("Operations & reliability", "Operations", "Current health, incidents, recovery, security, and human-owned next actions. UNKNOWN never means healthy.")}
   <section class="metric-grid" aria-label="Operations summary"><article class="metric metric-working"><div class="metric-top"><span>Overall health</span><span>Evidence-based</span></div><strong class="metric-value" style="font-size:20px">${status(view.overall_health, healthStyle)}</strong><div class="metric-note">Degraded systems · ${view.degraded_systems.length}</div></article><article class="metric metric-critical"><div class="metric-top"><span>Active incidents</span><span>Human-owned</span></div><strong class="metric-value">${view.active_incidents}</strong><div class="metric-note">Recovery · ${escapeHtml(view.recovery_state)}</div></article><article class="metric metric-risk"><div class="metric-top"><span>Security warnings</span><span>Fail closed</span></div><strong class="metric-value">${view.security_warnings}</strong><div class="metric-note">Emergency stops · ${view.emergency_stops}</div></article><article class="metric metric-approval"><div class="metric-top"><span>Production gaps</span><span>Separately tracked</span></div><strong class="metric-value">${view.production_gaps_open}</strong><div class="metric-note">Production deployment · NOT APPROVED</div></article></section>
-  <div class="content-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>Alerts and incidents</h2>${status(`${view.alerts.length} ALERTS`, view.alerts.length ? "approval" : "healthy")}</div><div class="table-wrap"><table class="data-table"><caption>Current operational alerts</caption><thead><tr><th>Severity</th><th>Affected system</th><th>Status</th><th>Owner</th></tr></thead><tbody>${alerts || '<tr><td colspan="4">No active alerts</td></tr>'}</tbody></table></div></section><section class="panel"><div class="panel-head"><h2>Degraded systems</h2></div><div class="panel-body"><ul>${degraded || "<li>No degraded system</li>"}</ul></div></section></div><aside class="stack"><section class="panel"><div class="panel-head"><h2>Recovery readiness</h2>${status(view.recovery_state, "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Backup</dt><dd>${escapeHtml(view.backup.status)}</dd></div><div class="fact"><dt>Last verified</dt><dd>${escapeHtml(view.backup.last_verified_at)}</dd></div><div class="fact"><dt>DR exercise</dt><dd>${escapeHtml(view.dr.status)}</dd></div><div class="fact"><dt>Evidence</dt><dd>${escapeHtml(view.dr.classification)}</dd></div></dl><div class="callout"><strong>Simulated evidence remains simulated.</strong><p>No real production restore, RPO/RTO measurement, or deployment approval is claimed.</p></div></div></section><section class="panel"><div class="panel-head"><h2>Next safe actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No pending action</li>"}</ul></div></section></aside></div>`;
+  <div class="content-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>Alerts and incidents</h2>${status(`${view.alerts.length} ALERTS`, view.alerts.length ? "approval" : "healthy")}</div><div class="table-wrap"><table class="data-table"><caption>Current operational alerts</caption><thead><tr><th>Severity</th><th>Affected system</th><th>Status</th><th>Owner</th></tr></thead><tbody>${alerts || '<tr><td colspan="4">No active alerts</td></tr>'}</tbody></table></div></section><section class="panel"><div class="panel-head"><h2>Degraded systems</h2></div><div class="panel-body"><ul>${degraded || "<li>No degraded system</li>"}</ul></div></section></div><aside class="stack"><section class="panel"><div class="panel-head"><h2>Recovery readiness</h2>${status(view.recovery_state, "working")}</div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>Backup</dt><dd>${escapeHtml(view.backup.status)}</dd></div><div class="fact"><dt>Last verified</dt><dd>${escapeHtml(view.backup.last_verified_at)}</dd></div><div class="fact"><dt>DR exercise</dt><dd>${escapeHtml(view.dr.status)}</dd></div><div class="fact"><dt>Evidence</dt><dd>${escapeHtml(view.dr.classification)}</dd></div></dl><div class="callout"><strong>Simulated evidence remains simulated.</strong><p>No real production restore, RPO/RTO measurement, or deployment approval is claimed.</p></div></div></section><section class="panel"><div class="panel-head"><h2>Next safe actions</h2></div><div class="panel-body"><ul>${nextActions || "<li>No pending action</li>"}</ul></div></section></aside></div>${readiness}`;
 }
 
 function controlPlaneScope(view: ControlPlaneView): string {

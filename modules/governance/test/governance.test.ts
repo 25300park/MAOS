@@ -134,6 +134,10 @@ test("blocks stale, mismatched, consumed, and same-actor approvals", () => {
   }> = [
     { approval: { ...approval, validity: "STALE" }, expected: "STALE" },
     {
+      approval: { ...approval, expires_at: "not-a-timestamp" },
+      expected: "STALE",
+    },
+    {
       approval,
       expected: "TARGET_MISMATCH",
       target: { ...approval.target, id: "release-2" },

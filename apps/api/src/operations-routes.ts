@@ -1,6 +1,7 @@
 import type { Environment } from "@maos/config";
 import {
   OperationsError,
+  type EnterpriseReadinessAssessment,
   type OperationsHardeningService,
 } from "@maos/module-operations";
 import type { IdentityContext } from "@maos/module-identity";
@@ -123,7 +124,11 @@ const execute = (operation: () => unknown) => {
 
 export function createOperationsRoutes(
   service: OperationsHardeningService,
-  options: { environment: Environment; scope: string },
+  options: {
+    environment: Environment;
+    readiness?: () => EnterpriseReadinessAssessment;
+    scope: string;
+  },
   audit: ObservabilityAuditService,
 ): ApiRoute[] {
   const access = (
@@ -163,6 +168,16 @@ export function createOperationsRoutes(
       method: "GET",
       path: "/api/v1/operations/snapshot",
     },
+    ...(options.readiness
+      ? [
+          {
+            access: access("READ", "R0"),
+            handle: () => options.readiness!(),
+            method: "GET",
+            path: "/api/v1/operations/readiness",
+          } satisfies ApiRoute,
+        ]
+      : []),
     {
       access: access("READ", "R0"),
       handle: () => ({ entities: service.alerts() }),

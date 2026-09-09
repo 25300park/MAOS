@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import { createConservativePhase12ReadinessAssessment } from "@maos/module-operations";
 import {
   renderControlRoom,
   type AiMlsView,
@@ -268,6 +269,7 @@ export const CONTROL_ROOM_PREVIEW_OPERATIONS: OperationsView = {
   overall_health: "DEGRADED",
   production_deployment_approved: false,
   production_gaps_open: 10,
+  readiness: createConservativePhase12ReadinessAssessment(),
   recovery_state: "MITIGATING",
   security_warnings: 1,
 };

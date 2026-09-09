@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import { createBearerAuthenticator } from "@maos/module-identity";
-import { OperationsHardeningService } from "@maos/module-operations";
+import {
+  EnterpriseProductionReadinessEvaluator,
+  OperationsHardeningService,
+  ProductionReadinessEvidenceRegistry,
+  assessProductionDeploymentReadiness,
+  createPhase12ReadinessRequirements,
+} from "@maos/module-operations";
 import { ObservabilityAuditService } from "@maos/module-observability";
 import { createApiServer } from "../src/app.js";
 import { createOperationsRoutes } from "../src/operations-routes.js";
@@ -14,6 +20,25 @@ async function startApi(allow: boolean) {
   const audit = new ObservabilityAuditService({
     id: () => "operations-audit-id",
     now: () => new Date("2026-09-09T05:00:00Z"),
+  });
+  const readiness = new EnterpriseProductionReadinessEvaluator(
+    createPhase12ReadinessRequirements(),
+    () => new Date("2026-09-09T05:00:00Z"),
+  ).evaluate({
+    deployment_readiness: assessProductionDeploymentReadiness({
+      artifact_integrity_sha256: "0".repeat(64),
+      artifact_reference: "artifact://maos/current-build",
+      commit_sha: "0000000000000000000000000000000000000000",
+      environment_contract_ready: false,
+      exact_artifact_verified: false,
+      post_deploy_verification_reference: "runbook://post-deploy-verify",
+      provider_ready: false,
+      rollback_artifact_reference: "artifact://maos/known-good",
+    }),
+    enterprise_mvp_ready: true,
+    evidence_registry: new ProductionReadinessEvidenceRegistry(),
+    owners: [],
+    production_preparation_complete: true,
   });
   service.registerTarget({
     environment: "DEVELOPMENT",
@@ -68,6 +93,7 @@ async function startApi(allow: boolean) {
       service,
       {
         environment: "development",
+        readiness: () => readiness,
         scope: "project-maos",
       },
       audit,
@@ -103,6 +129,27 @@ test("exposes an authorized versioned operations snapshot", async (t) => {
   };
   assert.equal(body.data.overall_health, "HEALTHY");
   assert.equal(body.data.production_deployment_approved, false);
+});
+
+test("exposes separate production readiness and deployment approval classifications", async (t) => {
+  const api = await startApi(true);
+  t.after(api.close);
+  const response = await fetch(`${api.baseUrl}/api/v1/operations/readiness`, {
+    headers,
+  });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: {
+      enterprise_mvp_ready: boolean;
+      matrix: readonly unknown[];
+      production_deployment_approved: boolean;
+      production_ready: boolean;
+    };
+  };
+  assert.equal(body.data.enterprise_mvp_ready, true);
+  assert.equal(body.data.production_ready, false);
+  assert.equal(body.data.production_deployment_approved, false);
+  assert.equal(body.data.matrix.length, 19);
 });
 
 test("defaults operations API access to deny", async (t) => {

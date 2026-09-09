@@ -34,6 +34,23 @@ const operations: OperationsView = {
   overall_health: "DEGRADED",
   production_deployment_approved: false,
   production_gaps_open: 10,
+  readiness: {
+    enterprise_mvp_ready: true,
+    matrix: [
+      { area: "RELIABILITY", classification: "READY" },
+      { area: "BACKUP", classification: "PARTIALLY_READY" },
+      { area: "DR", classification: "SIMULATED_ONLY" },
+      { area: "INFRASTRUCTURE", classification: "NOT_READY" },
+      {
+        area: "OPERATIONAL_OWNERSHIP",
+        classification: "HUMAN_ACTION_REQUIRED",
+      },
+    ],
+    phase_13_ready: true,
+    production_deployment_approved: false,
+    production_preparation_complete: true,
+    production_ready: false,
+  },
   recovery_state: "MITIGATING",
   security_warnings: 1,
 };
@@ -47,6 +64,12 @@ test("renders permission-aware operational health, incidents, recovery, and prod
   assert.match(html, /Production deployment[^]*NOT APPROVED/);
   assert.match(html, /Production gaps[^]*10/);
   assert.match(html, /Acknowledge gateway incident/);
+  assert.match(html, /Enterprise production readiness/);
+  assert.match(html, /PARTIALLY_READY/);
+  assert.match(html, /SIMULATED_ONLY/);
+  assert.match(html, /HUMAN_ACTION_REQUIRED/);
+  assert.match(html, /Production ready[^]*NO/);
+  assert.match(html, /Deployment approved[^]*NO/);
 });
 
 test("hides operations navigation and content without operations permission", () => {

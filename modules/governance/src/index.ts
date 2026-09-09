@@ -152,8 +152,10 @@ export function evaluateApproval(input: {
   if (approval.consumed_at) {
     return invalidApproval(approval, authority.outcome, "CONSUMED");
   }
-  if (approval.expires_at && new Date(approval.expires_at) <= now) {
-    return invalidApproval(approval, authority.outcome, "STALE");
+  if (approval.expires_at) {
+    const expiresAt = new Date(approval.expires_at).getTime();
+    if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime())
+      return invalidApproval(approval, authority.outcome, "STALE");
   }
   if (
     approval.target.type !== expected_target.type ||
