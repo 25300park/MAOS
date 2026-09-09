@@ -218,6 +218,27 @@ export interface OperationsView {
   security_warnings: number;
 }
 
+export interface OptimizationView {
+  approvals_needed: number;
+  candidates: readonly {
+    activation_state: string;
+    confidence: number;
+    expected_benefit: string;
+    id: string;
+    observed_pattern: string;
+    owner: string;
+    review_state: string;
+    risk: string;
+    type: string;
+  }[];
+  cost_performance_signals: number;
+  production_deployment_approved: false;
+  production_ready: false;
+  recurring_issues: number;
+  recommended_next_actions: readonly string[];
+  ux_findings: number;
+}
+
 export interface ControlRoomRenderInput {
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
@@ -236,6 +257,7 @@ export interface ControlRoomRenderInput {
   legal_compliance?: LegalComplianceView | undefined;
   memory_integration?: MemoryIntegrationView | undefined;
   operations?: OperationsView | undefined;
+  optimization?: OptimizationView | undefined;
   marketing?: MarketingView | undefined;
   path: string;
   rbs_admin?: RbsAdminView | undefined;
@@ -320,6 +342,13 @@ const NAVIGATION: readonly NavigationItem[] = [
     label: "Operations",
     path: "/operations",
     permission: "OPERATIONS:READ",
+    section: "GOVERN",
+  },
+  {
+    icon: "↗",
+    label: "Optimization & Learning",
+    path: "/optimization",
+    permission: "OPTIMIZATION:READ",
     section: "GOVERN",
   },
   {
@@ -721,6 +750,33 @@ function deploymentsPage(identity: ControlRoomIdentity): string {
   <div class="detail-grid"><section class="panel"><div class="panel-head"><h2>Environment progression</h2>${status("SIMULATED ONLY", "working")}</div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Release environment progression</caption><thead><tr><th>Environment</th><th>Artifact</th><th>Health</th><th>Gate</th><th>Evidence</th></tr></thead><tbody><tr><td>DEVELOPMENT</td><td>sha256:candidate</td><td>${status("HEALTHY", "healthy")}</td><td>Verified tests</td><td>evidence-tests</td></tr><tr><td>PREVIEW / STAGING</td><td>sha256:candidate</td><td>${status("HEALTHY", "healthy")}</td><td>QA + Security PASS</td><td>evidence-qa · evidence-security</td></tr><tr><td>PRODUCTION</td><td>sha256:candidate</td><td>${status("WAITING APPROVAL", "approval")}</td><td>Exact-target human approval</td><td>Not yet authorized</td></tr></tbody></table></div></section><aside class="stack"><section class="panel"><div class="panel-head"><h2>Governed action</h2></div><div class="panel-body"><div class="callout"><strong>Simulated deployment</strong><p>No real production credentials or external deployment capability is available in this phase.</p></div><div class="utility-row" style="margin-top:14px">${action}</div></div></section><section class="panel"><div class="panel-head"><h2>Evidence chain</h2></div><div class="panel-body timeline"><article class="activity"><time>Build</time><strong>Artifact frozen</strong><p>commit-candidate · sha256:candidate</p></article><article class="activity"><time>QA / Security</time><strong>Independent evidence passed</strong><p>Does not grant production authority.</p></article><article class="activity"><time>Next</time><strong>Human approval</strong><p>Revalidate target, version, hash, policy, environment, and authority.</p></article></div></section></aside></div>`;
 }
 
+function optimizationPage(view?: OptimizationView): string {
+  if (!view)
+    return `${pageHeading("Governed improvement", "Optimization &amp; Learning", "Verified outcomes may create reviewable candidates. No candidate is activated automatically.")}<section class="panel state-view"><div><div class="state-icon" aria-hidden="true">↗</div><h2>No optimization snapshot yet</h2><p>Learning remains inactive until evidence, review, approval, and version binding are available.</p><span class="permission-note">No candidate is activated automatically</span></div></section>`;
+
+  const rows = view.candidates
+    .map((candidate) => {
+      const activationStyle =
+        candidate.activation_state === "ACTIVE"
+          ? "active"
+          : candidate.activation_state === "READY_FOR_ACTIVATION"
+            ? "approval"
+            : candidate.activation_state === "REJECTED" ||
+                candidate.activation_state === "CANCELLED"
+              ? "blocked"
+              : "waiting";
+      return `<tr><td><strong>${escapeHtml(candidate.id)}</strong><br><small>${escapeHtml(candidate.type)} · ${escapeHtml(candidate.risk)}</small></td><td>${escapeHtml(candidate.observed_pattern)}</td><td>${Math.round(candidate.confidence * 100)}%</td><td>${status(candidate.review_state.replaceAll("_", " "), candidate.review_state === "APPROVED" ? "active" : "waiting")}</td><td>${status(candidate.activation_state.replaceAll("_", " "), activationStyle)}</td><td>${escapeHtml(candidate.owner)}</td><td>${escapeHtml(candidate.expected_benefit)}</td></tr>`;
+    })
+    .join("");
+  const actions = view.recommended_next_actions
+    .map((action) => `<li><strong>${escapeHtml(action)}</strong></li>`)
+    .join("");
+  return `${pageHeading("Governed learning", "Optimization &amp; Learning", "Turn verified outcomes into evidence-bound improvement candidates while human authority controls review, approval, and versioned activation.")}
+  <section class="metric-grid" aria-label="Optimization summary"><article class="metric metric-critical"><div class="metric-top"><span>Recurring issues</span><span>Evidence patterns</span></div><strong class="metric-value">${view.recurring_issues}</strong><div class="metric-note">Repeated outcomes only</div></article><article class="metric metric-working"><div class="metric-top"><span>Cost / performance</span><span>Recommendation</span></div><strong class="metric-value">${view.cost_performance_signals}</strong><div class="metric-note">No invented production cost</div></article><article class="metric metric-risk"><div class="metric-top"><span>UX findings</span><span>QA evidence</span></div><strong class="metric-value">${view.ux_findings}</strong><div class="metric-note">Issue → task → re-test</div></article><article class="metric metric-approval"><div class="metric-top"><span>Approval needed</span><span>Human authority</span></div><strong class="metric-value">${view.approvals_needed}</strong><div class="metric-note">No self-approval</div></article></section>
+  <section class="panel"><div class="panel-head"><h2>Learning and improvement candidates</h2><span class="permission-note">No automatic activation</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Governed optimization candidates</caption><thead><tr><th>Candidate</th><th>Observed pattern</th><th>Confidence</th><th>Review</th><th>Activation</th><th>Owner</th><th>Expected benefit</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No candidates in scope</td></tr>'}</tbody></table></div></section>
+  <div class="detail-grid" style="margin-top:18px"><section class="panel"><div class="panel-head"><h2>Recommended next actions</h2></div><div class="panel-body"><ul>${actions || "<li>No governed action required</li>"}</ul></div></section><aside class="panel"><div class="panel-head"><h2>Authority boundary</h2></div><div class="panel-body"><div class="callout"><strong>No automatic activation</strong><p>Verified result ≠ approved learning. Review and exact human approval remain separate from activation.</p></div><p class="permission-note">Production ready · ${view.production_ready ? "YES" : "NO"}<br>Production deployment approved · ${view.production_deployment_approved ? "YES" : "NO"}</p></div></aside></div>`;
+}
+
 function routeContent(input: ControlRoomRenderInput): string {
   const path = input.path === "/" ? "/today" : input.path;
   if (path === "/development" || path.startsWith("/development/"))
@@ -744,6 +800,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/approvals") return approvalsPage(input.identity!);
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/operations") return operationsPage(input.operations);
+  if (path === "/optimization") return optimizationPage(input.optimization);
   if (path === "/systems")
     return systemsPage(
       input.control_plane,

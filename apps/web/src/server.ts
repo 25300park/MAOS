@@ -12,6 +12,7 @@ import {
   type HrLaborView,
   type LegalComplianceView,
   type OperationsView,
+  type OptimizationView,
   type RbsAdminView,
 } from "./control-room.js";
 
@@ -30,6 +31,7 @@ export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
     "APPROVAL:DECIDE",
     "ALERT:READ",
     "OPERATIONS:READ",
+    "OPTIMIZATION:READ",
     "SYSTEM:READ",
     "AI_MLS:READ",
     "CRM:READ",
@@ -274,6 +276,43 @@ export const CONTROL_ROOM_PREVIEW_OPERATIONS: OperationsView = {
   security_warnings: 1,
 };
 
+export const CONTROL_ROOM_PREVIEW_OPTIMIZATION: OptimizationView = {
+  approvals_needed: 1,
+  candidates: [
+    {
+      activation_state: "INACTIVE",
+      confidence: 0.86,
+      expected_benefit: "Reduce repeated revision cycles",
+      id: "candidate-workflow-evidence-gate",
+      observed_pattern: "Repeated incomplete QA evidence",
+      owner: "human-platform-reviewer",
+      review_state: "PENDING",
+      risk: "R2",
+      type: "WORKFLOW",
+    },
+    {
+      activation_state: "READY_FOR_ACTIVATION",
+      confidence: 0.74,
+      expected_benefit: "Lower development-loop latency and usage cost",
+      id: "candidate-model-runner-policy",
+      observed_pattern: "Repeated resource inefficiency",
+      owner: "human-platform-approver",
+      review_state: "APPROVED",
+      risk: "R1",
+      type: "MODEL",
+    },
+  ],
+  cost_performance_signals: 2,
+  production_deployment_approved: false,
+  production_ready: false,
+  recurring_issues: 3,
+  recommended_next_actions: [
+    "REVIEW candidate-workflow-evidence-gate",
+    "VERIFY candidate-model-runner-policy binding",
+  ],
+  ux_findings: 1,
+};
+
 export function createControlRoomServer(
   options: {
     ai_mls?: AiMlsView | undefined;
@@ -287,6 +326,7 @@ export function createControlRoomServer(
     memory_integration?:
       typeof CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION | undefined;
     operations?: OperationsView | undefined;
+    optimization?: OptimizationView | undefined;
     rbs_admin?: RbsAdminView | undefined;
   } = {},
 ): Server {
@@ -316,6 +356,7 @@ export function createControlRoomServer(
       legal_compliance: options.legal_compliance,
       memory_integration: options.memory_integration,
       operations: options.operations,
+      optimization: options.optimization,
       path,
       rbs_admin: options.rbs_admin,
     });
@@ -353,6 +394,7 @@ if (process.argv[1]?.endsWith("server.js")) {
       ? CONTROL_ROOM_PREVIEW_MEMORY_INTEGRATION
       : undefined,
     operations: preview ? CONTROL_ROOM_PREVIEW_OPERATIONS : undefined,
+    optimization: preview ? CONTROL_ROOM_PREVIEW_OPTIMIZATION : undefined,
     rbs_admin: preview ? CONTROL_ROOM_PREVIEW_RBS_ADMIN : undefined,
   });
   server.listen(port, "127.0.0.1", () => {

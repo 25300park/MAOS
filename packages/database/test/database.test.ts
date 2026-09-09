@@ -36,6 +36,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0014_marketing_automation_integration",
       "0015_ai_mls_integration",
       "0016_crm_human_work_integration",
+      "0017_optimization_learning_foundation",
     ],
     skipped: [],
   });
@@ -88,8 +89,12 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "core.schema_migrations",
       "governance.approvals",
       "governance.authority_rules",
+      "governance.learning_candidate_decisions",
+      "governance.learning_candidates",
+      "governance.optimization_evaluations",
       "governance.reviews",
       "governance.tool_permissions",
+      "governance.verified_result_references",
       "identity.humans",
       "work.task_assignments",
       "work.task_dependencies",
@@ -837,6 +842,95 @@ test("stores only CRM references and privacy-safe operational metadata", async (
   );
 });
 
+test("persists governed Phase 13 learning candidates with immutable evidence history", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0017_optimization_learning_foundation"));
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('governance', 'verified_result_references'),
+      ('governance', 'optimization_evaluations'),
+      ('governance', 'learning_candidates'),
+      ('governance', 'learning_candidate_decisions'),
+      ('audit', 'learning_candidate_events')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "audit.learning_candidate_events",
+      "governance.learning_candidate_decisions",
+      "governance.learning_candidates",
+      "governance.optimization_evaluations",
+      "governance.verified_result_references",
+    ],
+  );
+  const lifecycleColumns = await database.query<{ column_name: string }>(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'governance' AND table_name = 'learning_candidates'
+      AND column_name IN ('improvement_task_id', 'verification_state', 'ux_retest_state')
+    ORDER BY column_name
+  `);
+  assert.deepEqual(
+    lifecycleColumns.rows.map(({ column_name }) => column_name),
+    ["improvement_task_id", "ux_retest_state", "verification_state"],
+  );
+  await database.exec(`
+    INSERT INTO core.organizations (id, name, slug)
+    VALUES ('00000000-0000-4000-8000-000000000701', 'Optimization Org', 'optimization-org');
+    INSERT INTO core.departments (id, organization_id, name)
+    VALUES ('00000000-0000-4000-8000-000000000702', '00000000-0000-4000-8000-000000000701', 'Optimization');
+    INSERT INTO core.projects (id, organization_id, department_id, name)
+    VALUES ('00000000-0000-4000-8000-000000000703', '00000000-0000-4000-8000-000000000701', '00000000-0000-4000-8000-000000000702', 'Learning');
+    INSERT INTO governance.verified_result_references (
+      result_key, project_id, source_type, source_id, source_version,
+      source_hash, evidence_references, correlation_id, verified_at
+    ) VALUES (
+      'result-1', '00000000-0000-4000-8000-000000000703', 'TASK', 'task-1', 1,
+      'sha256:${"a".repeat(64)}', ARRAY['evidence://optimization/result-1'], 'corr-result', CURRENT_TIMESTAMP
+    );
+    INSERT INTO governance.learning_candidates (
+      candidate_key, project_id, candidate_type, verified_result_keys,
+      observed_pattern, improvement_hypothesis, target_reference, target_version,
+      target_hash, candidate_hash, confidence, risk, expected_benefit,
+      author_actor_id, reviewer_actor_id, evidence_references, correlation_id
+    ) VALUES (
+      'candidate-1', '00000000-0000-4000-8000-000000000703', 'WORKFLOW', ARRAY['result-1'],
+      'Repeated failure', 'Add evidence gate', 'workflow://development', 3,
+      'sha256:${"b".repeat(64)}', 'sha256:${"c".repeat(64)}', 0.8, 'R2', 'Fewer revisions',
+      'human-author', 'human-reviewer', ARRAY['evidence://optimization/result-1'], 'corr-candidate'
+    );
+    INSERT INTO audit.learning_candidate_events (
+      candidate_key, actor_type, actor_id, action, result,
+      evidence_references, correlation_id
+    ) VALUES (
+      'candidate-1', 'HUMAN', 'human-author', 'LEARNING_CANDIDATE.CREATED', 'SUCCEEDED',
+      ARRAY['evidence://optimization/result-1'], 'corr-candidate'
+    );
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE audit.learning_candidate_events SET result = 'DENIED'",
+      ),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE governance.learning_candidates SET activation_state = 'ACTIVE'",
+      ),
+    /check constraint/i,
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -862,6 +956,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0014_marketing_automation_integration",
       "0015_ai_mls_integration",
       "0016_crm_human_work_integration",
+      "0017_optimization_learning_foundation",
     ],
   });
 
@@ -879,8 +974,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 16);
-  assert.equal(version.latest_id, "0016_crm_human_work_integration");
+  assert.equal(version.applied_count, 17);
+  assert.equal(version.latest_id, "0017_optimization_learning_foundation");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

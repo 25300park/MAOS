@@ -752,6 +752,83 @@ test("hides Enterprise orchestration navigation without exact permission", () =>
   assert.match(html, /Screen not available/);
 });
 
+test("renders governed optimization and learning visibility without automatic activation", () => {
+  const html = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "OPTIMIZATION:READ"],
+    },
+    optimization: {
+      approvals_needed: 1,
+      candidates: [
+        {
+          activation_state: "INACTIVE",
+          confidence: 0.86,
+          expected_benefit: "Reduce repeated revision cycles",
+          id: "candidate-workflow",
+          observed_pattern: "Repeated incomplete QA evidence",
+          owner: "human-reviewer",
+          review_state: "PENDING",
+          risk: "R2",
+          type: "WORKFLOW",
+        },
+        {
+          activation_state: "READY_FOR_ACTIVATION",
+          confidence: 0.74,
+          expected_benefit: "Lower latency and cost",
+          id: "candidate-model",
+          observed_pattern: "Repeated resource inefficiency",
+          owner: "human-approver",
+          review_state: "APPROVED",
+          risk: "R1",
+          type: "MODEL",
+        },
+      ],
+      cost_performance_signals: 2,
+      production_deployment_approved: false,
+      production_ready: false,
+      recurring_issues: 3,
+      recommended_next_actions: ["REVIEW candidate-workflow"],
+      ux_findings: 1,
+    },
+    path: "/optimization",
+  } as never);
+  for (const text of [
+    "Optimization &amp; Learning",
+    "Governed learning",
+    "Recurring issues",
+    "Cost / performance",
+    "UX findings",
+    "Approval needed",
+    "candidate-workflow",
+    "READY FOR ACTIVATION",
+    "No automatic activation",
+    "Production ready · NO",
+  ])
+    assert.match(html, new RegExp(text));
+  assert.match(html, /aria-label="Optimization summary"/);
+  assert.doesNotMatch(html, /private_notes|credential|api_key/i);
+});
+
+test("hides optimization navigation without exact permission and renders an accessible empty state", () => {
+  const denied = controlRoom.renderControlRoom({
+    identity: operator,
+    path: "/optimization",
+  });
+  assert.doesNotMatch(denied, /href="\/optimization"/);
+  assert.match(denied, /Screen not available/);
+
+  const empty = controlRoom.renderControlRoom({
+    identity: {
+      ...operator,
+      permissions: [...operator.permissions, "OPTIMIZATION:READ"],
+    },
+    path: "/optimization",
+  });
+  assert.match(empty, /No optimization snapshot yet/);
+  assert.match(empty, /No candidate is activated automatically/);
+});
+
 test("renders employee-centered CRM Today without exposing MAOS plumbing", () => {
   const html = controlRoom.renderControlRoom({
     crm: {

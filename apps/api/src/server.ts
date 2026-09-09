@@ -3,6 +3,7 @@ import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import { ObservabilityAuditService } from "@maos/module-observability";
+import { OptimizationLearningService } from "@maos/module-optimization";
 import {
   MonitoringReadiness,
   OperationsHardeningService,
@@ -47,6 +48,7 @@ import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
 import { createObservabilityRoutes } from "./observability-routes.js";
+import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
@@ -458,6 +460,7 @@ for (const system of [
     ...system,
   });
 const controlPlane = new ControlPlaneRegistry();
+const optimization = new OptimizationLearningService();
 const operationsMonitoring = new MonitoringReadiness();
 const operations = new OperationsHardeningService(
   () => new Date(),
@@ -540,6 +543,10 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...createOptimizationRoutes(optimization, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
   ...createOperationsRoutes(
     operations,
     {
