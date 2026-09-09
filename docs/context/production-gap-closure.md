@@ -2,7 +2,7 @@
 
 Date: 2026-09-09
 
-Status: `STAGE_1_PREPARED / HUMAN_DECISIONS_REQUIRED`
+Status: `STAGE_2_PREPARED / HUMAN_AND_PRODUCTION_EVIDENCE_REMAIN`
 
 ## Goal
 
@@ -31,6 +31,20 @@ Stage 1 control package:
 - `docs/production-readiness/stage-1-readiness-package.md`
 - `docs/production-readiness/stage-1-operational-authority-matrix.md`
 - `docs/production-readiness/production-gap-register.md`
+
+Stage 2 provider-specific package:
+
+- `docs/production-readiness/stage-2-provider-readiness.md`
+- `docs/production-readiness/stage-2-secrets-map.md`
+- `docs/production-readiness/stage-2-backup-rpo-rto-plan.md`
+- `docs/production-readiness/stage-2-monitoring-alerting-plan.md`
+- `docs/production-readiness/stage-2-security-capacity-validation-plan.md`
+
+Approved Stage 2 planning inputs are Vercel for the frontend, Railway for API/worker/PostgreSQL,
+Railway plus company NAS for backup, a 99.9% SLO, a one-hour RPO target, a four-hour RTO target,
+email alerting, HTTPS, and one human occupying eight distinct operational roles. Provider account,
+region, resource identifiers, domain, retention, contact address, staging target, and credentials
+remain unresolved or evidence-pending and are not invented here.
 
 ## Governing Boundaries
 
