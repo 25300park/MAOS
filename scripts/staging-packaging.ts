@@ -65,12 +65,19 @@ export function validateStagingPackaging(): {
   vercel: "READY";
   worker: "READY";
 } {
+  const webPackage = readObject("apps/web/package.json");
+  const webScripts = objectAt(
+    webPackage.scripts,
+    "apps/web/package.json.scripts",
+  );
   const vercel = readObject("vercel.json");
   const functions = objectAt(vercel.functions, "vercel.json.functions");
   const rewrites = vercel.rewrites;
   if (
     vercel.installCommand !== "npm ci" ||
     vercel.buildCommand !== "npm run build --workspace @maos/web" ||
+    webScripts.prebuild !==
+      "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations" ||
     !functions["api/control-room.ts"] ||
     !Array.isArray(rewrites) ||
     !rewrites.some(
