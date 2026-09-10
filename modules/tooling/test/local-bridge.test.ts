@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   LocalBridgeError,
@@ -126,7 +127,7 @@ test("registers an identified local runner with normalized allowlisted workroots
   const runner = bridge.getRunner("local-runner-1");
   assert.equal(runner.device_id, "device-1");
   assert.equal(runner.identity_id, "system-local-1");
-  assert.deepEqual(runner.workroots, ["D:\\work\\project"]);
+  assert.deepEqual(runner.workroots, [resolve("D:\\work\\project")]);
   assert.equal(runner.status, "ACTIVE");
 });
 
