@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
 import type { GovernanceDecision } from "@maos/contracts";
 import {
@@ -918,7 +919,7 @@ test("fails closed across tool permission, task/workroot, command, approval, and
     () =>
       bridge.execute({
         capability: "READ_FILE",
-        relative_path: "..\\outside.txt",
+        relative_path: join("..", "outside.txt"),
         run_id: "run-phase-119",
         runner_id: "local-runner-phase-119",
         task_id: "task-phase-119",

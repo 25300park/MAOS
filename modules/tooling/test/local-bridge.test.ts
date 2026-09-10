@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   LocalBridgeError,
@@ -173,7 +173,10 @@ test("rejects traversal, absolute paths, and workroots outside the runner allowl
     permissions: permissions("read-file", "READ", "R0"),
   });
 
-  for (const relative_path of ["..\\secret.txt", "C:\\secret.txt"]) {
+  for (const relative_path of [
+    join("..", "secret.txt"),
+    resolve("outside-secret.txt"),
+  ]) {
     await assert.rejects(
       bridge.execute({
         capability: "READ_FILE",
