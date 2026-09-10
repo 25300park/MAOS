@@ -15,8 +15,10 @@ const policy: MemoryAccessPolicy = {
   allowed_types: ["PROJECT"],
 };
 
+const TEST_NOW = Date.parse("2026-09-03T12:00:00.000Z");
+
 async function startApi(actorType: "AGENT" | "HUMAN" = "AGENT") {
-  const service = new MemoryGatewayIntegration();
+  const service = new MemoryGatewayIntegration(undefined, () => TEST_NOW);
   service.registerGateway(
     {
       credential_ref: "secret://memory-gateway/service-token",
@@ -43,7 +45,7 @@ async function startApi(actorType: "AGENT" | "HUMAN" = "AGENT") {
               quality: "VERIFIED",
               references: ["artifact://checklist-1"],
               retrieval_reason: "Matches the active task objective",
-              retrieved_at: "2026-09-03T00:00:00.000Z",
+              retrieved_at: new Date(TEST_NOW - 60_000).toISOString(),
               source_identity: "knowledge-owner",
               system_id: "system-1",
             },
