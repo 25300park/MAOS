@@ -2,6 +2,8 @@
 
 Date: 2026-09-09
 
+Updated: 2026-09-10 (Railway staging backup capability assessment)
+
 Stage: `PRODUCTION_GAP_CLOSURE_STAGE_3_STAGING_PREPARATION`
 
 Current production classification remains `PRODUCTION_READY = NO` and
@@ -16,7 +18,7 @@ Current production classification remains `PRODUCTION_READY = NO` and
 | G05 | TECHNICALLY_ACTIONABLE_AFTER_AUTHORITY | Provider-scoped secret stores; references only in source | Implement Stage 2 map and least-privilege identities | Approve scopes/rotation and private entry under separate authority | Vercel/Railway secret and identity facilities | Reference inventory, access review, rotation/revocation and leakage tests | BLOCKING - Production Ready |
 | G06 | HUMAN_ACTION_REQUIRED | HTTPS required; domain `TO_BE_DECIDED` | Prepare provider-returned DNS records and TLS validation after selection | Select domain/API subdomain, redirect and HSTS; authorize DNS change | Registrar/DNS and provider certificate issuance | DNS ownership/propagation, TLS chain/expiry, CORS and rollback | BLOCKING - Production Ready |
 | G07 | LOCAL_PLAN_READY / HUMAN_PROVIDER_ACTION_REQUIRED | Control Room primary; provider telemetry secondary; email | Validate signal/redaction contracts locally | Configure staging telemetry, private email and acknowledgement route | Vercel/Railway telemetry and email provider | Dashboard, delivery/acknowledgement, redaction and correlation | BLOCKING - Production Ready |
-| G08 | LOCAL_PLAN_READY / HUMAN_PROVIDER_ACTION_REQUIRED | Railway primary; NAS secondary; RPO 1h/RTO 4h | Validate migration/export procedures locally | Approve retention/key/NAS details and configure staging backup/PITR | Railway plan/PITR/bucket and NAS connectivity | IDs, archive freshness, manifests/checksums, monitoring and restore | BLOCKING - Production Ready |
+| G08 | NATIVE_BACKUP_AND_PITR_UNAVAILABLE_ON_CURRENT_PLAN / NOT_VERIFIED | Railway native backup/PITR primary; encrypted NAS export secondary; RPO 1h/RTO 4h targets unchanged | Preserve staging migration validation; prepare hourly encrypted export without claiming backup proof | Select/approve a Railway plan or capability supporting native backup/PITR; approve retention/key/NAS details | Railway plan capability and NAS connectivity | Real backup/PITR IDs and archive health, export manifests/checksums, authorized restore and measured RPO/RTO | NON_BLOCKING - Staging; BLOCKING - Production Ready |
 | G09 | PRODUCTION_EVIDENCE_PENDING | Isolated recovery target and human restore authority | Execute production-infrastructure restore only under future authority | Approve target, data handling, window and independent verifier | Real provider backup/recovery environment | Backup/hash, integrity/readiness, duration, cleanup and audit | BLOCKING - Production Ready |
 | G10 | PRODUCTION_EVIDENCE_PENDING | Measure RPO 1h/RTO 4h | Rehearse provider DR/failback in authorized representative environment | Approve scenario and accept/reject measured variance | Railway recovery and dependencies | Timeline, recovery point/time, failover/failback and decision | BLOCKING - Production Ready |
 | G11 | TECHNICALLY_ACTIONABLE_NOW | Current advisory evidence required | Run authorized dependency audit; remediate Critical/High and retest | Accept only lower expiring residual risk if justified | Package advisory service/network | Inventory, report, triage, remediation/retest and acceptance | BLOCKING for unresolved Critical/High |
@@ -33,7 +35,9 @@ Current production classification remains `PRODUCTION_READY = NO` and
 ## Stage 3 Summary
 
 - Decisions recorded but evidence/secondary decisions remain: G01-G03.
-- Local packaging/configuration is ready; human provider action is required for G04-G08 and G13.
+- Local packaging/configuration is ready; human provider action is required for G04-G07 and G13.
+- G08 records native backup and PITR as unavailable on the current Railway plan. This does not block
+  staging, but backup, PITR, RPO and restore remain unverified and block Production Ready.
 - External validation pending: G12.
 - Production-like or production evidence pending: G09-G10, G14-G16, G19-G20.
 - Human production gates remain closed: G17-G18.

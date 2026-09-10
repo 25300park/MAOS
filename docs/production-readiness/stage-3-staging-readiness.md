@@ -2,6 +2,8 @@
 
 Date: 2026-09-09
 
+Backup capability assessment recorded: 2026-09-10
+
 Status: `LOCAL_PACKAGING_READY / HUMAN_PROVIDER_ACTION_REQUIRED`
 
 Authorization is limited to non-production staging provisioning. Production provisioning,
@@ -19,6 +21,22 @@ production deployment, production credentials, and production DNS mutation remai
 Singapore maps to Railway region identifier `asia-southeast1-eqsg3a`. Provider-generated project,
 environment, service, deployment, database, domain, and backup IDs must be captured after the human
 provider action; none are invented here.
+
+## Railway Backup Capability Assessment
+
+Current-plan assessment:
+
+- Railway native backup: `UNAVAILABLE_ON_CURRENT_PLAN`.
+- Railway PITR: `UNAVAILABLE_ON_CURRENT_PLAN`.
+- Staging impact: `NON_BLOCKING`; application and migration validation may continue without
+  representing backup or recovery as verified.
+- Production-readiness impact: `BLOCKING`.
+
+The approved target design is unchanged: Railway native backup/PITR remains the primary backup,
+encrypted NAS export remains the secondary backup, RPO remains a one-hour target, and RTO remains a
+four-hour target. Native backup, PITR, RPO, restore, and measured RTO/RPO evidence are all
+`NOT_VERIFIED`. A Railway plan or provider capability that supplies the approved primary controls
+must be selected and evidenced before Production Ready can become YES.
 
 ## Vercel Staging Readiness
 
@@ -88,18 +106,22 @@ provider staging environment and must never be copied into commands, logs, scree
    remains disabled.
 4. Record clean initialization, applied migration IDs/checksums, schema version and health.
 5. Re-run `npm run db:verify`; require all migrations skipped/replayed idempotently with no drift.
-6. Enable and inspect Railway volume backups/PITR if supported by the chosen plan; capture archive
-   coverage and health without restoring or changing traffic.
+6. Record native backup and PITR as unavailable on the current Railway plan. Do not create backup,
+   PITR, RPO, or restore evidence from this assessment.
 7. Configure an hourly encrypted logical export and NAS transfer only after key/NAS references are
    present. Alert at 45 minutes and treat 60 minutes as RPO-at-risk.
-8. Under separate restore authorization, restore into a new isolated staging database, verify
-   checksum/schema/application readiness, and measure RPO/RTO. Configuration alone is not proof.
+8. Select and approve a Railway plan or capability supporting the primary native backup/PITR design
+   before production-readiness closure.
+9. Under separate restore authorization and only after a real backup exists, restore into a new
+   isolated staging database, verify checksum/schema/application readiness, and measure RPO/RTO.
+   Configuration or a documented procedure alone is not proof.
 
 ## Monitoring, Alerts, and Staging Isolation
 
 - Vercel: deployment/build/runtime logs, default HTTPS, function failures and synthetic page check.
 - Railway: deployment/build/runtime logs, CPU/memory, restarts, API/worker health and PostgreSQL
-  connections/storage/PITR archive health.
+  connections/storage. PITR archive health remains unavailable until the required plan capability
+  exists and must not be reported as healthy.
 - Control Room: governed service, integration, incident, blocker and evidence references; UNKNOWN
   never renders as healthy.
 - Email: INFO remains Control Room only; WARNING sends email; CRITICAL sends email plus prominent

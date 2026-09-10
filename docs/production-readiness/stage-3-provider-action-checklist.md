@@ -2,6 +2,8 @@
 
 Date: 2026-09-09
 
+Backup capability assessment recorded: 2026-09-10
+
 Status: `READY_FOR_HUMAN_PROVIDER_ACTION`
 
 This checklist authorizes staging only. Use provider default domains, Singapore for Railway, and no
@@ -42,13 +44,17 @@ before the provider supplies them.
 
 - [ ] Verify the database is empty and staging-only, then run the clean migration procedure.
 - [ ] Record migration IDs/checksums/schema and successful replay with no drift.
-- [ ] Review Railway plan support and enable scheduled volume backup/PITR under a separate exact
-      staging change action.
-- [ ] Record PITR archive coverage/health; do not infer one-hour RPO from configuration.
+- [x] Record Railway native backup and PITR as `UNAVAILABLE_ON_CURRENT_PLAN`; staging may continue,
+      but this remains blocking for Production Ready.
+- [ ] Select and approve a Railway plan or capability that supports the unchanged primary native
+      backup/PITR design before production-readiness closure.
+- [ ] After that capability exists, enable it under a separate exact staging change action and
+      capture real archive coverage and health. Do not infer one-hour RPO from configuration.
 - [ ] Configure hourly encrypted logical export and write-only NAS transfer after secret references
       and retention are approved.
-- [ ] Run restore only into a new isolated staging target under separate Restore Owner authority;
-      record checksum, application verification and measured RPO/RTO.
+- [ ] Run restore only after a real backup exists, into a new isolated staging target under separate
+      Restore Owner authority; record checksum, application verification and measured RPO/RTO.
+- [ ] Keep backup, PITR, RPO and restore status `NOT_VERIFIED` until their required evidence exists.
 
 ## 4. Monitoring and Email
 
