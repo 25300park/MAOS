@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "pretest": "npm run build --workspaces --if-present",
-    "test": "tsx --test \"apps/**/*.test.ts\" \"modules/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test": "tsx --test --test-concurrency=1 \"apps/**/*.test.ts\" \"modules/**/*.test.ts\" \"packages/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "build": "npm run build --workspaces --if-present",
     "check:boundaries": "tsx scripts/check-boundaries.ts",
     "db:bootstrap": "tsx scripts/database-verify.ts",
