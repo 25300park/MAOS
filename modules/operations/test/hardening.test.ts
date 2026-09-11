@@ -22,7 +22,7 @@ const human = (id = "human-ops") => ({ id, type: "HUMAN" as const });
 const agent = (id = "agent-ops") => ({ id, type: "AGENT" as const });
 const system = (id = "system-maos") => ({ id, type: "SYSTEM" as const });
 
-test("connects health alerts to notification evidence without changing human authority", () => {
+test("connects health alerts to notification evidence without changing human authority", async () => {
   const repository = new InMemoryAlertNotificationRepository();
   const notifications = new AlertNotificationService(repository, {
     controlRoomBaseUrl: "https://maos-web.example.test",
@@ -45,32 +45,32 @@ test("connects health alerts to notification evidence without changing human aut
     owner_reference: "role:platform-operations",
     system_id: "maos-api",
   });
-  operations.recordHealth({
+  await operations.recordHealth({
     correlation_id: "corr-degraded",
     evidence_refs: ["evidence://health/degraded"],
     health: "DEGRADED",
     target_id: "api-staging",
   });
-  operations.recordHealth({
+  await operations.recordHealth({
     correlation_id: "corr-degraded-again",
     evidence_refs: ["evidence://health/degraded-again"],
     health: "DEGRADED",
     target_id: "api-staging",
   });
   const alert = operations.alerts()[0]!;
-  operations.recordHealth({
+  await operations.recordHealth({
     correlation_id: "corr-recovered",
     evidence_refs: ["evidence://health/recovered"],
     health: "HEALTHY",
     target_id: "api-staging",
   });
-  operations.transitionAlert({
+  await operations.transitionAlert({
     actor: human("human-operator"),
     alert_id: alert.id,
     evidence_refs: ["evidence://alert/ack"],
     state: "ACKNOWLEDGED",
   });
-  operations.transitionAlert({
+  await operations.transitionAlert({
     actor: human("human-operator"),
     alert_id: alert.id,
     evidence_refs: ["evidence://alert/resolve"],
@@ -78,7 +78,7 @@ test("connects health alerts to notification evidence without changing human aut
   });
 
   assert.deepEqual(
-    notifications.notifications().map(({ event_kind }) => event_kind),
+    (await notifications.notifications()).map(({ event_kind }) => event_kind),
     ["OPENED", "RECOVERY_OBSERVED", "RESOLVED"],
   );
   assert.equal(operations.alerts()[0]?.state, "RESOLVED");

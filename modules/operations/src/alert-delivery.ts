@@ -56,27 +56,64 @@ export interface AlertEmailDeliveryPort {
   }>;
 }
 
+type Awaitable<T> = Promise<T> | T;
+
 export interface AlertNotificationRepository {
-  appendDeliveryEvent(event: AlertEmailDeliveryEvent): boolean;
-  findByProviderMessageId(id: string): AlertEmailNotification | undefined;
-  insert(notification: AlertEmailNotification): boolean;
-  list(): readonly AlertEmailNotification[];
-  listDeliveryEvents(): readonly AlertEmailDeliveryEvent[];
+  appendDeliveryEvent(event: AlertEmailDeliveryEvent): Awaitable<boolean>;
+  findByProviderMessageId(
+    id: string,
+  ): Awaitable<AlertEmailNotification | undefined>;
+  insert(notification: AlertEmailNotification): Awaitable<boolean>;
+  list(): Awaitable<readonly AlertEmailNotification[]>;
+  listAlerts(): Awaitable<readonly OperationsAlert[]>;
+  listDeliveryEvents(): Awaitable<readonly AlertEmailDeliveryEvent[]>;
   recordAcceptance(
     notificationId: string,
     event: AlertEmailDeliveryEvent & { state: "ACCEPTED" },
-  ): void;
+  ): Awaitable<void>;
+  updateAlertState(
+    alertId: string,
+    state: OperationsAlert["state"],
+    evidenceRefs: readonly string[],
+  ): Awaitable<void>;
   updateDelivery(
     notificationId: string,
     state: AlertEmailDeliveryState,
     providerMessageId?: string,
-  ): void;
+  ): Awaitable<void>;
+  upsertAlert(alert: OperationsAlert): Awaitable<void>;
 }
 
 export class InMemoryAlertNotificationRepository implements AlertNotificationRepository {
+  readonly #alerts = new Map<string, OperationsAlert>();
   readonly #events = new Map<string, AlertEmailDeliveryEvent>();
   readonly #notifications = new Map<string, AlertEmailNotification>();
   readonly #idempotencyKeys = new Set<string>();
+
+  upsertAlert(alert: OperationsAlert): void {
+    this.#alerts.set(alert.id, Object.freeze({ ...alert }));
+  }
+
+  updateAlertState(
+    alertId: string,
+    state: OperationsAlert["state"],
+    evidenceRefs: readonly string[],
+  ): void {
+    const alert = this.#alerts.get(alertId);
+    if (!alert) return;
+    this.#alerts.set(
+      alertId,
+      Object.freeze({
+        ...alert,
+        evidence_refs: Object.freeze([...alert.evidence_refs, ...evidenceRefs]),
+        state,
+      }),
+    );
+  }
+
+  listAlerts(): readonly OperationsAlert[] {
+    return [...this.#alerts.values()];
+  }
 
   insert(notification: AlertEmailNotification): boolean {
     if (this.#idempotencyKeys.has(notification.idempotency_key)) return false;
@@ -166,28 +203,56 @@ export class AlertNotificationService {
     this.#now = options.now ?? (() => new Date());
   }
 
-  recordOpened(alert: OperationsAlert): boolean {
+  async recordOpened(alert: OperationsAlert): Promise<boolean> {
+    await this.repository.upsertAlert(alert);
     return this.enqueue(alert, "OPENED", "PRIMARY", alert.evidence_refs);
   }
 
-  recordRecovery(
+  async recordObserved(alert: OperationsAlert): Promise<void> {
+    await this.repository.upsertAlert(alert);
+  }
+
+  async recordAcknowledged(
     alert: OperationsAlert,
     evidenceRefs: readonly string[],
-  ): boolean {
+  ): Promise<void> {
+    await this.repository.updateAlertState(
+      alert.id,
+      "ACKNOWLEDGED",
+      evidenceRefs,
+    );
+  }
+
+  async recordSuppressed(
+    alert: OperationsAlert,
+    evidenceRefs: readonly string[],
+  ): Promise<void> {
+    await this.repository.updateAlertState(
+      alert.id,
+      "SUPPRESSED",
+      evidenceRefs,
+    );
+  }
+
+  async recordRecovery(
+    alert: OperationsAlert,
+    evidenceRefs: readonly string[],
+  ): Promise<boolean> {
     return this.enqueue(alert, "RECOVERY_OBSERVED", "PRIMARY", evidenceRefs);
   }
 
-  recordResolved(
+  async recordResolved(
     alert: OperationsAlert,
     evidenceRefs: readonly string[],
-  ): boolean {
+  ): Promise<boolean> {
+    await this.repository.updateAlertState(alert.id, "RESOLVED", evidenceRefs);
     return this.enqueue(alert, "RESOLVED", "PRIMARY", evidenceRefs);
   }
 
-  recordDueEscalations(
+  async recordDueEscalations(
     alerts: readonly OperationsAlert[],
     policy: { criticalMs: number; warningMs: number },
-  ): number {
+  ): Promise<number> {
     let created = 0;
     for (const alert of alerts) {
       if (alert.state !== "OPEN") continue;
@@ -197,7 +262,14 @@ export class AlertNotificationService {
         alert.severity === "CRITICAL" ? policy.criticalMs : policy.warningMs;
       if (this.#now().getTime() - Date.parse(alert.first_detected_at) < timeout)
         continue;
-      if (this.enqueue(alert, "ESCALATED", "ESCALATION", alert.evidence_refs))
+      if (
+        await this.enqueue(
+          alert,
+          "ESCALATED",
+          "ESCALATION",
+          alert.evidence_refs,
+        )
+      )
         created += 1;
     }
     return created;
@@ -205,7 +277,7 @@ export class AlertNotificationService {
 
   async dispatchPending(adapter: AlertEmailDeliveryPort): Promise<number> {
     let dispatched = 0;
-    for (const notification of this.repository.list()) {
+    for (const notification of await this.repository.list()) {
       if (notification.state !== "PENDING") continue;
       const acceptance = await adapter.send({
         alert_id: notification.alert_id,
@@ -219,7 +291,7 @@ export class AlertNotificationService {
         summary: notification.summary,
         system_reference: notification.system_reference,
       });
-      this.repository.recordAcceptance(
+      await this.repository.recordAcceptance(
         notification.id,
         Object.freeze({
           evidence_refs: Object.freeze([
@@ -237,38 +309,42 @@ export class AlertNotificationService {
     return dispatched;
   }
 
-  recordProviderEvent(event: AlertEmailDeliveryEvent): {
+  async recordProviderEvent(event: AlertEmailDeliveryEvent): Promise<{
     duplicate: boolean;
     state: AlertEmailDeliveryState;
-  } {
-    const notification = this.repository.findByProviderMessageId(
+  }> {
+    const notification = await this.repository.findByProviderMessageId(
       event.provider_message_id,
     );
     if (!notification) throw new Error("ALERT_NOTIFICATION_NOT_FOUND");
-    if (!this.repository.appendDeliveryEvent(event))
+    if (!(await this.repository.appendDeliveryEvent(event)))
       return { duplicate: true, state: notification.state };
     const state =
       deliveryRank[event.state] >= deliveryRank[notification.state]
         ? event.state
         : notification.state;
-    this.repository.updateDelivery(notification.id, state);
+    await this.repository.updateDelivery(notification.id, state);
     return { duplicate: false, state };
   }
 
-  notifications(): readonly AlertEmailNotification[] {
+  notifications(): Awaitable<readonly AlertEmailNotification[]> {
     return this.repository.list();
   }
 
-  deliveryEvents(): readonly AlertEmailDeliveryEvent[] {
+  deliveryEvents(): Awaitable<readonly AlertEmailDeliveryEvent[]> {
     return this.repository.listDeliveryEvents();
   }
 
-  private enqueue(
+  alerts(): Awaitable<readonly OperationsAlert[]> {
+    return this.repository.listAlerts();
+  }
+
+  private async enqueue(
     alert: OperationsAlert,
     eventKind: AlertNotificationEventKind,
     recipient: AlertEmailRecipient,
     evidenceRefs: readonly string[],
-  ): boolean {
+  ): Promise<boolean> {
     const id = this.#id();
     return this.repository.insert(
       Object.freeze({

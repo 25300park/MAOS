@@ -23,14 +23,14 @@ export function createAlertEmailWebhookRoute(
     body: "RAW",
     method: "POST",
     path: "/api/v1/webhooks/resend",
-    handle: ({ input, request }) => {
+    handle: async ({ input, request }) => {
       try {
         const event = verifier.verify(input as Buffer, {
           "svix-id": header(request.headers["svix-id"]),
           "svix-signature": header(request.headers["svix-signature"]),
           "svix-timestamp": header(request.headers["svix-timestamp"]),
         });
-        return notifications.recordProviderEvent(event);
+        return await notifications.recordProviderEvent(event);
       } catch (error) {
         if (
           error instanceof Error &&

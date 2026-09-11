@@ -184,9 +184,20 @@ export class OperationsHardeningService {
     },
     private readonly notifications?: Pick<
       AlertNotificationService,
-      "recordOpened" | "recordRecovery" | "recordResolved"
+      | "recordAcknowledged"
+      | "recordObserved"
+      | "recordOpened"
+      | "recordRecovery"
+      | "recordResolved"
+      | "recordSuppressed"
     >,
-  ) {}
+    initialAlerts: readonly OperationsAlert[] = [],
+  ) {
+    for (const alert of initialAlerts) {
+      this.#alerts.set(alert.id, Object.freeze({ ...alert }));
+      this.#alertFingerprints.set(`${alert.target_id}:HEALTH`, alert.id);
+    }
+  }
 
   registerTarget(
     input: Omit<OperationsTarget, "maintenance"> & { maintenance?: boolean },
@@ -216,7 +227,7 @@ export class OperationsHardeningService {
     evidence_refs: readonly string[];
     health: OperationsHealth;
     target_id: string;
-  }): Readonly<OperationsTarget> {
+  }): Promise<Readonly<OperationsTarget>> | Readonly<OperationsTarget> {
     const target = this.#targets.get(input.target_id);
     if (!target) throw new OperationsError("OPERATIONS_TARGET_NOT_FOUND");
     if (!HEALTH_VALUES.includes(input.health))
@@ -233,10 +244,18 @@ export class OperationsHardeningService {
     this.#targets.set(target.id, updated);
     this.recordMonitoring(updated, input.correlation_id);
     if (input.health !== "HEALTHY") {
-      this.upsertHealthAlert(updated, input, observedAt);
+      const persistence = this.upsertHealthAlert(updated, input, observedAt);
+      return persistence instanceof Promise
+        ? persistence.then(() => updated)
+        : updated;
     } else if (target.health !== "HEALTHY") {
       const alert = this.activeAlertForTarget(target.id);
-      if (alert) this.notifications?.recordRecovery(alert, input.evidence_refs);
+      const persistence = alert
+        ? this.notifications?.recordRecovery(alert, input.evidence_refs)
+        : undefined;
+      return persistence instanceof Promise
+        ? persistence.then(() => updated)
+        : updated;
     }
     return updated;
   }
@@ -246,7 +265,7 @@ export class OperationsHardeningService {
     alert_id: string;
     evidence_refs: readonly string[];
     state: Exclude<AlertState, "OPEN">;
-  }): Readonly<OperationsAlert> {
+  }): Promise<Readonly<OperationsAlert>> | Readonly<OperationsAlert> {
     if (input.actor.type !== "HUMAN")
       throw new OperationsError("HUMAN_ALERT_AUTHORITY_REQUIRED");
     const alert = this.#alerts.get(input.alert_id);
@@ -268,9 +287,15 @@ export class OperationsHardeningService {
       state: input.state,
     });
     this.#alerts.set(alert.id, updated);
-    if (updated.state === "RESOLVED")
-      this.notifications?.recordResolved(updated, input.evidence_refs);
-    return updated;
+    const persistence =
+      updated.state === "ACKNOWLEDGED"
+        ? this.notifications?.recordAcknowledged(updated, input.evidence_refs)
+        : updated.state === "SUPPRESSED"
+          ? this.notifications?.recordSuppressed(updated, input.evidence_refs)
+          : this.notifications?.recordResolved(updated, input.evidence_refs);
+    return persistence instanceof Promise
+      ? persistence.then(() => updated)
+      : updated;
   }
 
   createIncident(input: {
@@ -468,7 +493,7 @@ export class OperationsHardeningService {
   private recordMonitoring(
     target: OperationsTarget,
     correlationId: string,
-  ): void {
+  ): Promise<void> | void {
     if (!this.monitoring) return;
     const supported = [
       "APPLICATION",
@@ -495,26 +520,24 @@ export class OperationsHardeningService {
       health: OperationsHealth;
     },
     observedAt: string,
-  ): void {
+  ): Promise<void> | void {
     const fingerprint = `${target.id}:HEALTH`;
     const existingId = this.#alertFingerprints.get(fingerprint);
     const existing = existingId ? this.#alerts.get(existingId) : undefined;
     if (existing && ["OPEN", "ACKNOWLEDGED"].includes(existing.state)) {
-      this.#alerts.set(
-        existing.id,
-        Object.freeze({
-          ...existing,
-          correlation_id: input.correlation_id,
-          evidence_refs: Object.freeze([
-            ...existing.evidence_refs,
-            ...input.evidence_refs,
-          ]),
-          last_observed_at: observedAt,
-          occurrences: existing.occurrences + 1,
-          severity: severityFor(input.health),
-        }),
-      );
-      return;
+      const observed = Object.freeze({
+        ...existing,
+        correlation_id: input.correlation_id,
+        evidence_refs: Object.freeze([
+          ...existing.evidence_refs,
+          ...input.evidence_refs,
+        ]),
+        last_observed_at: observedAt,
+        occurrences: existing.occurrences + 1,
+        severity: severityFor(input.health),
+      });
+      this.#alerts.set(existing.id, observed);
+      return this.notifications?.recordObserved(observed);
     }
     const alert: OperationsAlert = Object.freeze({
       affected_system: target.system_id,
@@ -531,7 +554,7 @@ export class OperationsHardeningService {
     });
     this.#alerts.set(alert.id, alert);
     this.#alertFingerprints.set(fingerprint, alert.id);
-    this.notifications?.recordOpened(alert);
+    return this.notifications?.recordOpened(alert).then(() => undefined);
   }
 
   private activeAlertForTarget(targetId: string): OperationsAlert | undefined {

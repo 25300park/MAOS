@@ -32,7 +32,7 @@ test("processes pending alert email and missed-ack escalation in one bounded cyc
     state: "OPEN" as const,
     target_id: "api",
   };
-  notifications.recordOpened(alert);
+  await notifications.recordOpened(alert);
   const recipients: string[] = [];
   const result = await runAlertDeliveryCycle({
     adapter: {

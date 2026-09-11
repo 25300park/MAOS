@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
-import type {
-  AlertEmailDeliveryPort,
-  AlertNotificationService,
-  OperationsAlert,
-} from "@maos/module-operations";
+import { createAlertEmailWorkerRuntime } from "./alert-email-runtime.js";
+export {
+  createAlertEmailWorkerRuntime,
+  runAlertDeliveryCycle,
+} from "./alert-email-runtime.js";
 
 export const WORKER_APP = Object.freeze({
   service: "worker",
@@ -12,23 +12,6 @@ export const WORKER_APP = Object.freeze({
 
 export interface WorkerServerOptions {
   readiness?: () => boolean | Promise<boolean>;
-}
-
-export async function runAlertDeliveryCycle(input: {
-  adapter: AlertEmailDeliveryPort;
-  alerts: readonly OperationsAlert[];
-  notifications: Pick<
-    AlertNotificationService,
-    "dispatchPending" | "recordDueEscalations"
-  >;
-  policy: { criticalMs: number; warningMs: number };
-}): Promise<{ dispatched: number; escalated: number }> {
-  const escalated = input.notifications.recordDueEscalations(
-    input.alerts,
-    input.policy,
-  );
-  const dispatched = await input.notifications.dispatchPending(input.adapter);
-  return { dispatched, escalated };
 }
 
 export function createWorkerServer(options: WorkerServerOptions = {}): Server {
@@ -77,12 +60,31 @@ export function createWorkerServer(options: WorkerServerOptions = {}): Server {
   });
 }
 
-if (process.argv[1]?.endsWith("index.js")) {
-  const port = Number(process.env.PORT ?? "4101");
+export async function startWorkerProcess(
+  env: Record<string, string | undefined> = process.env,
+): Promise<void> {
+  const port = Number(env.PORT ?? "4101");
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error("PORT must be an integer between 1 and 65535");
   }
-  createWorkerServer().listen(port, "0.0.0.0", () => {
+  const runtime = await createAlertEmailWorkerRuntime(env);
+  runtime.start();
+  const server = createWorkerServer({ readiness: runtime.readiness });
+  server.listen(port, "0.0.0.0", () => {
     process.stdout.write(`MAOS worker health listening on port ${port}\n`);
+  });
+  const shutdown = (): void => {
+    server.close(() => {
+      void runtime.stop();
+    });
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+}
+
+if (process.argv[1]?.endsWith("index.js")) {
+  void startWorkerProcess().catch(() => {
+    process.stderr.write("MAOS worker failed to start\n");
+    process.exitCode = 1;
   });
 }

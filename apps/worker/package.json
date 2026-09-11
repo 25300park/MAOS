@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "dependencies": {
+    "@maos/alert-email-resend": "0.0.0",
     "@maos/module-operations": "0.0.0"
   },
   "scripts": {

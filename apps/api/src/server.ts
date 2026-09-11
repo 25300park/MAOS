@@ -38,6 +38,7 @@ import {
   type OfficialSourceAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
+import { createAlertEmailApiRuntime } from "./alert-email-runtime.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
@@ -54,6 +55,7 @@ import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 
 const config = loadApiConfig(process.env);
 const logger = createLogger(config);
+const alertEmailRuntime = await createAlertEmailApiRuntime(process.env);
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -465,6 +467,10 @@ const operationsMonitoring = new MonitoringReadiness();
 const operations = new OperationsHardeningService(
   () => new Date(),
   operationsMonitoring,
+  alertEmailRuntime.enabled ? alertEmailRuntime.notifications : undefined,
+  alertEmailRuntime.enabled
+    ? await alertEmailRuntime.notifications.alerts()
+    : undefined,
 );
 const enterpriseReadiness = createConservativePhase12ReadinessAssessment();
 const enterpriseSystems: EnterpriseSystemReference[] = [
@@ -543,6 +549,7 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...alertEmailRuntime.routes,
   ...createOptimizationRoutes(optimization, {
     environment: config.environment,
     scope: "project-maos",
@@ -618,3 +625,11 @@ const server = createApiServer({ ...config, logger, routes });
 server.listen(config.port, "0.0.0.0", () => {
   logger.info("api listening", { port: config.port });
 });
+
+const shutdown = (): void => {
+  server.close(() => {
+    void (alertEmailRuntime.enabled ? alertEmailRuntime.close() : undefined);
+  });
+};
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);

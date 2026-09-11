@@ -30,9 +30,25 @@ test("loads server-only Resend alert configuration and fails closed when incompl
     from: "MAOS Staging <alerts@example.test>",
     primaryTo: "operator@example.test",
     provider: "resend",
+    pollIntervalMs: 30_000,
     warningAckTimeoutMs: 900_000,
     webhookSecret: "whsec_synthetic_webhook_secret",
   });
+
+  const customPolling = loadAlertEmailConfig({
+    ...env,
+    MAOS_ALERT_EMAIL_POLL_INTERVAL_SECONDS: "45",
+  });
+  assert.equal(customPolling.enabled, true);
+  if (customPolling.enabled) assert.equal(customPolling.pollIntervalMs, 45_000);
+  assert.throws(
+    () =>
+      loadAlertEmailConfig({
+        ...env,
+        MAOS_ALERT_EMAIL_POLL_INTERVAL_SECONDS: "0",
+      }),
+    /MAOS_ALERT_EMAIL_POLL_INTERVAL_SECONDS_INVALID/,
+  );
   assert.throws(
     () => loadAlertEmailConfig({ ...env, RESEND_API_KEY: undefined }),
     /RESEND_API_KEY_REQUIRED/,

@@ -122,6 +122,29 @@ const execute = (operation: () => unknown) => {
   }
 };
 
+const executeAsync = async (operation: () => unknown) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof OperationsError) {
+      const forbidden = /HUMAN_.*AUTHORITY|AUTHORITY_REQUIRED/.test(error.code);
+      const validation = /INVALID_|EVIDENCE_REQUIRED/.test(error.code);
+      throw new ApiRequestError(forbidden ? 403 : validation ? 422 : 409, {
+        code: error.code,
+        details: {},
+        retryable: false,
+        severity: "INFO",
+        type: forbidden
+          ? "AUTHORIZATION"
+          : validation
+            ? "VALIDATION"
+            : "OPERATIONS_CONFLICT",
+      });
+    }
+    throw error;
+  }
+};
+
 export function createOperationsRoutes(
   service: OperationsHardeningService,
   options: {
@@ -192,9 +215,9 @@ export function createOperationsRoutes(
     },
     {
       access: access("CONTROL", "R2"),
-      handle: ({ context, identity, input }) => {
+      handle: async ({ context, identity, input }) => {
         const value = input as Input;
-        const result = execute(() =>
+        const result = await executeAsync(() =>
           service.transitionAlert({
             actor: actor(identity),
             alert_id: value.alert_id as string,
@@ -217,9 +240,9 @@ export function createOperationsRoutes(
     },
     {
       access: access("CONTROL", "R2"),
-      handle: ({ context, identity, input }) => {
+      handle: async ({ context, identity, input }) => {
         const value = input as Input;
-        const result = execute(() =>
+        const result = await executeAsync(() =>
           service.recordHealth({
             correlation_id: context.correlation_id,
             evidence_refs: value.evidence_refs as string[],

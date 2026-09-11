@@ -4,6 +4,7 @@ import {
   AlertNotificationService,
   InMemoryAlertNotificationRepository,
   type AlertEmailDeliveryPort,
+  type AlertNotificationRepository,
   type OperationsAlert,
 } from "../src/index.js";
 
@@ -22,7 +23,7 @@ const alert = (overrides: Partial<OperationsAlert> = {}): OperationsAlert => ({
   ...overrides,
 });
 
-test("creates exactly one redacted OPENED outbox notification per alert", () => {
+test("creates exactly one redacted OPENED outbox notification per alert", async () => {
   const repository = new InMemoryAlertNotificationRepository();
   const service = new AlertNotificationService(repository, {
     controlRoomBaseUrl: "https://maos-web.example.test",
@@ -30,10 +31,10 @@ test("creates exactly one redacted OPENED outbox notification per alert", () => 
     now: () => new Date("2026-09-11T00:00:00.000Z"),
   });
 
-  service.recordOpened(alert());
-  service.recordOpened(alert());
+  await service.recordOpened(alert());
+  await service.recordOpened(alert());
 
-  assert.deepEqual(service.notifications(), [
+  assert.deepEqual(await service.notifications(), [
     {
       alert_id: "alert-1",
       control_room_alert_url:
@@ -62,7 +63,7 @@ test("keeps provider acceptance separate from signed delivery evidence", async (
     id: () => "notification-1",
     now: () => new Date("2026-09-11T00:01:00.000Z"),
   });
-  service.recordOpened(alert());
+  await service.recordOpened(alert());
   const adapter: AlertEmailDeliveryPort = {
     async send() {
       return {
@@ -75,10 +76,10 @@ test("keeps provider acceptance separate from signed delivery evidence", async (
   };
 
   await service.dispatchPending(adapter);
-  assert.equal(service.notifications()[0]?.state, "ACCEPTED");
+  assert.equal((await service.notifications())[0]?.state, "ACCEPTED");
 
   assert.deepEqual(
-    service.recordProviderEvent({
+    await service.recordProviderEvent({
       evidence_refs: ["evidence://resend/webhook-1"],
       occurred_at: "2026-09-11T00:02:00.000Z",
       provider: "RESEND",
@@ -88,9 +89,9 @@ test("keeps provider acceptance separate from signed delivery evidence", async (
     }),
     { duplicate: false, state: "DELIVERED" },
   );
-  assert.equal(service.notifications()[0]?.state, "DELIVERED");
+  assert.equal((await service.notifications())[0]?.state, "DELIVERED");
   assert.deepEqual(
-    service.recordProviderEvent({
+    await service.recordProviderEvent({
       evidence_refs: ["evidence://resend/webhook-1"],
       occurred_at: "2026-09-11T00:02:00.000Z",
       provider: "RESEND",
@@ -102,7 +103,7 @@ test("keeps provider acceptance separate from signed delivery evidence", async (
   );
 
   assert.deepEqual(
-    service.recordProviderEvent({
+    await service.recordProviderEvent({
       evidence_refs: ["evidence://resend/webhook-2"],
       occurred_at: "2026-09-11T00:03:00.000Z",
       provider: "RESEND",
@@ -112,10 +113,10 @@ test("keeps provider acceptance separate from signed delivery evidence", async (
     }),
     { duplicate: false, state: "DELIVERED" },
   );
-  assert.equal(service.deliveryEvents().length, 3);
+  assert.equal((await service.deliveryEvents()).length, 3);
 });
 
-test("escalates a missed acknowledgement once and records recovery without resolving", () => {
+test("escalates a missed acknowledgement once and records recovery without resolving", async () => {
   let now = new Date("2026-09-11T00:16:00.000Z");
   let sequence = 0;
   const repository = new InMemoryAlertNotificationRepository();
@@ -125,27 +126,27 @@ test("escalates a missed acknowledgement once and records recovery without resol
     now: () => now,
   });
   const open = alert();
-  service.recordOpened(open);
+  await service.recordOpened(open);
 
   assert.equal(
-    service.recordDueEscalations([open], {
+    await service.recordDueEscalations([open], {
       criticalMs: 5 * 60_000,
       warningMs: 15 * 60_000,
     }),
     1,
   );
   assert.equal(
-    service.recordDueEscalations([open], {
+    await service.recordDueEscalations([open], {
       criticalMs: 5 * 60_000,
       warningMs: 15 * 60_000,
     }),
     0,
   );
   now = new Date("2026-09-11T00:17:00.000Z");
-  service.recordRecovery(open, ["evidence://health/recovered"]);
+  await service.recordRecovery(open, ["evidence://health/recovered"]);
 
   assert.deepEqual(
-    service.notifications().map(({ event_kind, recipient }) => ({
+    (await service.notifications()).map(({ event_kind, recipient }) => ({
       event_kind,
       recipient,
     })),
@@ -156,6 +157,7 @@ test("escalates a missed acknowledgement once and records recovery without resol
     ],
   );
   assert.equal(open.state, "OPEN");
+  assert.equal((await service.alerts())[0]?.state, "OPEN");
 });
 
 test("safely replays pending delivery after worker restart", async () => {
@@ -165,7 +167,7 @@ test("safely replays pending delivery after worker restart", async () => {
     id: () => "notification-1",
     now: () => new Date("2026-09-11T00:00:00.000Z"),
   });
-  first.recordOpened(alert());
+  await first.recordOpened(alert());
   const restarted = new AlertNotificationService(repository, {
     controlRoomBaseUrl: "https://maos-web.example.test",
     id: () => "unused",
@@ -190,4 +192,49 @@ test("safely replays pending delivery after worker restart", async () => {
     },
   });
   assert.equal(sends, 1);
+});
+
+test("awaits an asynchronous durable notification repository", async () => {
+  const memory = new InMemoryAlertNotificationRepository();
+  const repository = {
+    appendDeliveryEvent: async (
+      ...args: Parameters<typeof memory.appendDeliveryEvent>
+    ) => memory.appendDeliveryEvent(...args),
+    findByProviderMessageId: async (
+      ...args: Parameters<typeof memory.findByProviderMessageId>
+    ) => memory.findByProviderMessageId(...args),
+    insert: async (...args: Parameters<typeof memory.insert>) =>
+      memory.insert(...args),
+    list: async () => memory.list(),
+    listAlerts: async () => [],
+    listDeliveryEvents: async () => memory.listDeliveryEvents(),
+    recordAcceptance: async (
+      ...args: Parameters<typeof memory.recordAcceptance>
+    ) => memory.recordAcceptance(...args),
+    updateAlertState: async () => undefined,
+    updateDelivery: async (...args: Parameters<typeof memory.updateDelivery>) =>
+      memory.updateDelivery(...args),
+    upsertAlert: async () => undefined,
+  } as unknown as AlertNotificationRepository;
+  const service = new AlertNotificationService(repository, {
+    controlRoomBaseUrl: "https://maos-web.example.test",
+    id: () => "notification-async-1",
+    now: () => new Date("2026-09-11T00:00:00.000Z"),
+  });
+
+  await service.recordOpened(alert());
+  assert.equal(
+    await service.dispatchPending({
+      async send() {
+        return {
+          accepted_at: "2026-09-11T00:01:00.000Z",
+          provider: "RESEND",
+          provider_message_id: "email-async-1",
+          state: "ACCEPTED",
+        };
+      },
+    }),
+    1,
+  );
+  assert.equal((await service.notifications())[0]?.state, "ACCEPTED");
 });

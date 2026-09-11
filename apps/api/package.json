@@ -9,6 +9,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@maos/alert-email-resend": "0.0.0",
     "@maos/config": "0.0.0",
     "@maos/contracts": "0.0.0",
     "@maos/logging": "0.0.0",

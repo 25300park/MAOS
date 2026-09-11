@@ -28,6 +28,7 @@ export type AlertEmailConfig =
       from: string;
       primaryTo: string;
       provider: "resend";
+      pollIntervalMs: number;
       warningAckTimeoutMs: number;
       webhookSecret: string;
     };
@@ -130,6 +131,10 @@ export function loadAlertEmailConfig(
     from: requiredValue(env, "MAOS_ALERT_EMAIL_FROM"),
     primaryTo: requiredValue(env, "MAOS_ALERT_EMAIL_PRIMARY_TO"),
     provider: "resend",
+    pollIntervalMs:
+      env.MAOS_ALERT_EMAIL_POLL_INTERVAL_SECONDS === undefined
+        ? 30_000
+        : timeoutMs(env, "MAOS_ALERT_EMAIL_POLL_INTERVAL_SECONDS"),
     warningAckTimeoutMs: timeoutMs(
       env,
       "MAOS_ALERT_WARNING_ACK_TIMEOUT_SECONDS",

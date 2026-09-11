@@ -16,7 +16,7 @@ test("preserves the raw signed webhook body and fails closed on invalid signatur
     controlRoomBaseUrl: "https://maos-web.example.test",
     id: () => "notification-1",
   });
-  notifications.recordOpened({
+  await notifications.recordOpened({
     affected_system: "maos-api",
     correlation_id: "corr-1",
     evidence_refs: [],

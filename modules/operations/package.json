@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "types": "src/index.ts",
   "dependencies": {
+    "@maos/config": "0.0.0",
+    "@maos/database": "0.0.0",
     "@maos/logging": "0.0.0"
   },
   "scripts": {

@@ -53,12 +53,13 @@ const eventState = (type: string): ResendNormalizedDeliveryEvent["state"] => {
 };
 
 export class ResendAlertEmailAdapter {
+  readonly #config: ResendAlertEmailConfig;
   readonly #fetch: Fetch;
   readonly #now: () => Date;
   readonly #webhook: Webhook;
 
   constructor(
-    private readonly config: ResendAlertEmailConfig,
+    config: ResendAlertEmailConfig,
     fetchImplementation: Fetch = fetch,
     now: () => Date = () => new Date(),
   ) {
@@ -67,6 +68,7 @@ export class ResendAlertEmailAdapter {
     required(config.from, "ALERT_EMAIL_FROM_REQUIRED");
     required(config.primaryTo, "ALERT_EMAIL_PRIMARY_TO_REQUIRED");
     required(config.escalationTo, "ALERT_EMAIL_ESCALATION_TO_REQUIRED");
+    this.#config = Object.freeze({ ...config });
     this.#fetch = fetchImplementation;
     this.#now = now;
     this.#webhook = new Webhook(config.webhookSecret);
@@ -80,7 +82,7 @@ export class ResendAlertEmailAdapter {
   }> {
     const response = await this.#fetch("https://api.resend.com/emails", {
       body: JSON.stringify({
-        from: this.config.from,
+        from: this.#config.from,
         headers: {
           "X-MAOS-Alert-ID": safe(input.alert_id),
           "X-MAOS-Correlation-ID": safe(input.correlation_id),
@@ -90,12 +92,12 @@ export class ResendAlertEmailAdapter {
         text: `${safe(input.summary)}\n\nReview and acknowledge in MAOS Control Room:\n${input.control_room_alert_url}`,
         to: [
           input.recipient === "ESCALATION"
-            ? this.config.escalationTo
-            : this.config.primaryTo,
+            ? this.#config.escalationTo
+            : this.#config.primaryTo,
         ],
       }),
       headers: {
-        authorization: `Bearer ${this.config.apiKey}`,
+        authorization: `Bearer ${this.#config.apiKey}`,
         "content-type": "application/json",
         "idempotency-key": input.idempotency_key,
       },

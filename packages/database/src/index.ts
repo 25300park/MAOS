@@ -1,5 +1,7 @@
 export { applyMigrations } from "./migrate.js";
 export { loadMigrations } from "./migrations.js";
+export * from "./alert-email-repository.js";
+export * from "./postgres.js";
 export {
   getSchemaVersion,
   validateMigrationSafety,
