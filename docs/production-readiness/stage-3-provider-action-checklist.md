@@ -58,11 +58,16 @@ before the provider supplies them.
 
 ## 4. Monitoring and Email
 
-- [ ] Connect Vercel and Railway native logs/metrics to the Stage 2 signal matrix.
+- [x] Confirm Vercel and Railway native runtime logs/metrics are available as secondary evidence.
+- [ ] Connect the observed provider telemetry to the complete Stage 2 signal and evidence matrix.
 - [ ] Configure MAOS Control Room health/evidence references without raw provider payloads.
 - [ ] Enter the private email destination and send-only credential in the provider secret store.
 - [ ] Test WARNING and CRITICAL delivery, acknowledgement and resolution using synthetic alerts.
 - [ ] Confirm no credential, private identity/contact, customer or employee content appears.
+
+Partial real staging evidence is recorded in
+`docs/production-readiness/stage-3-monitoring-email-evidence.md`. Provider telemetry availability
+does not close the email-alert lifecycle requirements.
 
 ## 5. Evidence and Stop Conditions
 

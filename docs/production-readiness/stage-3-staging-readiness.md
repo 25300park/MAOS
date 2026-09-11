@@ -129,6 +129,15 @@ provider staging environment and must never be copied into commands, logs, scree
 - Staging uses separate provider environment, database, identities, secret references, URLs,
   deployments and evidence namespace. No production credential, DNS, data or Approval may be reused.
 
+### Monitoring evidence collected 2026-09-11
+
+Real staging health requests, Railway HTTP logs and metrics, and Vercel runtime logs are recorded in
+`docs/production-readiness/stage-3-monitoring-email-evidence.md`. Native provider telemetry is
+available as secondary evidence and the unauthenticated operations path correctly failed closed.
+The Control Room monitoring view, degraded-health alert generation, email delivery,
+acknowledgement, escalation, and recovery remain `NOT_VERIFIED`; this partial observation does not
+close G07.
+
 ## Required Evidence Matrix
 
 | Evidence | Minimum acceptance |
