@@ -37,6 +37,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0015_ai_mls_integration",
       "0016_crm_human_work_integration",
       "0017_optimization_learning_foundation",
+      "0018_alert_email_delivery",
     ],
     skipped: [],
   });
@@ -931,6 +932,93 @@ test("persists governed Phase 13 learning candidates with immutable evidence his
   );
 });
 
+test("persists alerts, transactional email outbox, and append-only delivery evidence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0018_alert_email_delivery"));
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('operations', 'alerts'),
+      ('notification', 'alert_email_outbox'),
+      ('notification', 'alert_email_delivery_events')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "notification.alert_email_delivery_events",
+      "notification.alert_email_outbox",
+      "operations.alerts",
+    ],
+  );
+
+  await database.exec(`
+    INSERT INTO operations.alerts (
+      alert_key, target_reference, system_reference, owner_reference, severity,
+      state, correlation_id, evidence_references, first_detected_at, last_observed_at
+    ) VALUES (
+      'alert-1', 'api-staging', 'maos-api', 'role:platform-operations', 'WARNING',
+      'OPEN', 'corr-1', ARRAY['evidence://health/degraded'], CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+    INSERT INTO notification.alert_email_outbox (
+      notification_key, alert_key, event_kind, severity, summary,
+      target_reference, system_reference, owner_reference, recipient_role,
+      control_room_alert_url, correlation_id, evidence_references, idempotency_key
+    ) VALUES (
+      'notification-1', 'alert-1', 'OPENED', 'WARNING',
+      'WARNING health condition for maos-api', 'api-staging', 'maos-api',
+      'role:platform-operations', 'PRIMARY',
+      'https://maos-web.example.test/alerts?alert_id=alert-1', 'corr-1',
+      ARRAY['evidence://health/degraded'], 'alert-1:OPENED:0'
+    );
+    INSERT INTO notification.alert_email_delivery_events (
+      provider_event_id, notification_key, provider, provider_message_id,
+      delivery_state, evidence_references, occurred_at
+    ) VALUES (
+      'webhook-1', 'notification-1', 'RESEND', 'email-1', 'DELIVERED',
+      ARRAY['evidence://resend/webhook-1'], CURRENT_TIMESTAMP
+    );
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(
+        "UPDATE notification.alert_email_delivery_events SET delivery_state = 'FAILED'",
+      ),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(`
+        INSERT INTO notification.alert_email_outbox (
+          notification_key, alert_key, event_kind, severity, summary,
+          target_reference, system_reference, owner_reference, recipient_role,
+          control_room_alert_url, correlation_id, evidence_references, idempotency_key
+        ) SELECT 'notification-2', alert_key, event_kind, severity, summary,
+          target_reference, system_reference, owner_reference, recipient_role,
+          control_room_alert_url, correlation_id, evidence_references, idempotency_key
+        FROM notification.alert_email_outbox WHERE notification_key = 'notification-1'
+      `),
+    /unique/i,
+  );
+  const sensitiveColumns = await database.query<{ column_name: string }>(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'notification'
+      AND table_name IN ('alert_email_outbox', 'alert_email_delivery_events')
+      AND column_name IN (
+        'raw_payload', 'email_body', 'recipient_address', 'credential', 'api_key', 'token'
+      )
+  `);
+  assert.deepEqual(sensitiveColumns.rows, []);
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -957,6 +1045,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0015_ai_mls_integration",
       "0016_crm_human_work_integration",
       "0017_optimization_learning_foundation",
+      "0018_alert_email_delivery",
     ],
   });
 
@@ -974,8 +1063,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 17);
-  assert.equal(version.latest_id, "0017_optimization_learning_foundation");
+  assert.equal(version.applied_count, 18);
+  assert.equal(version.latest_id, "0018_alert_email_delivery");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

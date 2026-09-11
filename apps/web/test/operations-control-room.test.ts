@@ -18,6 +18,11 @@ const operations: OperationsView = {
   alerts: [
     {
       affected_system: "ai-memory-gateway",
+      notification: {
+        event_kind: "OPENED",
+        last_event_at: "2026-09-11T04:02:00Z",
+        state: "DELIVERED",
+      },
       owner_reference: "role:knowledge-operations",
       severity: "CRITICAL",
       state: "OPEN",
@@ -64,6 +69,7 @@ test("renders permission-aware operational health, incidents, recovery, and prod
   assert.match(html, /Production deployment[^]*NOT APPROVED/);
   assert.match(html, /Production gaps[^]*10/);
   assert.match(html, /Acknowledge gateway incident/);
+  assert.match(html, /Email evidence[^]*DELIVERED[^]*OPENED/);
   assert.match(html, /Enterprise production readiness/);
   assert.match(html, /PARTIALLY_READY/);
   assert.match(html, /SIMULATED_ONLY/);

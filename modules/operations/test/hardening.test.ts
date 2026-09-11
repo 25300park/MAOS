@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AlertNotificationService,
   BackupReadinessRegistry,
   BoundedRetryExecutor,
   CircuitBreaker,
@@ -8,6 +9,7 @@ import {
   EmergencyStopRegistry,
   FailureRecoverySimulator,
   MonitoringReadiness,
+  InMemoryAlertNotificationRepository,
   OperationsError,
   OperationsHardeningService,
   ProductionGapTracker,
@@ -19,6 +21,68 @@ import {
 const human = (id = "human-ops") => ({ id, type: "HUMAN" as const });
 const agent = (id = "agent-ops") => ({ id, type: "AGENT" as const });
 const system = (id = "system-maos") => ({ id, type: "SYSTEM" as const });
+
+test("connects health alerts to notification evidence without changing human authority", () => {
+  const repository = new InMemoryAlertNotificationRepository();
+  const notifications = new AlertNotificationService(repository, {
+    controlRoomBaseUrl: "https://maos-web.example.test",
+    id: (() => {
+      let sequence = 0;
+      return () => `notification-${++sequence}`;
+    })(),
+    now: () => new Date("2026-09-11T00:00:00.000Z"),
+  });
+  const operations = new OperationsHardeningService(
+    () => new Date("2026-09-11T00:00:00.000Z"),
+    undefined,
+    notifications,
+  );
+  operations.registerTarget({
+    environment: "STAGING",
+    health: "HEALTHY",
+    id: "api-staging",
+    kind: "APPLICATION",
+    owner_reference: "role:platform-operations",
+    system_id: "maos-api",
+  });
+  operations.recordHealth({
+    correlation_id: "corr-degraded",
+    evidence_refs: ["evidence://health/degraded"],
+    health: "DEGRADED",
+    target_id: "api-staging",
+  });
+  operations.recordHealth({
+    correlation_id: "corr-degraded-again",
+    evidence_refs: ["evidence://health/degraded-again"],
+    health: "DEGRADED",
+    target_id: "api-staging",
+  });
+  const alert = operations.alerts()[0]!;
+  operations.recordHealth({
+    correlation_id: "corr-recovered",
+    evidence_refs: ["evidence://health/recovered"],
+    health: "HEALTHY",
+    target_id: "api-staging",
+  });
+  operations.transitionAlert({
+    actor: human("human-operator"),
+    alert_id: alert.id,
+    evidence_refs: ["evidence://alert/ack"],
+    state: "ACKNOWLEDGED",
+  });
+  operations.transitionAlert({
+    actor: human("human-operator"),
+    alert_id: alert.id,
+    evidence_refs: ["evidence://alert/resolve"],
+    state: "RESOLVED",
+  });
+
+  assert.deepEqual(
+    notifications.notifications().map(({ event_kind }) => event_kind),
+    ["OPENED", "RECOVERY_OBSERVED", "RESOLVED"],
+  );
+  assert.equal(operations.alerts()[0]?.state, "RESOLVED");
+});
 
 test("aggregates canonical health and deduplicates repeated degraded alerts", () => {
   let now = new Date("2026-09-09T01:00:00Z");

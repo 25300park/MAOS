@@ -1,7 +1,59 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { createWorkerServer } from "../src/index.js";
+import {
+  AlertNotificationService,
+  InMemoryAlertNotificationRepository,
+} from "@maos/module-operations";
+import { createWorkerServer, runAlertDeliveryCycle } from "../src/index.js";
+
+test("processes pending alert email and missed-ack escalation in one bounded cycle", async () => {
+  const notifications = new AlertNotificationService(
+    new InMemoryAlertNotificationRepository(),
+    {
+      controlRoomBaseUrl: "https://maos-web.example.test",
+      id: (() => {
+        let id = 0;
+        return () => `notification-${++id}`;
+      })(),
+      now: () => new Date("2026-09-11T00:20:00.000Z"),
+    },
+  );
+  const alert = {
+    affected_system: "maos-api",
+    correlation_id: "corr-1",
+    evidence_refs: ["evidence://health/degraded"],
+    first_detected_at: "2026-09-11T00:00:00.000Z",
+    id: "alert-1",
+    last_observed_at: "2026-09-11T00:00:00.000Z",
+    occurrences: 1,
+    owner_reference: "role:operator",
+    severity: "WARNING" as const,
+    state: "OPEN" as const,
+    target_id: "api",
+  };
+  notifications.recordOpened(alert);
+  const recipients: string[] = [];
+  const result = await runAlertDeliveryCycle({
+    adapter: {
+      async send(input) {
+        recipients.push(input.recipient);
+        return {
+          accepted_at: "2026-09-11T00:20:00.000Z",
+          provider: "RESEND",
+          provider_message_id: `email-${recipients.length}`,
+          state: "ACCEPTED",
+        };
+      },
+    },
+    alerts: [alert],
+    notifications,
+    policy: { criticalMs: 5 * 60_000, warningMs: 15 * 60_000 },
+  });
+
+  assert.deepEqual(result, { dispatched: 2, escalated: 1 });
+  assert.deepEqual(recipients, ["PRIMARY", "ESCALATION"]);
+});
 
 test("exposes bounded worker liveness and readiness for staging", async (t) => {
   const server = createWorkerServer({ readiness: () => true });

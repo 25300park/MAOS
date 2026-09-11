@@ -1,4 +1,9 @@
 import { createServer, type Server } from "node:http";
+import type {
+  AlertEmailDeliveryPort,
+  AlertNotificationService,
+  OperationsAlert,
+} from "@maos/module-operations";
 
 export const WORKER_APP = Object.freeze({
   service: "worker",
@@ -7,6 +12,23 @@ export const WORKER_APP = Object.freeze({
 
 export interface WorkerServerOptions {
   readiness?: () => boolean | Promise<boolean>;
+}
+
+export async function runAlertDeliveryCycle(input: {
+  adapter: AlertEmailDeliveryPort;
+  alerts: readonly OperationsAlert[];
+  notifications: Pick<
+    AlertNotificationService,
+    "dispatchPending" | "recordDueEscalations"
+  >;
+  policy: { criticalMs: number; warningMs: number };
+}): Promise<{ dispatched: number; escalated: number }> {
+  const escalated = input.notifications.recordDueEscalations(
+    input.alerts,
+    input.policy,
+  );
+  const dispatched = await input.notifications.dispatchPending(input.adapter);
+  return { dispatched, escalated };
 }
 
 export function createWorkerServer(options: WorkerServerOptions = {}): Server {

@@ -18,7 +18,8 @@
       "@maos/module-orchestration": ["modules/orchestration/src/index.ts"],
       "@maos/module-tooling": ["modules/tooling/src/index.ts"],
       "@maos/request-context": ["packages/request-context/src/index.ts"],
-      "@maos/database": ["packages/database/src/index.ts"]
+      "@maos/database": ["packages/database/src/index.ts"],
+      "@maos/alert-email-resend": ["packages/alert-email-resend/src/index.ts"]
     }
   },
   "include": [

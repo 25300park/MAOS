@@ -17,6 +17,21 @@ export interface DatabaseConfig {
   databaseUrl: string;
 }
 
+export type AlertEmailConfig =
+  | { enabled: false }
+  | {
+      apiKey: string;
+      controlRoomBaseUrl: string;
+      criticalAckTimeoutMs: number;
+      enabled: true;
+      escalationTo: string;
+      from: string;
+      primaryTo: string;
+      provider: "resend";
+      warningAckTimeoutMs: number;
+      webhookSecret: string;
+    };
+
 export interface ProductionConfig {
   autoMigrate: false;
   backupKeyReference: string;
@@ -64,6 +79,63 @@ export function loadDatabaseConfig(
   }
 
   return { databaseUrl };
+}
+
+const requiredValue = (
+  env: Record<string, string | undefined>,
+  name: string,
+): string => {
+  const value = env[name];
+  if (!value?.trim()) throw new Error(`${name}_REQUIRED`);
+  return value;
+};
+
+const timeoutMs = (
+  env: Record<string, string | undefined>,
+  name: string,
+): number => {
+  const seconds = Number(requiredValue(env, name));
+  if (!Number.isInteger(seconds) || seconds <= 0)
+    throw new Error(`${name}_INVALID`);
+  return seconds * 1_000;
+};
+
+export function loadAlertEmailConfig(
+  env: Record<string, string | undefined>,
+): AlertEmailConfig {
+  if (env.MAOS_ALERT_EMAIL_ENABLED !== "true") return { enabled: false };
+  if (env.MAOS_ALERT_EMAIL_PROVIDER !== "resend")
+    throw new Error("MAOS_ALERT_EMAIL_PROVIDER_INVALID");
+  const controlRoomBaseUrl = requiredValue(
+    env,
+    "MAOS_CONTROL_ROOM_ALERT_BASE_URL",
+  );
+  let controlRoomUrl: URL;
+  try {
+    controlRoomUrl = new URL(controlRoomBaseUrl);
+  } catch {
+    throw new Error("CONTROL_ROOM_HTTPS_REQUIRED");
+  }
+  if (controlRoomUrl.protocol !== "https:")
+    throw new Error("CONTROL_ROOM_HTTPS_REQUIRED");
+  return {
+    apiKey: requiredValue(env, "RESEND_API_KEY"),
+    controlRoomBaseUrl: controlRoomUrl.origin,
+    criticalAckTimeoutMs: timeoutMs(
+      env,
+      "MAOS_ALERT_CRITICAL_ACK_TIMEOUT_SECONDS",
+    ),
+    enabled: true,
+    escalationTo: requiredValue(env, "MAOS_ALERT_EMAIL_ESCALATION_TO"),
+    from: requiredValue(env, "MAOS_ALERT_EMAIL_FROM"),
+    primaryTo: requiredValue(env, "MAOS_ALERT_EMAIL_PRIMARY_TO"),
+    provider: "resend",
+    warningAckTimeoutMs: timeoutMs(
+      env,
+      "MAOS_ALERT_WARNING_ACK_TIMEOUT_SECONDS",
+    ),
+    webhookSecret: requiredValue(env, "RESEND_WEBHOOK_SECRET"),
+  };
 }
 
 function requiredReference(

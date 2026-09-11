@@ -1,10 +1,51 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  loadAlertEmailConfig,
   loadApiConfig,
   loadDatabaseConfig,
   loadProductionConfig,
 } from "../src/index.js";
+
+test("loads server-only Resend alert configuration and fails closed when incomplete", () => {
+  assert.deepEqual(loadAlertEmailConfig({}), { enabled: false });
+  const env = {
+    MAOS_ALERT_CRITICAL_ACK_TIMEOUT_SECONDS: "300",
+    MAOS_ALERT_EMAIL_ENABLED: "true",
+    MAOS_ALERT_EMAIL_ESCALATION_TO: "escalation@example.test",
+    MAOS_ALERT_EMAIL_FROM: "MAOS Staging <alerts@example.test>",
+    MAOS_ALERT_EMAIL_PRIMARY_TO: "operator@example.test",
+    MAOS_ALERT_EMAIL_PROVIDER: "resend",
+    MAOS_ALERT_WARNING_ACK_TIMEOUT_SECONDS: "900",
+    MAOS_CONTROL_ROOM_ALERT_BASE_URL: "https://maos-web.example.test",
+    RESEND_API_KEY: "synthetic-resend-api-key",
+    RESEND_WEBHOOK_SECRET: "whsec_synthetic_webhook_secret",
+  };
+  assert.deepEqual(loadAlertEmailConfig(env), {
+    apiKey: "synthetic-resend-api-key",
+    controlRoomBaseUrl: "https://maos-web.example.test",
+    criticalAckTimeoutMs: 300_000,
+    enabled: true,
+    escalationTo: "escalation@example.test",
+    from: "MAOS Staging <alerts@example.test>",
+    primaryTo: "operator@example.test",
+    provider: "resend",
+    warningAckTimeoutMs: 900_000,
+    webhookSecret: "whsec_synthetic_webhook_secret",
+  });
+  assert.throws(
+    () => loadAlertEmailConfig({ ...env, RESEND_API_KEY: undefined }),
+    /RESEND_API_KEY_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      loadAlertEmailConfig({
+        ...env,
+        MAOS_CONTROL_ROOM_ALERT_BASE_URL: "http://unsafe.example.test",
+      }),
+    /CONTROL_ROOM_HTTPS_REQUIRED/,
+  );
+});
 
 test("loads a valid API configuration", () => {
   assert.deepEqual(

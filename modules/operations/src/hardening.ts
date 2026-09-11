@@ -6,6 +6,7 @@ import {
   type OperationsActor,
   type OperationsHealth,
 } from "./index.js";
+import type { AlertNotificationService } from "./alert-delivery.js";
 
 export type OperationsTargetKind =
   | "APPLICATION"
@@ -181,6 +182,10 @@ export class OperationsHardeningService {
         runbook_reference: string;
       }): void;
     },
+    private readonly notifications?: Pick<
+      AlertNotificationService,
+      "recordOpened" | "recordRecovery" | "recordResolved"
+    >,
   ) {}
 
   registerTarget(
@@ -227,8 +232,12 @@ export class OperationsHardeningService {
     });
     this.#targets.set(target.id, updated);
     this.recordMonitoring(updated, input.correlation_id);
-    if (input.health !== "HEALTHY")
+    if (input.health !== "HEALTHY") {
       this.upsertHealthAlert(updated, input, observedAt);
+    } else if (target.health !== "HEALTHY") {
+      const alert = this.activeAlertForTarget(target.id);
+      if (alert) this.notifications?.recordRecovery(alert, input.evidence_refs);
+    }
     return updated;
   }
 
@@ -259,6 +268,8 @@ export class OperationsHardeningService {
       state: input.state,
     });
     this.#alerts.set(alert.id, updated);
+    if (updated.state === "RESOLVED")
+      this.notifications?.recordResolved(updated, input.evidence_refs);
     return updated;
   }
 
@@ -520,5 +531,14 @@ export class OperationsHardeningService {
     });
     this.#alerts.set(alert.id, alert);
     this.#alertFingerprints.set(fingerprint, alert.id);
+    this.notifications?.recordOpened(alert);
+  }
+
+  private activeAlertForTarget(targetId: string): OperationsAlert | undefined {
+    return [...this.#alerts.values()].find(
+      (alert) =>
+        alert.target_id === targetId &&
+        (alert.state === "OPEN" || alert.state === "ACKNOWLEDGED"),
+    );
   }
 }

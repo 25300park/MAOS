@@ -30,6 +30,7 @@ export type ValidationResult =
 
 export interface ApiRoute {
   access?: "PUBLIC" | AuthorizationRequest;
+  body?: "RAW";
   handle(input: {
     context: RequestContext;
     identity: IdentityContext | null;
@@ -91,10 +92,10 @@ function errorEnvelope(
   return { ok: false, error, meta: context };
 }
 
-async function readJsonBody(
+async function readRequestBody(
   request: IncomingMessage,
   maxBytes: number,
-): Promise<unknown> {
+): Promise<Buffer> {
   const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim();
   if (contentType !== "application/json") {
     throw new ApiRequestError(415, {
@@ -123,7 +124,11 @@ async function readJsonBody(
     chunks.push(buffer);
   }
 
-  const source = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+function parseJsonBody(body: Buffer): unknown {
+  const source = body.toString("utf8");
   if (source.length === 0) {
     return undefined;
   }
@@ -304,12 +309,19 @@ async function handleRequest(
         }
       }
 
-      const rawInput = route.validate
-        ? await readJsonBody(
-            request,
-            options.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES,
-          )
-        : undefined;
+      const requestBody =
+        route.validate || route.body === "RAW"
+          ? await readRequestBody(
+              request,
+              options.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES,
+            )
+          : undefined;
+      const rawInput =
+        route.body === "RAW"
+          ? requestBody
+          : requestBody
+            ? parseJsonBody(requestBody)
+            : undefined;
       const validation = route.validate?.(rawInput) ?? {
         ok: true as const,
         value: rawInput,
