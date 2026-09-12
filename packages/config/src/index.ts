@@ -33,6 +33,14 @@ export type AlertEmailConfig =
       webhookSecret: string;
     };
 
+export type StagingOperationsAuthConfig =
+  | { enabled: false }
+  | {
+      actorId: string;
+      bearerToken: string;
+      enabled: true;
+    };
+
 export interface ProductionConfig {
   autoMigrate: false;
   backupKeyReference: string;
@@ -141,6 +149,18 @@ export function loadAlertEmailConfig(
     ),
     webhookSecret: requiredValue(env, "RESEND_WEBHOOK_SECRET"),
   };
+}
+
+export function loadStagingOperationsAuthConfig(
+  env: Record<string, string | undefined>,
+): StagingOperationsAuthConfig {
+  if (env.MAOS_ENV !== "staging") return { enabled: false };
+
+  const actorId = env.MAOS_STAGING_OPERATIONS_ACTOR_ID?.trim();
+  const bearerToken = env.MAOS_STAGING_OPERATIONS_BEARER_TOKEN;
+  if (!actorId || !bearerToken?.trim()) return { enabled: false };
+
+  return { actorId, bearerToken, enabled: true };
 }
 
 function requiredReference(

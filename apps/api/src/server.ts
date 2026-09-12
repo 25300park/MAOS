@@ -52,10 +52,12 @@ import { createObservabilityRoutes } from "./observability-routes.js";
 import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
+import { createStagingOperationsAuthenticator } from "./staging-operations-auth.js";
 
 const config = loadApiConfig(process.env);
 const logger = createLogger(config);
 const alertEmailRuntime = await createAlertEmailApiRuntime(process.env);
+const authenticate = createStagingOperationsAuthenticator(process.env);
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -620,7 +622,12 @@ const routes = [
     scope: "project-maos",
   }),
 ];
-const server = createApiServer({ ...config, logger, routes });
+const server = createApiServer({
+  ...config,
+  ...(authenticate ? { authenticate } : {}),
+  logger,
+  routes,
+});
 
 server.listen(config.port, "0.0.0.0", () => {
   logger.info("api listening", { port: config.port });

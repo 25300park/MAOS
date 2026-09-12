@@ -5,7 +5,36 @@ import {
   loadApiConfig,
   loadDatabaseConfig,
   loadProductionConfig,
+  loadStagingOperationsAuthConfig,
 } from "../src/index.js";
+
+test("loads bounded staging operations authentication configuration", () => {
+  const configured = {
+    MAOS_ENV: "staging",
+    MAOS_STAGING_OPERATIONS_ACTOR_ID: "human-staging-operator",
+    MAOS_STAGING_OPERATIONS_BEARER_TOKEN: "synthetic-staging-token",
+  };
+
+  assert.deepEqual(loadStagingOperationsAuthConfig(configured), {
+    actorId: "human-staging-operator",
+    bearerToken: "synthetic-staging-token",
+    enabled: true,
+  });
+  assert.deepEqual(loadStagingOperationsAuthConfig({ MAOS_ENV: "staging" }), {
+    enabled: false,
+  });
+  assert.deepEqual(
+    loadStagingOperationsAuthConfig({
+      ...configured,
+      MAOS_STAGING_OPERATIONS_ACTOR_ID: " ",
+    }),
+    { enabled: false },
+  );
+  assert.deepEqual(
+    loadStagingOperationsAuthConfig({ ...configured, MAOS_ENV: "production" }),
+    { enabled: false },
+  );
+});
 
 test("loads server-only Resend alert configuration and fails closed when incomplete", () => {
   assert.deepEqual(loadAlertEmailConfig({}), { enabled: false });
