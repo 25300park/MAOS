@@ -8,18 +8,18 @@ Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session l
 
 ## Final classifications
 
-| Classification                           | Result                                                                   |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| Durable Session repository               | RESOLVED                                                                 |
-| Session version/concurrency              | RESOLVED                                                                 |
-| Revocation history                       | RESOLVED                                                                 |
-| Tenant derivation                        | RESOLVED                                                                 |
-| Scope derivation                         | RESOLVED                                                                 |
-| Audit reference                          | RESOLVED                                                                 |
-| Time-bound freshness                     | RESOLVED                                                                 |
-| Restart durability                       | RESOLVED                                                                 |
-| Production-style Staging Session ingress | BLOCKED — MAOS-CR-003 APPROVAL AND IMPLEMENTATION AUTHORIZATION REQUIRED |
-| Production implementation authorization  | NO                                                                       |
+| Classification                           | Result                                          |
+| ---------------------------------------- | ----------------------------------------------- |
+| Durable Session repository               | RESOLVED                                        |
+| Session version/concurrency              | RESOLVED                                        |
+| Revocation history                       | RESOLVED                                        |
+| Tenant derivation                        | RESOLVED                                        |
+| Scope derivation                         | RESOLVED                                        |
+| Audit reference                          | RESOLVED                                        |
+| Time-bound freshness                     | RESOLVED                                        |
+| Restart durability                       | RESOLVED                                        |
+| Production-style Staging Session ingress | BLOCKED — IMPLEMENTATION AUTHORIZATION REQUIRED |
+| Production implementation authorization  | NO                                              |
 
 ## Evidence summary
 
@@ -49,9 +49,9 @@ Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session l
 
 Ingress architecture decision: `REL001_PHASE1C_STAGING_SESSION_INGRESS_ARCHITECTURE_READY`
 
-C2 Change Request: `MAOS-CR-003 — PROPOSED / APPROVAL REQUIRED`
+C2 Change Request: `MAOS-CR-003 — APPROVED`
 
-Production-style Staging Session ingress: `BLOCKED_PENDING_C2_APPROVAL_AND_IMPLEMENTATION_AUTHORIZATION`
+Production-style Staging Session ingress: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`
 
 Production implementation authorization: `NO`
 

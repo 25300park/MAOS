@@ -6,11 +6,15 @@
 | Baseline                                | MAOS Architecture v1.1 APPROVED / FROZEN                                                       |
 | Target                                  | Additive Staging Session ingress architecture contract                                         |
 | Class                                   | C2 Minor Architecture                                                                          |
-| Status                                  | PROPOSED / APPROVAL REQUIRED                                                                   |
+| Status                                  | APPROVED                                                                                       |
 | Scope                                   | Same-origin Control Room BFF/proxy and Identity-owned durable Session ingress for Staging only |
 | Frozen architecture conflict            | NO                                                                                             |
 | Production implementation authorization | NO                                                                                             |
 | Production deployment authorization     | NO                                                                                             |
+| Decision                                | APPROVE MAOS-CR-003 Staging Session ingress                                                    |
+| Approved By                             | HUMAN_REPOSITORY_OWNER — explicit repository-authorized human decision                         |
+| Approved On                             | 2026-09-13                                                                                     |
+| Approved Revision                       | `6b4cc4b94b026501128edaed3b1a55dea8065e4f`                                                     |
 
 ## 1. Change objective
 
@@ -227,7 +231,7 @@ A later authorized implementation must include:
 
 ## 19. Rollback and revocation considerations
 
-Before C2 approval, reject or withdraw MAOS-CR-003; the Phase 1C ingress remains blocked and no runtime rollback is required.
+If architecture adoption is later withdrawn before implementation, record the withdrawal through a new governed Change Request. The Phase 1C ingress remains unimplemented, so no runtime rollback is currently required.
 
 After a future Staging implementation, bounded disablement must support:
 
@@ -243,10 +247,10 @@ Rollback cannot convert revoked Sessions back to valid or erase proof of prior a
 
 ## 20. Implementation gate criteria
 
-Staging implementation remains blocked until all of the following are satisfied:
+Architecture approval satisfies criterion 1 below. Staging implementation remains blocked until separate implementation authorization and all remaining criteria are satisfied:
 
-1. an authorized human approves MAOS-CR-003 and the exact reviewed revision;
-2. the new permission vocabulary and Identity ownership are accepted as additive architecture;
+1. **SATISFIED** — an authorized human approved MAOS-CR-003 at reviewed revision `6b4cc4b94b026501128edaed3b1a55dea8065e4f`;
+2. **SATISFIED** — the new permission vocabulary and Identity ownership are accepted as additive architecture through MAOS-CR-003;
 3. a separately authorized bounded implementation scope and branch are established;
 4. the approved HTTPS Control Room origin and Staging environment boundary are identified;
 5. non-secret actor/organization/assignment provisioning inputs and an authorized provisioning owner are approved;
@@ -271,6 +275,8 @@ Approval of this C2 authorizes architecture adoption only. It does not itself au
 
 ## Approval decision
 
-`PENDING_C2_HUMAN_APPROVAL`
+`APPROVED_C2`
 
-Staging implementation remains `BLOCKED_PENDING_C2_APPROVAL_AND_IMPLEMENTATION_AUTHORIZATION`.
+The repository-authorized human approved `APPROVE_MAOS_CR_003_STAGING_SESSION_INGRESS` on 2026-09-13 against documentation revision `6b4cc4b94b026501128edaed3b1a55dea8065e4f`.
+
+This approval adopts the architecture contract only. Staging implementation remains `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`; production implementation authorization and production deployment authorization remain `NO`.
