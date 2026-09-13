@@ -3,8 +3,9 @@
 ## Decision status
 
 - Architecture decision package: `APPROVED_VIA_MAOS_CR_003`
-- Production-style Staging Session ingress: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`
+- Staging implementation authorization: `AUTHORIZED_FOR_IMPLEMENTATION`
 - Production implementation authorization: `NO`
+- Production deployment authorization: `NO`
 - Production behavior: fail closed and unchanged
 
 This document proposes the smallest production-style Staging Session ingress. It does not amend frozen MAOS architecture, authorize implementation, provision an actor, create credentials, or approve production use.
@@ -160,7 +161,7 @@ Likely bounded changes are:
 
 - `apps/web`: same-origin exchange/logout/proxy endpoints, cookie and CSRF handling, trusted-header stripping, and BFF tests.
 - `apps/api`: Identity-owned Session exchange/revoke endpoints, internal service authentication composition, Session resolution middleware, and audit correlation.
-- `modules/identity`: Session issuance/revocation services, actor/assignment provisioning contracts, and the MAOS-CR-003 permission vocabulary after implementation authorization.
+- `modules/identity`: Session issuance/revocation services, actor/assignment provisioning contracts, and the MAOS-CR-003 permission vocabulary within the authorized Staging implementation.
 - `packages/config`: exact Staging origin, cookie, internal service credential reference, and fail-closed configuration contracts.
 - `packages/database`: durable actor-assignment persistence only if the approved model is not already executable; schema work must be a separate reviewed migration.
 - `modules/observability`: bounded Session/exchange audit-event integration after event vocabulary approval.
@@ -187,12 +188,12 @@ No implementation file is changed by this decision package.
 ## Migration and frozen-architecture impact
 
 - **Frozen architecture conflict:** none. MAOS-CR-003 adopted the additive contract through normal C2 governance without silently modifying frozen source documents.
-- **Frozen architecture amendment/change request:** satisfied by approved MAOS-CR-003. Separate implementation authorization remains required.
+- **Frozen architecture amendment/change request:** satisfied by approved MAOS-CR-003. Bounded Staging implementation is separately authorized.
 - **Migration impact:** possible for organization/project assignment persistence and Session/CSRF verifier support; determine in the C2 implementation design against the existing schema. No migration is authorized here.
-- **Production status:** unchanged. Production-style Staging ingress remains blocked pending separate implementation authorization.
+- **Production status:** unchanged. Staging implementation is authorized; production implementation and deployment remain unauthorized.
 
 ## Final architecture recommendation
 
 `REL001_PHASE1C_STAGING_SESSION_INGRESS_ARCHITECTURE_READY`
 
-The architecture decision package is approved through MAOS-CR-003. This status does not mean the ingress is implemented or authorized for production.
+The architecture decision package is approved through MAOS-CR-003, and bounded Staging implementation is separately authorized. This status does not mean the ingress is implemented or authorized for production.

@@ -9,6 +9,7 @@
 | Status                                  | APPROVED                                                                                       |
 | Scope                                   | Same-origin Control Room BFF/proxy and Identity-owned durable Session ingress for Staging only |
 | Frozen architecture conflict            | NO                                                                                             |
+| Staging implementation authorization    | AUTHORIZED_FOR_IMPLEMENTATION                                                                  |
 | Production implementation authorization | NO                                                                                             |
 | Production deployment authorization     | NO                                                                                             |
 | Decision                                | APPROVE MAOS-CR-003 Staging Session ingress                                                    |
@@ -247,11 +248,11 @@ Rollback cannot convert revoked Sessions back to valid or erase proof of prior a
 
 ## 20. Implementation gate criteria
 
-Architecture approval satisfies criterion 1 below. Staging implementation remains blocked until separate implementation authorization and all remaining criteria are satisfied:
+Architecture approval and the separate Staging implementation authorization satisfy criteria 1–3 below. Staging implementation may begin within the approved scope; completion and any deployment remain gated by criteria 4–10:
 
 1. **SATISFIED** — an authorized human approved MAOS-CR-003 at reviewed revision `6b4cc4b94b026501128edaed3b1a55dea8065e4f`;
 2. **SATISFIED** — the new permission vocabulary and Identity ownership are accepted as additive architecture through MAOS-CR-003;
-3. a separately authorized bounded implementation scope and branch are established;
+3. **SATISFIED** — the repository-authorized human approved the bounded Staging implementation scope at C2 approval revision `7f75a0c2e493fc02c3acf0a79fec37a3b0f20fb4`;
 4. the approved HTTPS Control Room origin and Staging environment boundary are identified;
 5. non-secret actor/organization/assignment provisioning inputs and an authorized provisioning owner are approved;
 6. internal service and user credential references are defined without plaintext secrets;
@@ -279,4 +280,12 @@ Approval of this C2 authorizes architecture adoption only. It does not itself au
 
 The repository-authorized human approved `APPROVE_MAOS_CR_003_STAGING_SESSION_INGRESS` on 2026-09-13 against documentation revision `6b4cc4b94b026501128edaed3b1a55dea8065e4f`.
 
-This approval adopts the architecture contract only. Staging implementation remains `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`; production implementation authorization and production deployment authorization remain `NO`.
+This C2 approval adopts the architecture contract. A subsequent explicit human decision separately authorizes its bounded Staging implementation; production implementation authorization and production deployment authorization remain `NO`.
+
+## Implementation authorization decision
+
+`APPROVE_REL001_PHASE1C_STAGING_SESSION_INGRESS_IMPLEMENTATION`
+
+The repository-authorized human granted `STAGING IMPLEMENTATION ONLY` authorization on 2026-09-13 against C2 approval revision `7f75a0c2e493fc02c3acf0a79fec37a3b0f20fb4`.
+
+Staging implementation is `AUTHORIZED_FOR_IMPLEMENTATION`. This decision grants no production implementation, provider mutation, production deployment, or production-use authority.

@@ -4,22 +4,22 @@
 
 The amendment closes durable repository ownership, immutable identity/binding fields, monotonic versioning, durable irreversible revocation, tenant/scope derivation, bounded audit references, atomicity, shared resolution, restart durability, and numeric freshness policy. It creates no authentication protocol or authority model.
 
-Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session lifetime, and 15-minute applicable MFA freshness window. Production-style Staging ingress and production implementation remain separately unauthorized.
+Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session lifetime, and 15-minute applicable MFA freshness window. Production-style Staging ingress implementation is authorized separately under the approved MAOS-CR-003 scope. Production implementation remains unauthorized.
 
 ## Final classifications
 
-| Classification                           | Result                                          |
-| ---------------------------------------- | ----------------------------------------------- |
-| Durable Session repository               | RESOLVED                                        |
-| Session version/concurrency              | RESOLVED                                        |
-| Revocation history                       | RESOLVED                                        |
-| Tenant derivation                        | RESOLVED                                        |
-| Scope derivation                         | RESOLVED                                        |
-| Audit reference                          | RESOLVED                                        |
-| Time-bound freshness                     | RESOLVED                                        |
-| Restart durability                       | RESOLVED                                        |
-| Production-style Staging Session ingress | BLOCKED — IMPLEMENTATION AUTHORIZATION REQUIRED |
-| Production implementation authorization  | NO                                              |
+| Classification                           | Result                        |
+| ---------------------------------------- | ----------------------------- |
+| Durable Session repository               | RESOLVED                      |
+| Session version/concurrency              | RESOLVED                      |
+| Revocation history                       | RESOLVED                      |
+| Tenant derivation                        | RESOLVED                      |
+| Scope derivation                         | RESOLVED                      |
+| Audit reference                          | RESOLVED                      |
+| Time-bound freshness                     | RESOLVED                      |
+| Restart durability                       | RESOLVED                      |
+| Production-style Staging Session ingress | AUTHORIZED_FOR_IMPLEMENTATION |
+| Production implementation authorization  | NO                            |
 
 ## Evidence summary
 
@@ -51,8 +51,10 @@ Ingress architecture decision: `REL001_PHASE1C_STAGING_SESSION_INGRESS_ARCHITECT
 
 C2 Change Request: `MAOS-CR-003 — APPROVED`
 
-Production-style Staging Session ingress: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`
+Production-style Staging Session ingress: `AUTHORIZED_FOR_IMPLEMENTATION`
 
 Production implementation authorization: `NO`
 
 Production deployment authorization: `NO`
+
+Staging implementation authorization decision: `APPROVE_REL001_PHASE1C_STAGING_SESSION_INGRESS_IMPLEMENTATION`
