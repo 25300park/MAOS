@@ -1,5 +1,7 @@
 import type { ActorType, ToolRisk } from "@maos/contracts";
 
+export type { SessionRecord } from "@maos/contracts";
+
 type HeaderValue = string | string[] | undefined;
 
 export type PermissionEffect = "ALLOW" | "DENY";
