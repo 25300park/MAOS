@@ -304,3 +304,30 @@ test("fails closed on origin errors and bounded upstream timeout", async (t) => 
     ok: false,
   });
 });
+
+test("conceals rejected Session context and clears browser Session state", async (t) => {
+  const baseUrl = await controlRoom(t, "https://core-api.example", {
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: "AUTHENTICATION_REQUIRED" },
+          ok: false,
+        }),
+        { status: 401 },
+      ),
+  });
+  const response = await fetch(`${baseUrl}/projects`, {
+    headers: {
+      cookie: `__Host-maos_session=${SESSION_REFERENCE}; __Host-maos_csrf=${CSRF_TOKEN}`,
+    },
+  });
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /Authentication required/u);
+  assert.doesNotMatch(html, new RegExp(SESSION_REFERENCE, "u"));
+  assert.deepEqual(response.headers.getSetCookie(), [
+    "__Host-maos_session=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict",
+    "__Host-maos_csrf=; Max-Age=0; Path=/; Secure; SameSite=Strict",
+  ]);
+});

@@ -181,6 +181,19 @@ test("creates, touches, reconstructs, and irreversibly revokes a Session", async
     }),
     null,
   );
+  const afterRevocationRestart = new PostgresSessionRepository(database);
+  assert.equal(
+    (await afterRevocationRestart.findSession(ids.session))?.revoked_at,
+    "2026-09-13T01:10:00.000Z",
+  );
+  assert.equal(
+    await afterRevocationRestart.touchSession({
+      accessedAt: "2026-09-13T01:12:00.000Z",
+      expectedVersion: 3,
+      sessionId: ids.session,
+    }),
+    null,
+  );
   const history = await database.query<{
     evidence_ref: string;
     revoked_version: number;
