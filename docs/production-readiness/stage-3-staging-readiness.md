@@ -11,12 +11,12 @@ production deployment, production credentials, and production DNS mutation remai
 
 ## Approved Topology
 
-| Component | Staging target | Local readiness | Provider evidence |
-| --- | --- | --- | --- |
-| Control Room | Vercel Preview or protected staging deployment | Vercel request adapter and config ready | `HUMAN_PROVIDER_ACTION_REQUIRED` |
-| Core API | Railway `staging` environment, Singapore | start contract and health endpoints ready | `HUMAN_PROVIDER_ACTION_REQUIRED` |
-| Worker | Railway `staging` environment, Singapore | start contract and fail-closed health ready | `HUMAN_PROVIDER_ACTION_REQUIRED` |
-| PostgreSQL | Railway `staging` environment, Singapore | migrations and verification scripts ready | `HUMAN_PROVIDER_ACTION_REQUIRED` |
+| Component    | Staging target                                 | Local readiness                             | Provider evidence                |
+| ------------ | ---------------------------------------------- | ------------------------------------------- | -------------------------------- |
+| Control Room | Vercel Preview or protected staging deployment | Vercel request adapter and config ready     | `HUMAN_PROVIDER_ACTION_REQUIRED` |
+| Core API     | Railway `staging` environment, Singapore       | start contract and health endpoints ready   | `HUMAN_PROVIDER_ACTION_REQUIRED` |
+| Worker       | Railway `staging` environment, Singapore       | start contract and fail-closed health ready | `HUMAN_PROVIDER_ACTION_REQUIRED` |
+| PostgreSQL   | Railway `staging` environment, Singapore       | migrations and verification scripts ready   | `HUMAN_PROVIDER_ACTION_REQUIRED` |
 
 Singapore maps to Railway region identifier `asia-southeast1-eqsg3a`. Provider-generated project,
 environment, service, deployment, database, domain, and backup IDs must be captured after the human
@@ -79,20 +79,21 @@ and is enabled only for a registered staging integration scope.
 
 ## Secret-Name Checklist
 
-| Name | Service | Classification | Required for first staging proof |
-| --- | --- | --- | --- |
-| `MAOS_PUBLIC_API_ORIGIN` | Vercel frontend | Browser-safe URL | YES |
-| `MAOS_ENV` | Railway API/worker | Server-only configuration | YES - `staging` |
-| `PORT` | Railway API/worker | Provider runtime configuration | Provider supplied |
-| `DATABASE_URL` | Railway API/worker | Server-only secret | YES - Railway reference |
-| `MAOS_PUBLIC_ORIGIN` | Railway API | Server-only configuration | YES - staging HTTPS URL |
-| `MAOS_SERVICE_IDENTITY` | Railway API/worker | Server-only identity | YES |
-| `DATABASE_SECRET_REFERENCE` | Railway API/worker | Server-only secret reference | YES |
-| `DEPLOYMENT_PROVIDER_REFERENCE` | Railway API/worker | Server-only provider reference | YES |
-| `BACKUP_KEY_REFERENCE` | Backup/export job | Server-only secret reference | Before backup proof |
-| `MAOS_AUTH_CREDENTIAL_REFERENCE` | Railway API | Server-only secret reference | Before authenticated access |
-| `MAOS_EMAIL_ALERT_CREDENTIAL_REFERENCE` | Alert sender | Server-only secret reference | Before alert proof |
-| `NAS_BACKUP_CREDENTIAL_REFERENCE` | Backup/export job | Server-only secret reference | Before NAS proof |
+| Name                                    | Service            | Classification                 | Required for first staging proof                   |
+| --------------------------------------- | ------------------ | ------------------------------ | -------------------------------------------------- |
+| `MAOS_PUBLIC_API_ORIGIN`                | Vercel frontend    | Browser-safe URL               | YES                                                |
+| `MAOS_ENV`                              | Railway API/worker | Server-only configuration      | YES - `staging`                                    |
+| `PORT`                                  | Railway API/worker | Provider runtime configuration | Provider supplied                                  |
+| `DATABASE_URL`                          | Railway API/worker | Server-only secret             | YES - Railway reference                            |
+| `MAOS_DATABASE_MIGRATION_TARGET`        | Migration job only | Server-only confirmation       | YES - exact `staging` during an approved migration |
+| `MAOS_PUBLIC_ORIGIN`                    | Railway API        | Server-only configuration      | YES - staging HTTPS URL                            |
+| `MAOS_SERVICE_IDENTITY`                 | Railway API/worker | Server-only identity           | YES                                                |
+| `DATABASE_SECRET_REFERENCE`             | Railway API/worker | Server-only secret reference   | YES                                                |
+| `DEPLOYMENT_PROVIDER_REFERENCE`         | Railway API/worker | Server-only provider reference | YES                                                |
+| `BACKUP_KEY_REFERENCE`                  | Backup/export job  | Server-only secret reference   | Before backup proof                                |
+| `MAOS_AUTH_CREDENTIAL_REFERENCE`        | Railway API        | Server-only secret reference   | Before authenticated access                        |
+| `MAOS_EMAIL_ALERT_CREDENTIAL_REFERENCE` | Alert sender       | Server-only secret reference   | Before alert proof                                 |
+| `NAS_BACKUP_CREDENTIAL_REFERENCE`       | Backup/export job  | Server-only secret reference   | Before NAS proof                                   |
 
 Only names/references belong in repository evidence. Values are entered by the human in the exact
 provider staging environment and must never be copied into commands, logs, screenshots, or Git.
@@ -102,10 +103,14 @@ provider staging environment and must never be copied into commands, logs, scree
 1. Create isolated Railway staging PostgreSQL in Singapore and reference its private
    `DATABASE_URL` from API/worker.
 2. Capture empty-database identity, PostgreSQL version, region and configuration without secrets.
-3. Run `npm run db:verify` against staging only under exact authorization; production auto-migrate
-   remains disabled.
-4. Record clean initialization, applied migration IDs/checksums, schema version and health.
-5. Re-run `npm run db:verify`; require all migrations skipped/replayed idempotently with no drift.
+3. Run `npm run db:verify` locally to verify clean PGlite initialization and deterministic replay;
+   this command never migrates staging PostgreSQL.
+4. Under exact staging migration authorization, set `MAOS_ENV=staging` and
+   `MAOS_DATABASE_MIGRATION_TARGET=staging` in the bounded migration process, then run
+   `npm run db:migrate:postgres` with the verified staging `DATABASE_URL`. Production migration
+   and application-startup auto-migration remain disabled.
+5. Record applied migration IDs/checksums, schema version and health. Re-run
+   `npm run db:migrate:postgres`; require all 19 migrations skipped with no checksum drift.
 6. Record native backup and PITR as unavailable on the current Railway plan. Do not create backup,
    PITR, RPO, or restore evidence from this assessment.
 7. Configure an hourly encrypted logical export and NAS transfer only after key/NAS references are
@@ -140,17 +145,17 @@ close G07.
 
 ## Required Evidence Matrix
 
-| Evidence | Minimum acceptance |
-| --- | --- |
-| Staging deployment | Provider IDs/status SUCCESS, Singapore region where applicable, source commit, build/config hash and UTC times |
+| Evidence                  | Minimum acceptance                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Staging deployment        | Provider IDs/status SUCCESS, Singapore region where applicable, source commit, build/config hash and UTC times |
 | Frontend/API connectivity | Vercel default HTTPS to Railway staging API, CORS/origin result, correlation continuity and no secret exposure |
-| Worker health | liveness/readiness, dependency-failure 503, restart behavior, heartbeat and bounded retry |
-| DB migration | clean initialization, migration checksums/schema version, replay/skips and no drift |
-| Backup | provider backup/PITR IDs, archive freshness, encrypted export manifest and checksums |
-| Restore | separate staging target, exact source, integrity/application checks and measured RPO/RTO |
-| Monitoring | dashboards/signals, synthetic checks, redaction and provider/Control Room correlation |
-| Alerts | WARNING/CRITICAL delivery, acknowledgement, escalation and resolution lifecycle |
-| Rollback | exact known-good deployment, approval, rollback status, measured recovery and post-checks |
+| Worker health             | liveness/readiness, dependency-failure 503, restart behavior, heartbeat and bounded retry                      |
+| DB migration              | clean initialization, migration checksums/schema version, replay/skips and no drift                            |
+| Backup                    | provider backup/PITR IDs, archive freshness, encrypted export manifest and checksums                           |
+| Restore                   | separate staging target, exact source, integrity/application checks and measured RPO/RTO                       |
+| Monitoring                | dashboards/signals, synthetic checks, redaction and provider/Control Room correlation                          |
+| Alerts                    | WARNING/CRITICAL delivery, acknowledgement, escalation and resolution lifecycle                                |
+| Rollback                  | exact known-good deployment, approval, rollback status, measured recovery and post-checks                      |
 
 Until these provider-generated results exist, staging validation and all production classifications
 remain incomplete.

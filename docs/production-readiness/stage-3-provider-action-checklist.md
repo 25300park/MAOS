@@ -42,8 +42,15 @@ before the provider supplies them.
 
 ## 3. Database and Backup
 
-- [ ] Verify the database is empty and staging-only, then run the clean migration procedure.
-- [ ] Record migration IDs/checksums/schema and successful replay with no drift.
+- [ ] Verify the exact project, staging environment, PostgreSQL service and empty database; never
+      infer the target from `DATABASE_URL` alone.
+- [ ] Run `npm run db:verify` locally for PGlite verification only; do not represent it as staging
+      PostgreSQL application.
+- [ ] Under separate staging migration authorization, require `MAOS_ENV=staging`,
+      `MAOS_DATABASE_MIGRATION_TARGET=staging` and the verified staging `DATABASE_URL`, then run
+      `npm run db:migrate:postgres` from the bounded migration process.
+- [ ] Record all applied migration IDs/checksums/schema, then replay
+      `npm run db:migrate:postgres` and require exactly 19 skipped migrations with no drift.
 - [x] Record Railway native backup and PITR as `UNAVAILABLE_ON_CURRENT_PLAN`; staging may continue,
       but this remains blocking for Production Ready.
 - [ ] Select and approve a Railway plan or capability that supports the unchanged primary native
