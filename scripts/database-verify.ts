@@ -31,6 +31,7 @@ try {
     "0016_crm_human_work_integration",
     "0017_optimization_learning_foundation",
     "0018_alert_email_delivery",
+    "0019_staging_session_ingress",
   ]);
   assert.deepEqual(second.applied, []);
   assert.deepEqual(second.skipped, [
@@ -52,16 +53,17 @@ try {
     "0016_crm_human_work_integration",
     "0017_optimization_learning_foundation",
     "0018_alert_email_delivery",
+    "0019_staging_session_ingress",
   ]);
 
   const migrationCount = await database.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM core.schema_migrations",
   );
-  assert.equal(migrationCount.rows[0]?.count, "18");
+  assert.equal(migrationCount.rows[0]?.count, "19");
 
   console.log("Clean database initialization: PASS");
-  console.log("Database migrations applied: 18");
-  console.log("Migration repeatability: PASS (18 skipped on replay)");
+  console.log("Database migrations applied: 19");
+  console.log("Migration repeatability: PASS (19 skipped on replay)");
 } finally {
   await database.close();
 }

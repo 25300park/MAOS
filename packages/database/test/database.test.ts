@@ -38,6 +38,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0016_crm_human_work_integration",
       "0017_optimization_learning_foundation",
       "0018_alert_email_delivery",
+      "0019_staging_session_ingress",
     ],
     skipped: [],
   });
@@ -96,7 +97,11 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "governance.reviews",
       "governance.tool_permissions",
       "governance.verified_result_references",
+      "identity.assignment_permissions",
+      "identity.human_project_assignments",
       "identity.humans",
+      "identity.session_revocations",
+      "identity.sessions",
       "work.task_assignments",
       "work.task_dependencies",
       "work.tasks",
@@ -1019,6 +1024,220 @@ test("persists alerts, transactional email outbox, and append-only delivery evid
   assert.deepEqual(sensitiveColumns.rows, []);
 });
 
+test("creates constrained durable staging Session and assignment persistence", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0019_staging_session_ingress"));
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('identity', 'human_project_assignments'),
+      ('identity', 'assignment_permissions'),
+      ('identity', 'sessions'),
+      ('identity', 'session_revocations')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "identity.assignment_permissions",
+      "identity.human_project_assignments",
+      "identity.session_revocations",
+      "identity.sessions",
+    ],
+  );
+
+  await database.exec(`
+    INSERT INTO core.organizations (id, name, slug) VALUES
+      ('00000000-0000-4000-8000-000000001901', 'Session Org', 'session-org'),
+      ('00000000-0000-4000-8000-000000001902', 'Other Org', 'other-session-org');
+    INSERT INTO core.departments (id, organization_id, name) VALUES
+      ('00000000-0000-4000-8000-000000001903', '00000000-0000-4000-8000-000000001901', 'Session Team'),
+      ('00000000-0000-4000-8000-000000001904', '00000000-0000-4000-8000-000000001902', 'Other Team');
+    INSERT INTO core.projects (id, organization_id, department_id, name) VALUES
+      ('00000000-0000-4000-8000-000000001905', '00000000-0000-4000-8000-000000001901', '00000000-0000-4000-8000-000000001903', 'Session Project'),
+      ('00000000-0000-4000-8000-000000001906', '00000000-0000-4000-8000-000000001902', '00000000-0000-4000-8000-000000001904', 'Other Project');
+    INSERT INTO identity.humans (id, organization_id, display_name, external_subject) VALUES
+      ('00000000-0000-4000-8000-000000001907', '00000000-0000-4000-8000-000000001901', 'Session Owner', 'subject-session-owner'),
+      ('00000000-0000-4000-8000-000000001908', '00000000-0000-4000-8000-000000001902', 'Other Owner', 'subject-other-owner');
+    INSERT INTO identity.human_project_assignments (
+      id, human_id, organization_id, project_id, scope
+    ) VALUES (
+      '00000000-0000-4000-8000-000000001909',
+      '00000000-0000-4000-8000-000000001907',
+      '00000000-0000-4000-8000-000000001901',
+      '00000000-0000-4000-8000-000000001905',
+      'project-maos'
+    );
+    INSERT INTO identity.assignment_permissions (
+      assignment_id, action, resource, environment, risk, effect
+    ) VALUES
+      ('00000000-0000-4000-8000-000000001909', 'CREATE', 'SESSION', 'staging', 'R2', 'ALLOW'),
+      ('00000000-0000-4000-8000-000000001909', 'REVOKE', 'SESSION', 'staging', 'R2', 'ALLOW'),
+      ('00000000-0000-4000-8000-000000001909', 'PROVISION', 'IDENTITY', 'staging', 'R2', 'DENY');
+    INSERT INTO identity.sessions (
+      id, actor_id, organization_id, tenant_binding_origin,
+      tenant_binding_ref, issued_at, last_accessed_at, absolute_expires_at,
+      audit_evidence_ref
+    ) VALUES (
+      '00000000-0000-4000-8000-000000001910',
+      '00000000-0000-4000-8000-000000001907',
+      '00000000-0000-4000-8000-000000001901',
+      'identity.human_project_assignments',
+      'assignment-session-owner',
+      '2026-09-13T01:00:00Z',
+      '2026-09-13T01:00:00Z',
+      '2026-09-13T13:00:00Z',
+      'evidence://session/issued'
+    );
+  `);
+
+  for (const invalidScope of ["project-*", " project-maos"]) {
+    await assert.rejects(
+      () =>
+        database.exec(`
+          INSERT INTO identity.human_project_assignments (
+            human_id, organization_id, project_id, scope
+          ) VALUES (
+            '00000000-0000-4000-8000-000000001907',
+            '00000000-0000-4000-8000-000000001901',
+            '00000000-0000-4000-8000-000000001905',
+            '${invalidScope}'
+          )
+        `),
+      /check constraint/i,
+    );
+  }
+  await assert.rejects(
+    () =>
+      database.exec(`
+        INSERT INTO identity.human_project_assignments (
+          human_id, organization_id, project_id, scope
+        ) VALUES (
+          '00000000-0000-4000-8000-000000001907',
+          '00000000-0000-4000-8000-000000001901',
+          '00000000-0000-4000-8000-000000001906',
+          'project-other'
+        )
+      `),
+    /foreign key constraint/i,
+  );
+  for (const invalidPermission of [
+    { environment: "production", risk: "R2" },
+    { environment: "staging", risk: "R1" },
+  ]) {
+    await assert.rejects(
+      () =>
+        database.exec(`
+          INSERT INTO identity.assignment_permissions (
+            assignment_id, action, resource, environment, risk, effect
+          ) VALUES (
+            '00000000-0000-4000-8000-000000001909',
+            'READ', 'PROJECT', '${invalidPermission.environment}',
+            '${invalidPermission.risk}', 'ALLOW'
+          )
+        `),
+      /check constraint/i,
+    );
+  }
+  await assert.rejects(
+    () =>
+      database.exec(`
+        UPDATE identity.sessions
+        SET actor_id = '00000000-0000-4000-8000-000000001908',
+            session_version = 2
+        WHERE id = '00000000-0000-4000-8000-000000001910'
+      `),
+    /session binding and issuance fields are immutable/i,
+  );
+
+  await database.exec(`
+    UPDATE identity.sessions
+    SET revoked_at = '2026-09-13T02:00:00Z',
+        revocation_evidence_ref = 'evidence://session/revoked',
+        session_version = 2
+    WHERE id = '00000000-0000-4000-8000-000000001910';
+    INSERT INTO identity.session_revocations (
+      session_id, revoked_version, revoked_at, actor_id, evidence_ref
+    ) VALUES (
+      '00000000-0000-4000-8000-000000001910', 2,
+      '2026-09-13T02:00:00Z',
+      '00000000-0000-4000-8000-000000001907',
+      'evidence://session/revoked'
+    );
+  `);
+  await assert.rejects(
+    () =>
+      database.exec(`
+        UPDATE identity.sessions
+        SET revoked_at = NULL,
+            revocation_evidence_ref = NULL,
+            session_version = 3
+        WHERE id = '00000000-0000-4000-8000-000000001910'
+      `),
+    /revocation is irreversible/i,
+  );
+  await assert.rejects(
+    () =>
+      database.exec(`
+        UPDATE identity.session_revocations
+        SET evidence_ref = 'evidence://session/changed'
+      `),
+    /append-only/i,
+  );
+  await assert.rejects(
+    () => database.exec("DELETE FROM identity.session_revocations"),
+    /append-only/i,
+  );
+
+  const prohibitedColumns = await database.query<{
+    column_name: string;
+    table_name: string;
+  }>(`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'identity'
+      AND table_name IN (
+        'human_project_assignments', 'assignment_permissions',
+        'sessions', 'session_revocations'
+      )
+      AND column_name IN (
+        'credential', 'secret', 'token', 'csrf', 'raw_csrf',
+        'roles', 'permissions', 'grants', 'scope_snapshot', 'scopes'
+      )
+    ORDER BY table_name, column_name
+  `);
+  assert.deepEqual(prohibitedColumns.rows, []);
+
+  const indexes = await database.query<{ indexname: string }>(`
+    SELECT indexname FROM pg_indexes
+    WHERE schemaname = 'identity'
+      AND indexname IN (
+        'identity_humans_active_external_subject_idx',
+        'human_project_assignments_active_idx',
+        'sessions_actor_idx',
+        'sessions_active_resolution_idx'
+      )
+    ORDER BY indexname
+  `);
+  assert.deepEqual(
+    indexes.rows.map(({ indexname }) => indexname),
+    [
+      "human_project_assignments_active_idx",
+      "identity_humans_active_external_subject_idx",
+      "sessions_active_resolution_idx",
+      "sessions_actor_idx",
+    ],
+  );
+});
+
 test("replays migrations idempotently and rejects checksum drift", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -1046,6 +1265,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0016_crm_human_work_integration",
       "0017_optimization_learning_foundation",
       "0018_alert_email_delivery",
+      "0019_staging_session_ingress",
     ],
   });
 
@@ -1063,8 +1283,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 18);
-  assert.equal(version.latest_id, "0018_alert_email_delivery");
+  assert.equal(version.applied_count, 19);
+  assert.equal(version.latest_id, "0019_staging_session_ingress");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(
