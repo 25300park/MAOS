@@ -1,9 +1,22 @@
-import { loadApiConfig } from "@maos/config";
+import {
+  loadApiConfig,
+  loadDatabaseConfig,
+  loadStagingSessionApiConfig,
+} from "@maos/config";
+import {
+  openPostgresDatabase,
+  PostgresSessionRepository,
+} from "@maos/database";
 import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
 import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import { ObservabilityAuditService } from "@maos/module-observability";
 import { OptimizationLearningService } from "@maos/module-optimization";
+import {
+  createBearerAuthenticator,
+  type Authenticator,
+  type IdentityContext,
+} from "@maos/module-identity";
 import {
   MonitoringReadiness,
   OperationsHardeningService,
@@ -44,6 +57,7 @@ import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
 import { createEnterpriseOrchestrationRoutes } from "./enterprise-orchestration-routes.js";
 import { createHrLaborRoutes } from "./hr-labor-routes.js";
+import { createIdentityProvisioningRoutes } from "./identity-provisioning-routes.js";
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
@@ -53,11 +67,59 @@ import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 import { createStagingOperationsAuthenticator } from "./staging-operations-auth.js";
+import { createStagingIdentityAdminVerifier } from "./staging-session-auth.js";
 
 const config = loadApiConfig(process.env);
 const logger = createLogger(config);
 const alertEmailRuntime = await createAlertEmailApiRuntime(process.env);
-const authenticate = createStagingOperationsAuthenticator(process.env);
+const operationsAuthenticate = createStagingOperationsAuthenticator(
+  process.env,
+);
+const stagingSessionConfig = loadStagingSessionApiConfig(process.env);
+const stagingSessionDatabase = stagingSessionConfig.enabled
+  ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+  : undefined;
+const stagingSessionRepository = stagingSessionDatabase
+  ? new PostgresSessionRepository(stagingSessionDatabase)
+  : undefined;
+const identityAdminAuthenticate = stagingSessionConfig.enabled
+  ? createBearerAuthenticator(
+      createStagingIdentityAdminVerifier({
+        bearerToken: stagingSessionConfig.identityAdminBearerToken,
+        identity: {
+          actor_id: stagingSessionConfig.identityAdminActorId,
+          actor_type: "HUMAN",
+          roles: [
+            {
+              id: "role-staging-identity-admin",
+              name: "STAGING_IDENTITY_ADMIN",
+              permissions: [
+                {
+                  action: "PROVISION",
+                  effect: "ALLOW",
+                  environment: "staging",
+                  resource: "IDENTITY",
+                  risk: "R2",
+                  scope: "project-maos",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+  : undefined;
+const authenticate: Authenticator | undefined = stagingSessionConfig.enabled
+  ? async (headers, context): Promise<IdentityContext | null> => {
+      if (
+        context?.method === "POST" &&
+        context.path === "/api/v1/identity/provisioning/humans"
+      ) {
+        return (await identityAdminAuthenticate?.(headers, context)) ?? null;
+      }
+      return (await operationsAuthenticate?.(headers, context)) ?? null;
+    }
+  : operationsAuthenticate;
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -552,6 +614,13 @@ controlPlane.registerSystem({
 });
 const routes = [
   ...alertEmailRuntime.routes,
+  ...(stagingSessionRepository
+    ? createIdentityProvisioningRoutes(
+        stagingSessionRepository,
+        erpObservability,
+        { environment: "staging", scope: "project-maos" },
+      )
+    : []),
   ...createOptimizationRoutes(optimization, {
     environment: config.environment,
     scope: "project-maos",
@@ -635,7 +704,10 @@ server.listen(config.port, "0.0.0.0", () => {
 
 const shutdown = (): void => {
   server.close(() => {
-    void (alertEmailRuntime.enabled ? alertEmailRuntime.close() : undefined);
+    void Promise.all([
+      ...(alertEmailRuntime.enabled ? [alertEmailRuntime.close()] : []),
+      ...(stagingSessionDatabase ? [stagingSessionDatabase.close()] : []),
+    ]);
   });
 };
 process.once("SIGTERM", shutdown);
