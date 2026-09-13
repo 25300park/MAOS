@@ -5,10 +5,11 @@
   "type": "module",
   "main": "dist/index.js",
   "dependencies": {
+    "@maos/config": "0.0.0",
     "@maos/module-operations": "0.0.0"
   },
   "scripts": {
-    "prebuild": "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations",
+    "prebuild": "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations && npm run build --workspace @maos/config",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js"
   }

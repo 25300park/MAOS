@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type RequestListener, type Server } from "node:http";
+import { loadStagingSessionBffConfig } from "@maos/config";
 import { createConservativePhase12ReadinessAssessment } from "@maos/module-operations";
 import {
   renderControlRoom,
@@ -15,6 +16,10 @@ import {
   type OptimizationView,
   type RbsAdminView,
 } from "./control-room.js";
+import {
+  createSessionBffRequestHandler,
+  type SessionBffRuntimeOptions,
+} from "./session-bff.js";
 
 export const CONTROL_ROOM_PREVIEW_IDENTITY: ControlRoomIdentity = {
   actor_id: "preview-human",
@@ -327,12 +332,13 @@ export interface ControlRoomServerOptions {
   operations?: OperationsView | undefined;
   optimization?: OptimizationView | undefined;
   rbs_admin?: RbsAdminView | undefined;
+  session_bff?: SessionBffRuntimeOptions | undefined;
 }
 
-export function createControlRoomRequestHandler(
-  options: ControlRoomServerOptions = {},
+function createRenderedControlRoomRequestHandler(
+  options: ControlRoomServerOptions,
+  identity: ControlRoomIdentity | null,
 ): RequestListener {
-  const identity = options.identity ?? null;
   return (request, response) => {
     const requestId =
       request.headers["x-request-id"]?.toString() ?? randomUUID();
@@ -378,6 +384,25 @@ export function createControlRoomRequestHandler(
   };
 }
 
+export function createControlRoomRequestHandler(
+  options: ControlRoomServerOptions = {},
+): RequestListener {
+  if (options.session_bff) {
+    return createSessionBffRequestHandler(
+      options.session_bff,
+      (request, response, identity) =>
+        createRenderedControlRoomRequestHandler(options, identity)(
+          request,
+          response,
+        ),
+    );
+  }
+  return createRenderedControlRoomRequestHandler(
+    options,
+    options.identity ?? null,
+  );
+}
+
 export function createControlRoomServer(
   options: ControlRoomServerOptions = {},
 ): Server {
@@ -387,6 +412,7 @@ export function createControlRoomServer(
 if (process.argv[1]?.endsWith("server.js")) {
   const preview = process.env.MAOS_UI_PREVIEW === "true";
   const port = Number(process.env.MAOS_WEB_PORT ?? "5180");
+  const sessionBff = loadStagingSessionBffConfig(process.env);
   const server = createControlRoomServer({
     ai_mls: preview ? CONTROL_ROOM_PREVIEW_AI_MLS : undefined,
     control_plane: preview ? CONTROL_ROOM_PREVIEW_CONTROL_PLANE : undefined,
@@ -404,6 +430,7 @@ if (process.argv[1]?.endsWith("server.js")) {
     operations: preview ? CONTROL_ROOM_PREVIEW_OPERATIONS : undefined,
     optimization: preview ? CONTROL_ROOM_PREVIEW_OPTIMIZATION : undefined,
     rbs_admin: preview ? CONTROL_ROOM_PREVIEW_RBS_ADMIN : undefined,
+    session_bff: sessionBff.enabled ? sessionBff : undefined,
   });
   server.listen(port, "127.0.0.1", () => {
     process.stdout.write(

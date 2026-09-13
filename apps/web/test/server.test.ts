@@ -42,4 +42,9 @@ test("server defaults to the authentication boundary", async (t) => {
   );
   assert.match(html, /Authentication required/);
   assert.doesNotMatch(html, /Project Atlas/);
+  const exchange = await fetch(`http://127.0.0.1:${port}/auth/session`, {
+    method: "POST",
+  });
+  assert.match(await exchange.text(), /Authentication required/);
+  assert.deepEqual(exchange.headers.getSetCookie(), []);
 });

@@ -70,6 +70,10 @@ export function validateStagingPackaging(): {
     webPackage.scripts,
     "apps/web/package.json.scripts",
   );
+  const webDependencies = objectAt(
+    webPackage.dependencies,
+    "apps/web/package.json.dependencies",
+  );
   const vercel = readObject("vercel.json");
   const functions = objectAt(vercel.functions, "vercel.json.functions");
   const rewrites = vercel.rewrites;
@@ -77,7 +81,9 @@ export function validateStagingPackaging(): {
     vercel.installCommand !== "npm ci" ||
     vercel.buildCommand !== "npm run build --workspace @maos/web" ||
     webScripts.prebuild !==
-      "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations" ||
+      "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations && npm run build --workspace @maos/config" ||
+    webDependencies["@maos/config"] !== "0.0.0" ||
+    webDependencies["@maos/module-operations"] !== "0.0.0" ||
     !functions["api/control-room.ts"] ||
     !Array.isArray(rewrites) ||
     !rewrites.some(
