@@ -30,7 +30,7 @@ export type ValidationResult =
   { ok: true; value: unknown } | { details: unknown; ok: false };
 
 export interface ApiRoute {
-  access?: "PUBLIC" | AuthorizationRequest;
+  access?: "AUTHENTICATED_INTERNAL" | "PUBLIC" | AuthorizationRequest;
   body?: "RAW";
   handle(input: {
     context: RequestContext;
@@ -157,6 +157,15 @@ export function createApiServer(options: ApiServerOptions): Server {
   for (const route of routes) {
     if (!route.path.startsWith("/api/v1/")) {
       throw new Error("Phase 1.5 routes must use the /api/v1/ base path");
+    }
+    if (
+      route.access === "AUTHENTICATED_INTERNAL" &&
+      (route.method !== "GET" ||
+        route.path !== "/api/v1/identity/session-context")
+    ) {
+      throw new Error(
+        "Authenticated internal access is reserved for the Session context projection",
+      );
     }
   }
 
@@ -302,9 +311,12 @@ async function handleRequest(
           return;
         }
 
-        const decision = route.access
-          ? authorize(identity, route.access)
-          : { allowed: false, reason: "NO_MATCHING_PERMISSION" as const };
+        const decision =
+          route.access === "AUTHENTICATED_INTERNAL"
+            ? { allowed: true, reason: "ALLOWED" as const }
+            : route.access
+              ? authorize(identity, route.access)
+              : { allowed: false, reason: "NO_MATCHING_PERMISSION" as const };
         if (!decision.allowed) {
           complete(
             403,

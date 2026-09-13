@@ -63,7 +63,13 @@ export function createStagingApiAuthenticator(input: {
   return async (headers, context) => {
     const sessionIdHeader = headers["x-session-id"];
     const bffAuthorizationHeader = headers["x-maos-bff-service-authorization"];
-    if (sessionIdHeader !== undefined || bffAuthorizationHeader !== undefined) {
+    const isSessionIssuance =
+      context?.method === "POST" &&
+      context.path === "/api/v1/identity/sessions";
+    if (
+      sessionIdHeader !== undefined ||
+      (bffAuthorizationHeader !== undefined && !isSessionIssuance)
+    ) {
       const sessionId = singleHeader(sessionIdHeader);
       const serviceCredential = bearerCredential(bffAuthorizationHeader);
       if (!context || !sessionId || !serviceCredential) return null;

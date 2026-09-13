@@ -13,9 +13,8 @@ import { MemoryGatewayIntegration } from "@maos/module-knowledge";
 import { ObservabilityAuditService } from "@maos/module-observability";
 import { OptimizationLearningService } from "@maos/module-optimization";
 import {
-  createBearerAuthenticator,
-  type Authenticator,
-  type IdentityContext,
+  SessionService,
+  type SessionRepositoryPort,
 } from "@maos/module-identity";
 import {
   MonitoringReadiness,
@@ -58,6 +57,7 @@ import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
 import { createEnterpriseOrchestrationRoutes } from "./enterprise-orchestration-routes.js";
 import { createHrLaborRoutes } from "./hr-labor-routes.js";
 import { createIdentityProvisioningRoutes } from "./identity-provisioning-routes.js";
+import { createIdentitySessionRoutes } from "./identity-session-routes.js";
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
@@ -67,7 +67,11 @@ import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 import { createStagingOperationsAuthenticator } from "./staging-operations-auth.js";
-import { createStagingIdentityAdminVerifier } from "./staging-session-auth.js";
+import {
+  createStagingApiAuthenticator,
+  createStagingCredentialVerifier,
+  createStagingIdentityAdminVerifier,
+} from "./staging-session-auth.js";
 
 const config = loadApiConfig(process.env);
 const logger = createLogger(config);
@@ -82,44 +86,98 @@ const stagingSessionDatabase = stagingSessionConfig.enabled
 const stagingSessionRepository = stagingSessionDatabase
   ? new PostgresSessionRepository(stagingSessionDatabase)
   : undefined;
-const identityAdminAuthenticate = stagingSessionConfig.enabled
-  ? createBearerAuthenticator(
-      createStagingIdentityAdminVerifier({
-        bearerToken: stagingSessionConfig.identityAdminBearerToken,
-        identity: {
-          actor_id: stagingSessionConfig.identityAdminActorId,
-          actor_type: "HUMAN",
-          roles: [
-            {
-              id: "role-staging-identity-admin",
-              name: "STAGING_IDENTITY_ADMIN",
-              permissions: [
+const stagingSessionRuntime =
+  stagingSessionConfig.enabled && stagingSessionRepository
+    ? (() => {
+        const repositoryPort: SessionRepositoryPort = {
+          create: async (input) => {
+            const identity =
+              await stagingSessionRepository.resolveIdentityByActorId(
+                input.actor_id,
+              );
+            if (!identity) throw new Error("Session identity is unavailable");
+            return stagingSessionRepository.createSession({
+              ...input,
+              organization_id: identity.organization_id,
+            });
+          },
+          find: (sessionId) => stagingSessionRepository.findSession(sessionId),
+          resolveIdentity: (actorId) =>
+            stagingSessionRepository.resolveIdentityByActorId(actorId),
+          revoke: async (input) => {
+            const current = await stagingSessionRepository.findSession(
+              input.session_id,
+            );
+            return current
+              ? stagingSessionRepository.revokeSession({
+                  ...input,
+                  actor_id: current.actor_id,
+                })
+              : null;
+          },
+          touch: (sessionId, expectedVersion, accessedAt) =>
+            stagingSessionRepository.touchSession({
+              accessedAt,
+              expectedVersion,
+              sessionId,
+            }),
+        };
+        const sessionService = new SessionService({
+          audit: { record: () => undefined },
+          now: () => new Date(),
+          repository: repositoryPort,
+        });
+        const sessionCredentialMatch = createStagingCredentialVerifier({
+          bearerToken: stagingSessionConfig.sessionCredentialBearerToken,
+          identity: {
+            actor_id: "credential-match-only",
+            actor_type: "SYSTEM",
+            roles: [],
+          },
+        });
+        const authenticate = createStagingApiAuthenticator({
+          bffServiceToken: stagingSessionConfig.bffServiceBearerToken,
+          identityAdmin: createStagingIdentityAdminVerifier({
+            bearerToken: stagingSessionConfig.identityAdminBearerToken,
+            identity: {
+              actor_id: stagingSessionConfig.identityAdminActorId,
+              actor_type: "HUMAN",
+              roles: [
                 {
-                  action: "PROVISION",
-                  effect: "ALLOW",
-                  environment: "staging",
-                  resource: "IDENTITY",
-                  risk: "R2",
-                  scope: "project-maos",
+                  id: "role-staging-identity-admin",
+                  name: "STAGING_IDENTITY_ADMIN",
+                  permissions: [
+                    {
+                      action: "PROVISION",
+                      effect: "ALLOW",
+                      environment: "staging",
+                      resource: "IDENTITY",
+                      risk: "R2",
+                      scope: "project-maos",
+                    },
+                  ],
                 },
               ],
             },
-          ],
-        },
-      }),
-    )
-  : undefined;
-const authenticate: Authenticator | undefined = stagingSessionConfig.enabled
-  ? async (headers, context): Promise<IdentityContext | null> => {
-      if (
-        context?.method === "POST" &&
-        context.path === "/api/v1/identity/provisioning/humans"
-      ) {
-        return (await identityAdminAuthenticate?.(headers, context)) ?? null;
-      }
-      return (await operationsAuthenticate?.(headers, context)) ?? null;
-    }
-  : operationsAuthenticate;
+          }),
+          operations: operationsAuthenticate,
+          sessionCredential: async (credential) => {
+            if (!(await sessionCredentialMatch(credential))) return null;
+            return stagingSessionRepository.resolveIdentityByExternalSubject(
+              stagingSessionConfig.sessionExternalSubject,
+            );
+          },
+          sessionService,
+        });
+        return {
+          authenticate,
+          bffServiceBearerToken: stagingSessionConfig.bffServiceBearerToken,
+          sessionService,
+        };
+      })()
+    : undefined;
+const authenticate =
+  stagingSessionRuntime?.authenticate ?? operationsAuthenticate;
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -615,11 +673,22 @@ controlPlane.registerSystem({
 const routes = [
   ...alertEmailRuntime.routes,
   ...(stagingSessionRepository
-    ? createIdentityProvisioningRoutes(
-        stagingSessionRepository,
-        erpObservability,
-        { environment: "staging", scope: "project-maos" },
-      )
+    ? [
+        ...createIdentityProvisioningRoutes(
+          stagingSessionRepository,
+          erpObservability,
+          { environment: "staging", scope: "project-maos" },
+        ),
+        ...(stagingSessionRuntime
+          ? createIdentitySessionRoutes({
+              bffServiceBearerToken:
+                stagingSessionRuntime.bffServiceBearerToken,
+              repository: stagingSessionRepository,
+              scope: "project-maos",
+              sessionService: stagingSessionRuntime.sessionService,
+            })
+          : []),
+      ]
     : []),
   ...createOptimizationRoutes(optimization, {
     environment: config.environment,
