@@ -197,7 +197,7 @@ export function createIdentityProvisioningRoutes(
           });
         }
         audit.recordAudit({
-          action: "IDENTITY.HUMAN_PROVISIONED",
+          action: "IDENTITY.PROVISIONED",
           actor: actor(identity),
           context: { ...context, project_id: options.scope },
           evidence_refs: value.evidence_refs as string[],

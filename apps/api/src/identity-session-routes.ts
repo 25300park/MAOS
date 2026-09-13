@@ -1,11 +1,13 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PostgresSessionRepository, StoredSession } from "@maos/database";
 import {
   SessionLifecycleError,
   type AuthenticationRequestContext,
   type IdentityContext,
+  type SessionAuditSink,
   type SessionService,
 } from "@maos/module-identity";
+import type { ObservabilityAuditService } from "@maos/module-observability";
 import {
   ApiRequestError,
   type ApiRoute,
@@ -80,7 +82,67 @@ function requestContext(
     mfa_required: false,
     path,
     request_id: context.request_id,
+    span_id: context.span_id,
     trace_id: context.trace_id,
+  };
+}
+
+export function createSessionAuditSink(
+  audit: ObservabilityAuditService,
+  options: {
+    readonly bffServiceActorId: string;
+    readonly evidenceId?: () => string;
+    readonly projectId: string;
+  },
+): SessionAuditSink {
+  const evidenceId = options.evidenceId ?? randomUUID;
+  return {
+    createEvidenceReference: () => `evidence://audit/${evidenceId()}`,
+    record: (event) => {
+      if (!event.session_id || !event.audit_evidence_ref) {
+        throw new Error("Session audit requires bounded internal references");
+      }
+      audit.recordAudit({
+        action: event.action,
+        actor: { id: event.actor_id, type: "HUMAN" },
+        context: {
+          correlation_id: event.context.correlation_id,
+          project_id: options.projectId,
+          request_id: event.context.request_id,
+          span_id:
+            event.context.span_id ?? `${event.context.trace_id}:session-span`,
+          trace_id: event.context.trace_id,
+        },
+        evidence_refs: [
+          event.audit_evidence_ref,
+          ...(event.evidence_ref ? [event.evidence_ref] : []),
+        ],
+        metadata: {
+          bff_service_actor_id: options.bffServiceActorId,
+          session_version: event.session_version,
+          tenant_binding_origin: event.tenant_binding_origin,
+        },
+        result: event.result,
+        target: { id: event.session_id, type: "SESSION" },
+      });
+    },
+    recordFailure: (event) => {
+      audit.recordEvent({
+        context: {
+          correlation_id: event.context.correlation_id,
+          project_id: options.projectId,
+          request_id: event.context.request_id,
+          span_id:
+            event.context.span_id ?? `${event.context.trace_id}:session-span`,
+          trace_id: event.context.trace_id,
+        },
+        name: "SESSION.RESOLUTION_FAILED",
+        payload: {
+          bff_service_actor_id: options.bffServiceActorId,
+          reason: event.reason,
+        },
+      });
+    },
   };
 }
 

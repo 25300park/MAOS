@@ -55,21 +55,29 @@ export interface AuthenticationRequestContext {
   readonly mfa_required: boolean;
   readonly path: string;
   readonly request_id: string;
+  readonly span_id?: string;
   readonly trace_id: string;
 }
 
 export interface SessionAuditEvent {
   readonly action: "SESSION.ISSUED" | "SESSION.RESOLVED" | "SESSION.REVOKED";
   readonly actor_id: string;
+  readonly audit_evidence_ref?: string;
   readonly context: AuthenticationRequestContext;
   readonly evidence_ref?: string;
   readonly result: "SUCCEEDED";
+  readonly session_id?: string;
   readonly session_version: number;
   readonly tenant_binding_origin: string;
 }
 
 export interface SessionAuditSink {
+  createEvidenceReference?(): string;
   record(event: SessionAuditEvent): void | Promise<void>;
+  recordFailure?(event: {
+    readonly context: AuthenticationRequestContext;
+    readonly reason: SessionFailureReason;
+  }): void | Promise<void>;
 }
 
 export interface SessionServiceOptions {
@@ -302,14 +310,32 @@ export class SessionService {
     if (bindingFailure || !identity) {
       throw new SessionLifecycleError(bindingFailure ?? "IDENTITY_UNAVAILABLE");
     }
-    const record = createSessionRecordInput(input, {
-      create_session_id: randomUUID,
-      now: this.options.now,
-    });
+    const generatedAuditReference =
+      this.options.audit.createEvidenceReference?.();
+    const auditEvidenceReference =
+      generatedAuditReference ?? input.audit_evidence_ref;
+    const record = createSessionRecordInput(
+      {
+        ...input,
+        ...(auditEvidenceReference
+          ? { audit_evidence_ref: auditEvidenceReference }
+          : {}),
+      },
+      {
+        create_session_id: randomUUID,
+        now: this.options.now,
+      },
+    );
     const stored = await this.options.repository.create(record);
     await this.options.audit.record({
       action: "SESSION.ISSUED",
       actor_id: identity.actor_id,
+      ...(generatedAuditReference
+        ? {
+            audit_evidence_ref: generatedAuditReference,
+            session_id: stored.session_id,
+          }
+        : {}),
       context: input.context,
       ...(input.audit_evidence_ref
         ? { evidence_ref: input.audit_evidence_ref }
@@ -327,30 +353,30 @@ export class SessionService {
     sessionId: string;
   }): Promise<SessionResolution> {
     if (!input.sessionId) {
-      return { authenticated: false, reason: "MISSING" };
+      return this.failure(input.context, "MISSING");
     }
     if (input.sessionId !== input.sessionId.trim()) {
-      return { authenticated: false, reason: "MALFORMED" };
+      return this.failure(input.context, "MALFORMED");
     }
     let current = await this.options.repository.find(input.sessionId);
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (!current) return { authenticated: false, reason: "UNKNOWN" };
+      if (!current) return this.failure(input.context, "UNKNOWN");
       const failure = validateStoredSession(
         current,
         this.options.now().getTime(),
         input.mfaRequired || input.context.mfa_required,
       );
-      if (failure) return { authenticated: false, reason: failure };
+      if (failure) return this.failure(input.context, failure);
 
       const identity = await this.options.repository.resolveIdentity(
         current.actor_id,
       );
       const bindingFailure = validateIdentityBinding(current, identity);
       if (bindingFailure || !identity) {
-        return {
-          authenticated: false,
-          reason: bindingFailure ?? "IDENTITY_UNAVAILABLE",
-        };
+        return this.failure(
+          input.context,
+          bindingFailure ?? "IDENTITY_UNAVAILABLE",
+        );
       }
       const touched = await this.options.repository.touch(
         current.session_id,
@@ -358,9 +384,17 @@ export class SessionService {
         this.options.now().toISOString(),
       );
       if (touched) {
+        const auditEvidenceReference =
+          this.options.audit.createEvidenceReference?.();
         await this.options.audit.record({
           action: "SESSION.RESOLVED",
           actor_id: identity.actor_id,
+          ...(auditEvidenceReference
+            ? {
+                audit_evidence_ref: auditEvidenceReference,
+                session_id: touched.session_id,
+              }
+            : {}),
           context: input.context,
           result: "SUCCEEDED",
           session_version: touched.session_version,
@@ -371,7 +405,7 @@ export class SessionService {
       if (attempt === 1) break;
       current = await this.options.repository.find(input.sessionId);
     }
-    return { authenticated: false, reason: "VERSION_CONFLICT" };
+    return this.failure(input.context, "VERSION_CONFLICT");
   }
 
   async revoke(input: {
@@ -381,7 +415,12 @@ export class SessionService {
     expectedVersion: number;
     sessionId: string;
   }): Promise<SessionRecord> {
+    const auditEvidenceReference =
+      this.options.audit.createEvidenceReference?.();
     const revoked = await this.options.repository.revoke({
+      ...(auditEvidenceReference
+        ? { audit_evidence_ref: auditEvidenceReference }
+        : {}),
       expected_version: input.expectedVersion,
       revocation_evidence_ref: input.evidenceRef,
       revoked_at: this.options.now().toISOString(),
@@ -391,6 +430,12 @@ export class SessionService {
     await this.options.audit.record({
       action: "SESSION.REVOKED",
       actor_id: input.actor.actor_id,
+      ...(auditEvidenceReference
+        ? {
+            audit_evidence_ref: auditEvidenceReference,
+            session_id: revoked.session_id,
+          }
+        : {}),
       context: input.context,
       evidence_ref: input.evidenceRef,
       result: "SUCCEEDED",
@@ -398,5 +443,13 @@ export class SessionService {
       tenant_binding_origin: revoked.tenant_binding_origin,
     });
     return revoked;
+  }
+
+  private async failure(
+    context: AuthenticationRequestContext,
+    reason: SessionFailureReason,
+  ): Promise<SessionResolution> {
+    await this.options.audit.recordFailure?.({ context, reason });
+    return { authenticated: false, reason };
   }
 }

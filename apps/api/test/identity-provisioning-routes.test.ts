@@ -294,7 +294,7 @@ test("provisions once, replays idempotently, and records redacted audit proof", 
   );
 
   const audits = audit.queryAudit(
-    { action: "IDENTITY.HUMAN_PROVISIONED", project_id: "project-maos" },
+    { action: "IDENTITY.PROVISIONED", project_id: "project-maos" },
     { allowed: true, project_ids: ["project-maos"] },
   );
   assert.equal(audits.length, 2);

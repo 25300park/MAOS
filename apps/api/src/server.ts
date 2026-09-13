@@ -57,7 +57,10 @@ import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
 import { createEnterpriseOrchestrationRoutes } from "./enterprise-orchestration-routes.js";
 import { createHrLaborRoutes } from "./hr-labor-routes.js";
 import { createIdentityProvisioningRoutes } from "./identity-provisioning-routes.js";
-import { createIdentitySessionRoutes } from "./identity-session-routes.js";
+import {
+  createIdentitySessionRoutes,
+  createSessionAuditSink,
+} from "./identity-session-routes.js";
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
@@ -75,6 +78,7 @@ import {
 
 const config = loadApiConfig(process.env);
 const logger = createLogger(config);
+const erpObservability = new ObservabilityAuditService();
 const alertEmailRuntime = await createAlertEmailApiRuntime(process.env);
 const operationsAuthenticate = createStagingOperationsAuthenticator(
   process.env,
@@ -123,7 +127,10 @@ const stagingSessionRuntime =
             }),
         };
         const sessionService = new SessionService({
-          audit: { record: () => undefined },
+          audit: createSessionAuditSink(erpObservability, {
+            bffServiceActorId: "service-control-room-bff",
+            projectId: "project-maos",
+          }),
           now: () => new Date(),
           repository: repositoryPort,
         });
@@ -267,7 +274,6 @@ const unavailableErpAdapter: ErpAccountingTaxAdapter = {
     throw new Error("No external ERP adapter is configured");
   },
 };
-const erpObservability = new ObservabilityAuditService();
 const erpObservationContext = (
   correlationId: string,
   systemId: string,
