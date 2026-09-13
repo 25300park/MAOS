@@ -41,6 +41,28 @@ export type StagingOperationsAuthConfig =
       enabled: true;
     };
 
+export type StagingSessionApiConfig =
+  | { enabled: false }
+  | {
+      bffServiceBearerToken: string;
+      controlRoomOrigin: string;
+      enabled: true;
+      identityAdminActorId: string;
+      identityAdminBearerToken: string;
+      sessionCredentialBearerToken: string;
+      sessionExternalSubject: string;
+    };
+
+export type StagingSessionBffConfig =
+  | { enabled: false }
+  | {
+      bffServiceBearerToken: string;
+      controlRoomOrigin: string;
+      coreApiOrigin: string;
+      csrfSecret: string;
+      enabled: true;
+    };
+
 export interface ProductionConfig {
   autoMigrate: false;
   backupKeyReference: string;
@@ -161,6 +183,117 @@ export function loadStagingOperationsAuthConfig(
   if (!actorId || !bearerToken?.trim()) return { enabled: false };
 
   return { actorId, bearerToken, enabled: true };
+}
+
+const stagingSessionEnabled = (
+  env: Record<string, string | undefined>,
+): boolean => {
+  if (
+    env.MAOS_ENV === "production" &&
+    env.MAOS_STAGING_SESSION_INGRESS_ENABLED !== undefined
+  ) {
+    throw new Error("STAGING_SESSION_INGRESS_FORBIDDEN");
+  }
+  return (
+    env.MAOS_ENV === "staging" &&
+    env.MAOS_STAGING_SESSION_INGRESS_ENABLED === "true"
+  );
+};
+
+const exactHttpsOrigin = (
+  env: Record<string, string | undefined>,
+  name: string,
+): string => {
+  const value = requiredValue(env, name);
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name}_INVALID`);
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.origin !== value ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.hostname.includes("*")
+  ) {
+    throw new Error(`${name}_INVALID`);
+  }
+  return parsed.origin;
+};
+
+const requireDistinctCredentials = (credentials: string[]): void => {
+  if (new Set(credentials).size !== credentials.length) {
+    throw new Error("STAGING_SESSION_CREDENTIAL_ROLES_MUST_BE_DISTINCT");
+  }
+};
+
+export function loadStagingSessionApiConfig(
+  env: Record<string, string | undefined>,
+): StagingSessionApiConfig {
+  if (!stagingSessionEnabled(env)) return { enabled: false };
+
+  const bffServiceBearerToken = requiredValue(
+    env,
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+  );
+  const sessionCredentialBearerToken = requiredValue(
+    env,
+    "MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN",
+  );
+  const identityAdminBearerToken = requiredValue(
+    env,
+    "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
+  );
+  requireDistinctCredentials([
+    bffServiceBearerToken,
+    sessionCredentialBearerToken,
+    identityAdminBearerToken,
+  ]);
+
+  return {
+    bffServiceBearerToken,
+    controlRoomOrigin: exactHttpsOrigin(
+      env,
+      "MAOS_STAGING_CONTROL_ROOM_ORIGIN",
+    ),
+    enabled: true,
+    identityAdminActorId: requiredValue(
+      env,
+      "MAOS_STAGING_IDENTITY_ADMIN_ACTOR_ID",
+    ),
+    identityAdminBearerToken,
+    sessionCredentialBearerToken,
+    sessionExternalSubject: requiredValue(
+      env,
+      "MAOS_STAGING_SESSION_EXTERNAL_SUBJECT",
+    ),
+  };
+}
+
+export function loadStagingSessionBffConfig(
+  env: Record<string, string | undefined>,
+): StagingSessionBffConfig {
+  if (!stagingSessionEnabled(env)) return { enabled: false };
+
+  const bffServiceBearerToken = requiredValue(
+    env,
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+  );
+  const csrfSecret = requiredValue(env, "MAOS_STAGING_BFF_CSRF_SECRET");
+  requireDistinctCredentials([bffServiceBearerToken, csrfSecret]);
+
+  return {
+    bffServiceBearerToken,
+    controlRoomOrigin: exactHttpsOrigin(
+      env,
+      "MAOS_STAGING_CONTROL_ROOM_ORIGIN",
+    ),
+    coreApiOrigin: exactHttpsOrigin(env, "MAOS_CORE_API_ORIGIN"),
+    csrfSecret,
+    enabled: true,
+  };
 }
 
 function requiredReference(

@@ -5,8 +5,151 @@ import {
   loadApiConfig,
   loadDatabaseConfig,
   loadProductionConfig,
+  loadStagingSessionApiConfig,
+  loadStagingSessionBffConfig,
   loadStagingOperationsAuthConfig,
 } from "../src/index.js";
+
+const stagingSessionEnv = {
+  MAOS_CORE_API_ORIGIN: "https://maos-api-staging.example.test",
+  MAOS_ENV: "staging",
+  MAOS_STAGING_BFF_CSRF_SECRET: "synthetic-csrf-secret",
+  MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN: "synthetic-service-token",
+  MAOS_STAGING_CONTROL_ROOM_ORIGIN: "https://maos-web-staging.example.test",
+  MAOS_STAGING_IDENTITY_ADMIN_ACTOR_ID: "human-staging-identity-admin",
+  MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN: "synthetic-admin-token",
+  MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN: "synthetic-session-token",
+  MAOS_STAGING_SESSION_EXTERNAL_SUBJECT: "staging:human:operator",
+  MAOS_STAGING_SESSION_INGRESS_ENABLED: "true",
+};
+
+test("loads separate bounded staging Session API and BFF configuration", () => {
+  assert.deepEqual(loadStagingSessionApiConfig(stagingSessionEnv), {
+    bffServiceBearerToken: "synthetic-service-token",
+    controlRoomOrigin: "https://maos-web-staging.example.test",
+    enabled: true,
+    identityAdminActorId: "human-staging-identity-admin",
+    identityAdminBearerToken: "synthetic-admin-token",
+    sessionCredentialBearerToken: "synthetic-session-token",
+    sessionExternalSubject: "staging:human:operator",
+  });
+  assert.deepEqual(loadStagingSessionBffConfig(stagingSessionEnv), {
+    bffServiceBearerToken: "synthetic-service-token",
+    controlRoomOrigin: "https://maos-web-staging.example.test",
+    coreApiOrigin: "https://maos-api-staging.example.test",
+    csrfSecret: "synthetic-csrf-secret",
+    enabled: true,
+  });
+
+  assert.deepEqual(loadStagingSessionApiConfig({ MAOS_ENV: "staging" }), {
+    enabled: false,
+  });
+  assert.deepEqual(
+    loadStagingSessionBffConfig({
+      ...stagingSessionEnv,
+      MAOS_ENV: "preview",
+    }),
+    { enabled: false },
+  );
+});
+
+test("fails closed for invalid staging Session ingress configuration", () => {
+  for (const name of [
+    "MAOS_STAGING_CONTROL_ROOM_ORIGIN",
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+    "MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN",
+    "MAOS_STAGING_SESSION_EXTERNAL_SUBJECT",
+    "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
+    "MAOS_STAGING_IDENTITY_ADMIN_ACTOR_ID",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingSessionApiConfig({
+          ...stagingSessionEnv,
+          [name]: undefined,
+        }),
+      new RegExp(`${name}_REQUIRED`),
+    );
+  }
+  for (const name of [
+    "MAOS_STAGING_CONTROL_ROOM_ORIGIN",
+    "MAOS_CORE_API_ORIGIN",
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+    "MAOS_STAGING_BFF_CSRF_SECRET",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingSessionBffConfig({
+          ...stagingSessionEnv,
+          [name]: undefined,
+        }),
+      new RegExp(`${name}_REQUIRED`),
+    );
+  }
+
+  for (const origin of [
+    "http://maos-web-staging.example.test",
+    "https://maos-web-staging.example.test/session",
+    "https://*.example.test",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingSessionApiConfig({
+          ...stagingSessionEnv,
+          MAOS_STAGING_CONTROL_ROOM_ORIGIN: origin,
+        }),
+      /MAOS_STAGING_CONTROL_ROOM_ORIGIN_INVALID/,
+    );
+  }
+  assert.throws(
+    () =>
+      loadStagingSessionBffConfig({
+        ...stagingSessionEnv,
+        MAOS_CORE_API_ORIGIN: "https://maos-api-staging.example.test/path",
+      }),
+    /MAOS_CORE_API_ORIGIN_INVALID/,
+  );
+
+  for (const name of [
+    "MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN",
+    "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingSessionApiConfig({
+          ...stagingSessionEnv,
+          [name]: stagingSessionEnv.MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN,
+        }),
+      /STAGING_SESSION_CREDENTIAL_ROLES_MUST_BE_DISTINCT/,
+    );
+  }
+  assert.throws(
+    () =>
+      loadStagingSessionApiConfig({
+        ...stagingSessionEnv,
+        MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN:
+          stagingSessionEnv.MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN,
+      }),
+    /STAGING_SESSION_CREDENTIAL_ROLES_MUST_BE_DISTINCT/,
+  );
+  assert.throws(
+    () =>
+      loadStagingSessionBffConfig({
+        ...stagingSessionEnv,
+        MAOS_STAGING_BFF_CSRF_SECRET:
+          stagingSessionEnv.MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN,
+      }),
+    /STAGING_SESSION_CREDENTIAL_ROLES_MUST_BE_DISTINCT/,
+  );
+  assert.throws(
+    () =>
+      loadStagingSessionApiConfig({
+        ...stagingSessionEnv,
+        MAOS_ENV: "production",
+      }),
+    /STAGING_SESSION_INGRESS_FORBIDDEN/,
+  );
+});
 
 test("loads bounded staging operations authentication configuration", () => {
   const configured = {
