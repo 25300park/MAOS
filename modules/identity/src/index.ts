@@ -92,3 +92,5 @@ export function authorize(
   }
   return { allowed: false, reason: "NO_MATCHING_PERMISSION" };
 }
+
+export * from "./session.js";
