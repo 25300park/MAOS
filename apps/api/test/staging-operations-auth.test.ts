@@ -49,7 +49,17 @@ test("creates an exact staging-only operations principal", async () => {
     null,
   );
   assert.deepEqual(
-    await authenticate({ authorization: "Bearer synthetic-staging-token" }),
+    await authenticate(
+      { authorization: "Bearer synthetic-staging-token" },
+      {
+        correlation_id: "correlation-operations-auth",
+        method: "POST",
+        mfa_required: false,
+        path: "/api/v1/operations/health",
+        request_id: "request-operations-auth",
+        trace_id: "0123456789abcdef0123456789abcdef",
+      },
+    ),
     {
       actor_id: "human-staging-operator",
       actor_type: "HUMAN",

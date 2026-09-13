@@ -1,8 +1,9 @@
 import type { ActorType, ToolRisk } from "@maos/contracts";
+import type { AuthenticationRequestContext } from "./session.js";
 
 export type { SessionRecord } from "@maos/contracts";
 
-type HeaderValue = string | string[] | undefined;
+export type HeaderValue = string | string[] | undefined;
 
 export type PermissionEffect = "ALLOW" | "DENY";
 
@@ -31,8 +32,12 @@ export type CredentialVerifier = (
   credential: string,
 ) => IdentityContext | null | Promise<IdentityContext | null>;
 
+export type StagingCredentialVerifier = CredentialVerifier;
+export type StagingIdentityAdminVerifier = CredentialVerifier;
+
 export type Authenticator = (
   headers: Record<string, HeaderValue>,
+  context?: AuthenticationRequestContext,
 ) => Promise<IdentityContext | null>;
 
 export interface AuthorizationRequest {

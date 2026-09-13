@@ -14,6 +14,7 @@ import type { Logger } from "@maos/logging";
 import {
   authorize,
   type Authenticator,
+  type AuthenticationRequestContext,
   type AuthorizationRequest,
   type IdentityContext,
 } from "@maos/module-identity";
@@ -44,6 +45,7 @@ export interface ApiRoute {
     request: IncomingMessage;
   }) => GovernanceDecision | Promise<GovernanceDecision>;
   method: string;
+  mfa_required?: boolean;
   path: string;
   validate?: (input: unknown) => ValidationResult;
 }
@@ -269,7 +271,19 @@ async function handleRequest(
     );
     if (route) {
       if (route.access !== "PUBLIC") {
-        identity = (await options.authenticate?.(request.headers)) ?? null;
+        const authenticationContext: AuthenticationRequestContext = {
+          correlation_id: context.correlation_id,
+          method,
+          mfa_required: route.mfa_required ?? false,
+          path,
+          request_id: context.request_id,
+          trace_id: context.trace_id,
+        };
+        identity =
+          (await options.authenticate?.(
+            request.headers,
+            authenticationContext,
+          )) ?? null;
         if (!identity) {
           response.setHeader("www-authenticate", "Bearer");
           complete(
