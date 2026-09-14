@@ -34,11 +34,68 @@ function runtimeDatabase(
     close,
     exec: (sql) => database.exec(sql),
     query: async <Row>(sql: string, params?: unknown[]) => {
+      if (sql.includes("pg_try_advisory_lock")) {
+        return { rows: [{ acquired: true }] as Row[] };
+      }
+      if (sql.includes("pg_advisory_unlock")) {
+        return { rows: [{ released: true }] as Row[] };
+      }
       const result = await database.query<Row>(sql, params);
       return { rows: result.rows };
     },
   };
 }
+
+test("serializes real PostgreSQL migration with the shared maintenance lock", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const events: string[] = [];
+  const output = capture();
+  const exitCode = await runPostgresMigrationCommand({
+    dependencies: {
+      acquireMaintenanceLock: async () => {
+        events.push("acquired");
+      },
+      loadMigrations: async () => [
+        { checksum: "a".repeat(64), id: "0001_lock_probe", sql: "SELECT 1" },
+      ],
+      openDatabase: async () => runtimeDatabase(database),
+      releaseMaintenanceLock: async () => {
+        events.push("released");
+      },
+    },
+    env: stagingEnv,
+    ...output,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(events, ["acquired", "released"]);
+});
+
+test("a migration cannot start while the shared maintenance lock is held", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const output = capture();
+  const exitCode = await runPostgresMigrationCommand({
+    dependencies: {
+      acquireMaintenanceLock: async () => {
+        throw new Error("DATABASE_MAINTENANCE_LOCK_UNAVAILABLE");
+      },
+      loadMigrations: async () => [
+        { checksum: "a".repeat(64), id: "0001_lock_probe", sql: "SELECT 1" },
+      ],
+      openDatabase: async () => runtimeDatabase(database),
+    },
+    env: stagingEnv,
+    ...output,
+  });
+
+  assert.equal(exitCode, 1);
+  assert.deepEqual(
+    output.stderr.map((line) => JSON.parse(line)),
+    [{ code: "MIGRATION_LOCK_FAILED", status: "FAILED" }],
+  );
+});
 
 test("rejects a missing DATABASE_URL before opening a connection", async () => {
   const output = capture();

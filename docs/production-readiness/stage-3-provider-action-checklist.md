@@ -46,6 +46,10 @@ before the provider supplies them.
       infer the target from `DATABASE_URL` alone.
 - [ ] Run `npm run db:verify` locally for PGlite verification only; do not represent it as staging
       PostgreSQL application.
+- [ ] If a destructive clean reset is separately authorized, record target and business-data-empty
+      evidence, require the exact staging reset target and destructive confirmation variables, and
+      run `npm run db:reset:staging`. Confirm only the 15 canonical MAOS schemas were removed and
+      that no migration ran automatically.
 - [ ] Under separate staging migration authorization, require `MAOS_ENV=staging`,
       `MAOS_DATABASE_MIGRATION_TARGET=staging` and the verified staging `DATABASE_URL`, then run
       `npm run db:migrate:postgres` from the bounded migration process.

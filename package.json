@@ -22,6 +22,7 @@
     "db:bootstrap": "tsx scripts/database-verify.ts",
     "db:migrate": "npm run db:migrate:postgres",
     "db:migrate:postgres": "tsx scripts/database-migrate-postgres.ts",
+    "db:reset:staging": "tsx scripts/database-reset-staging.ts",
     "db:verify": "tsx scripts/database-verify.ts",
     "smoke:api": "tsx scripts/smoke-api.ts",
     "smoke:health": "tsx scripts/smoke-health.ts",

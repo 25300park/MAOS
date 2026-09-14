@@ -105,26 +105,32 @@ provider staging environment and must never be copied into commands, logs, scree
 2. Capture empty-database identity, PostgreSQL version, region and configuration without secrets.
 3. Run `npm run db:verify` locally to verify clean PGlite initialization and deterministic replay;
    this command never migrates staging PostgreSQL.
-4. Under exact staging migration authorization, set `MAOS_ENV=staging` and
+4. If a clean MAOS-owned staging schema reset is separately authorized, first verify the exact
+   target and business-data-empty evidence. Set `MAOS_ENV=staging`,
+   `MAOS_DATABASE_RESET_TARGET=staging`, and
+   `MAOS_DATABASE_RESET_CONFIRM=RESET_MAOS_STAGING_SCHEMAS`, then run
+   `npm run db:reset:staging`. This destructive command removes only the 15 canonical MAOS schemas,
+   does not apply migrations, and remains prohibited for production.
+5. Under exact staging migration authorization, set `MAOS_ENV=staging` and
    `MAOS_DATABASE_MIGRATION_TARGET=staging` in the bounded migration process, then run
    `npm run db:migrate:postgres` with the verified staging `DATABASE_URL`. Production migration
    and application-startup auto-migration remain disabled.
-5. Record applied migration IDs/checksums, schema version and health. Re-run
+6. Record applied migration IDs/checksums, schema version and health. Re-run
    `npm run db:migrate:postgres`; require all 19 migrations skipped with no checksum drift.
    Migration checksums are SHA-256 hashes of SQL text canonically normalized to LF: CRLF and lone
    CR become LF, while every other character is preserved. Line-ending differences alone are not
    migration drift; every other content change remains drift and fails closed. Existing staging
    records created from pre-normalization CRLF checksums are not repaired automatically and require
    separately authorized clean reinitialization or governed reconciliation.
-6. Record native backup and PITR as unavailable on the current Railway plan. Do not create backup,
+7. Record native backup and PITR as unavailable on the current Railway plan. Do not create backup,
    PITR, RPO, or restore evidence from this assessment.
-7. Configure an hourly encrypted logical export and NAS transfer only after key/NAS references are
+8. Configure an hourly encrypted logical export and NAS transfer only after key/NAS references are
    present. Alert at 45 minutes and treat 60 minutes as RPO-at-risk.
-8. Select and approve a Railway plan or capability supporting the primary native backup/PITR design
+9. Select and approve a Railway plan or capability supporting the primary native backup/PITR design
    before production-readiness closure.
-9. Under separate restore authorization and only after a real backup exists, restore into a new
-   isolated staging database, verify checksum/schema/application readiness, and measure RPO/RTO.
-   Configuration or a documented procedure alone is not proof.
+10. Under separate restore authorization and only after a real backup exists, restore into a new
+    isolated staging database, verify checksum/schema/application readiness, and measure RPO/RTO.
+    Configuration or a documented procedure alone is not proof.
 
 ## Monitoring, Alerts, and Staging Isolation
 

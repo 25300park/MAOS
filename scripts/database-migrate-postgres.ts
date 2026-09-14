@@ -8,12 +8,18 @@ import {
   type Migration,
   type RuntimeDatabase,
 } from "@maos/database";
+import {
+  acquireDatabaseMaintenanceLock,
+  releaseDatabaseMaintenanceLock,
+} from "./database-admin-lock.js";
 
 type WriteLine = (line: string) => void;
 
 export interface PostgresMigrationCommandDependencies {
+  acquireMaintenanceLock?: (database: RuntimeDatabase) => Promise<void>;
   loadMigrations?: (directory: string) => Promise<Migration[]>;
   openDatabase?: (connectionString: string) => Promise<RuntimeDatabase>;
+  releaseMaintenanceLock?: (database: RuntimeDatabase) => Promise<void>;
 }
 
 export interface PostgresMigrationCommandOptions {
@@ -116,7 +122,18 @@ export async function runPostgresMigrationCommand(
   }
 
   let exitCode = 1;
+  let maintenanceLocked = false;
   try {
+    const acquireMaintenance =
+      options.dependencies?.acquireMaintenanceLock ??
+      acquireDatabaseMaintenanceLock;
+    try {
+      await acquireMaintenance(database);
+      maintenanceLocked = true;
+    } catch {
+      writeStderr(failed("MIGRATION_LOCK_FAILED"));
+      return 1;
+    }
     const result = await applyMigrations(database, migrations);
     const applied = new Set(result.applied);
     const skipped = new Set(result.skipped);
@@ -144,6 +161,19 @@ export async function runPostgresMigrationCommand(
   } catch (error) {
     writeStderr(migrationFailure(error));
   } finally {
+    if (maintenanceLocked) {
+      const releaseMaintenance =
+        options.dependencies?.releaseMaintenanceLock ??
+        releaseDatabaseMaintenanceLock;
+      try {
+        await releaseMaintenance(database);
+      } catch {
+        if (exitCode === 0) {
+          writeStderr(failed("MIGRATION_LOCK_FAILED"));
+          exitCode = 1;
+        }
+      }
+    }
     try {
       await database.close();
     } catch {

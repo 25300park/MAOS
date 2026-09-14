@@ -6,12 +6,12 @@ These runbooks preserve the MAOS boundaries `Review != Approval`, `QA PASS != Pr
 
 ## Environment model
 
-| Environment | Purpose | Data | Deployment authority |
-| --- | --- | --- | --- |
-| development | Developer verification | Synthetic/local | Developer |
-| preview | Automated and integration verification | Synthetic | CI/operator |
-| staging | Release rehearsal and recovery exercise | Sanitized/non-production | Release operator |
-| production | Customer workload | Production | Explicit human production approver |
+| Environment | Purpose                                 | Data                     | Deployment authority               |
+| ----------- | --------------------------------------- | ------------------------ | ---------------------------------- |
+| development | Developer verification                  | Synthetic/local          | Developer                          |
+| preview     | Automated and integration verification  | Synthetic                | CI/operator                        |
+| staging     | Release rehearsal and recovery exercise | Sanitized/non-production | Release operator                   |
+| production  | Customer workload                       | Production               | Explicit human production approver |
 
 Configuration and credential values must be supplied through external secret references. Production requires HTTPS origins, non-debug logging, migration automation disabled, a known rollback artifact, and separate deployment authority.
 
@@ -129,6 +129,19 @@ Safe actions:
 3. Do not retry a destructive migration automatically.
 4. Restore or roll forward only under the reviewed plan and explicit human authority.
 5. Re-run clean initialization and migration replay before resubmission.
+
+### Controlled staging schema reset
+
+`npm run db:reset:staging` is a destructive, staging-only recovery tool. It requires exact staging
+environment, reset-target, destructive-confirmation, and PostgreSQL URL gates; verifies that no
+business/runtime data or unrelated user schema exists; and removes only the 15 canonical MAOS
+schemas in one transaction. It never applies migrations and has no production override.
+
+Use it only under separate human authorization after preserving target and data-empty evidence.
+After a committed reset, run `npm run db:migrate:postgres` as a distinct authorized operation,
+record 19 applied migrations, and replay it to prove 19 skips with no checksum drift. A reset or
+migration failure must remain fail-closed; do not substitute `npm run db:verify`, which is local
+PGlite verification only.
 
 ## Service unavailable
 
