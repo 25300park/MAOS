@@ -5,6 +5,10 @@ import type { Migration } from "./types.js";
 
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_]+\.sql$/;
 
+function canonicalizeMigrationSql(sql: string): string {
+  return sql.replace(/\r\n?/gu, "\n");
+}
+
 export async function loadMigrations(directory: string): Promise<Migration[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const fileNames = entries
@@ -20,7 +24,9 @@ export async function loadMigrations(directory: string): Promise<Migration[]> {
     if (ids.has(id)) throw new Error(`Duplicate migration id: ${id}`);
     ids.add(id);
 
-    const sql = await readFile(join(directory, fileName), "utf8");
+    const sql = canonicalizeMigrationSql(
+      await readFile(join(directory, fileName), "utf8"),
+    );
     migrations.push({
       id,
       sql,

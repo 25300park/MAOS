@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import type { Migration, RuntimeDatabase } from "@maos/database";
-import { applyMigrations } from "@maos/database";
+import { applyMigrations, loadMigrations } from "@maos/database";
 import { runPostgresMigrationCommand } from "./database-migrate-postgres.js";
 
 const SECRET_SENTINEL = "migration-secret-sentinel";
@@ -244,6 +247,61 @@ test("reports checksum drift without leaking database credentials", async (t) =>
   assert.doesNotMatch(
     output.stderr.join("\n"),
     new RegExp(SECRET_SENTINEL, "u"),
+  );
+});
+
+test("replays real-entrypoint migration loading across CRLF and LF checkouts", async (t) => {
+  const crlfDirectory = await mkdtemp(join(tmpdir(), "maos-migrate-crlf-"));
+  const lfDirectory = await mkdtemp(join(tmpdir(), "maos-migrate-lf-"));
+  const database = new PGlite();
+  t.after(async () => {
+    await database.close();
+    await rm(crlfDirectory, { force: true, recursive: true });
+    await rm(lfDirectory, { force: true, recursive: true });
+  });
+  await writeFile(
+    join(crlfDirectory, "0001_line_endings.sql"),
+    "CREATE TABLE public.line_endings(id text);\r\n",
+    "utf8",
+  );
+  await writeFile(
+    join(lfDirectory, "0001_line_endings.sql"),
+    "CREATE TABLE public.line_endings(id text);\n",
+    "utf8",
+  );
+  let directory = crlfDirectory;
+  const openDatabase = async () => runtimeDatabase(database);
+  const load = async () => loadMigrations(directory);
+
+  const first = capture();
+  assert.equal(
+    await runPostgresMigrationCommand({
+      dependencies: { loadMigrations: load, openDatabase },
+      env: stagingEnv,
+      ...first,
+    }),
+    0,
+  );
+  directory = lfDirectory;
+  const replay = capture();
+  assert.equal(
+    await runPostgresMigrationCommand({
+      dependencies: { loadMigrations: load, openDatabase },
+      env: stagingEnv,
+      ...replay,
+    }),
+    0,
+  );
+  assert.deepEqual(
+    replay.stdout.map((line) => JSON.parse(line)),
+    [
+      {
+        checksum: JSON.parse(first.stdout[0] ?? "{}").checksum,
+        migration_id: "0001_line_endings",
+        status: "SKIPPED",
+      },
+      { applied: 0, skipped: 1, status: "SUCCEEDED" },
+    ],
   );
 });
 

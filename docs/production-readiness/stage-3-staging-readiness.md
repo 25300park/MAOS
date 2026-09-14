@@ -111,6 +111,11 @@ provider staging environment and must never be copied into commands, logs, scree
    and application-startup auto-migration remain disabled.
 5. Record applied migration IDs/checksums, schema version and health. Re-run
    `npm run db:migrate:postgres`; require all 19 migrations skipped with no checksum drift.
+   Migration checksums are SHA-256 hashes of SQL text canonically normalized to LF: CRLF and lone
+   CR become LF, while every other character is preserved. Line-ending differences alone are not
+   migration drift; every other content change remains drift and fails closed. Existing staging
+   records created from pre-normalization CRLF checksums are not repaired automatically and require
+   separately authorized clean reinitialization or governed reconciliation.
 6. Record native backup and PITR as unavailable on the current Railway plan. Do not create backup,
    PITR, RPO, or restore evidence from this assessment.
 7. Configure an hourly encrypted logical export and NAS transfer only after key/NAS references are
