@@ -22,6 +22,6 @@ Production-style Staging ingress is `IMPLEMENTED_LOCALLY / STAGING_EVIDENCE_PEND
 
 The Staging Session ingress architecture package is approved through MAOS-CR-003, and its bounded Staging implementation passed local clean-state verification. Real Staging deployment/evidence requires separate human authorization. Production implementation and production deployment remain unauthorized.
 
-The governed Core tenancy bootstrap design is approved through MAOS-CR-004. Its runtime implementation is `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`; MAOS-CR-003 and the existing Session implementation status are unchanged. Frozen architecture conflict and migration impact are both `NO`.
+The governed Core tenancy bootstrap design is approved through MAOS-CR-004, and its bounded Staging implementation is `AUTHORIZED_FOR_IMPLEMENTATION`. Live provider execution and all production implementation/deployment remain unauthorized. MAOS-CR-003 and the existing Session implementation status are unchanged. Frozen architecture conflict and migration impact are both `NO`.
 
 No frozen architecture, dependencies, lockfiles, or production configuration are changed by the Task 13 closure. Runtime and test changes are bounded to the separately authorized Staging implementation recorded in the implementation evidence.

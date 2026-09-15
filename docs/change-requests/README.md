@@ -20,6 +20,7 @@ Architecture changes must follow the MAOS change-governance process. A proposed 
 
 - Frozen architecture conflict: `NO`
 - Migration impact: `NO`
-- Runtime implementation: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`
+- Staging implementation: `AUTHORIZED_FOR_IMPLEMENTATION`
+- Runtime implementation: `AUTHORIZED_FOR_IMPLEMENTATION` for Staging only
 - Production implementation authorization: `NO`
 - Production deployment authorization: `NO`

@@ -10,7 +10,8 @@
 | Scope                                   | One staging-only Core tenancy bootstrap operation                      |
 | Frozen architecture conflict            | NO                                                                     |
 | Migration impact                        | NO                                                                     |
-| Runtime implementation                  | BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION                           |
+| Staging implementation authorization    | AUTHORIZED_FOR_IMPLEMENTATION                                          |
+| Runtime implementation                  | AUTHORIZED_FOR_IMPLEMENTATION                                          |
 | Production implementation authorization | NO                                                                     |
 | Production deployment authorization     | NO                                                                     |
 | Decision                                | APPROVE MAOS-CR-004 Governed Staging Core tenancy bootstrap            |
@@ -23,7 +24,7 @@ Authorize the design and authority surface for one staging-only governed Core te
 
 The selected interface is `POST /api/v1/core/bootstrap`. Its exact authority is `BOOTSTRAP / CORE_TENANCY / staging / project-maos / R2 / ALLOW`.
 
-This approval does not authorize runtime implementation, provider configuration, deployment, production use, or execution of the bootstrap operation. Implementation remains blocked until a separate staging implementation authorization is recorded.
+This C2 approval and the separately recorded human decision authorize only the bounded Staging implementation described here. They do not authorize provider configuration, deployment, production use, or execution of the bootstrap operation against a live environment.
 
 ## 2. Scope and non-scope
 
@@ -170,7 +171,8 @@ Audit records must never contain the bearer credential, `Authorization` header, 
 - Production route/credential: `NONE`.
 - Frozen architecture conflict: `NO`.
 - Migration impact: `NO`.
-- Runtime implementation: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`.
+- Staging implementation authorization: `AUTHORIZED_FOR_IMPLEMENTATION`.
+- Runtime implementation: `AUTHORIZED_FOR_IMPLEMENTATION` within the bounded Staging scope only.
 
 No production authority or readiness status is implied by approval of this C2 request.
 
@@ -212,15 +214,19 @@ An authorized implementation must cover:
 
 ## 14. Implementation gates
 
-The C2 architecture gate is satisfied. Runtime implementation remains blocked until the remaining condition is satisfied:
+Both required implementation gates are satisfied:
 
-1. a separate staging implementation authorization is recorded.
+1. MAOS-CR-004 is `APPROVED_C2`; and
+2. separate human authorization for bounded Staging implementation is recorded.
 
-Current gate: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`.
+Current gate: `AUTHORIZED_FOR_IMPLEMENTATION` for Staging only.
+
+Implementation must remain within this contract. Live provider configuration, staging deployment/execution, production implementation, and production deployment require their own authority.
 
 ## 15. Approval record
 
 - MAOS-CR-004: `APPROVED_C2`.
-- Runtime implementation: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`.
+- Staging implementation: `AUTHORIZED_FOR_IMPLEMENTATION`.
+- Runtime implementation: `AUTHORIZED_FOR_IMPLEMENTATION` for Staging only.
 - Production implementation authorization: `NO`.
 - Production deployment authorization: `NO`.

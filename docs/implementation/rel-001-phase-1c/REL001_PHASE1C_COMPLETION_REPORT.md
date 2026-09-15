@@ -19,7 +19,7 @@ Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session l
 | Time-bound freshness                     | RESOLVED                                       |
 | Restart durability                       | RESOLVED                                       |
 | Production-style Staging Session ingress | IMPLEMENTED_LOCALLY / STAGING_EVIDENCE_PENDING |
-| Governed Staging Core tenancy bootstrap  | BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION   |
+| Governed Staging Core tenancy bootstrap  | AUTHORIZED_FOR_IMPLEMENTATION                  |
 | Production implementation authorization  | NO                                             |
 
 ## Evidence summary
@@ -31,7 +31,7 @@ Approved bounds are a 30-minute idle timeout, 12-hour maximum absolute Session l
 - Clean-state verification passed 478 of 478 tests, Phase 1C E2E passed 3 of 3 tests, directly affected regressions passed 19 of 19 tests, and database/migration tests passed 25 of 25 tests.
 - Clean database verification applied migrations `0001` through `0019` and skipped all 19 on deterministic replay.
 - Full implementation evidence is recorded in `REL001_PHASE1C_STAGING_SESSION_INGRESS_IMPLEMENTATION_EVIDENCE.md`.
-- The prerequisite governed Core tenancy bootstrap architecture is approved through MAOS-CR-004 with no migration impact. Runtime implementation remains blocked pending separate Staging implementation authorization.
+- The prerequisite governed Core tenancy bootstrap architecture is approved through MAOS-CR-004 with no migration impact, and its bounded Staging implementation is separately authorized. Provider execution and production remain unauthorized.
 
 ## Change boundaries
 
@@ -58,7 +58,7 @@ C2 Change Request: `MAOS-CR-003 — APPROVED`
 
 Core tenancy bootstrap C2 Change Request: `MAOS-CR-004 — APPROVED_C2`
 
-Core tenancy bootstrap runtime implementation: `BLOCKED_PENDING_IMPLEMENTATION_AUTHORIZATION`
+Core tenancy bootstrap Staging implementation: `AUTHORIZED_FOR_IMPLEMENTATION`
 
 Production-style Staging Session ingress: `IMPLEMENTED_LOCALLY / STAGING_EVIDENCE_PENDING`
 
@@ -67,6 +67,8 @@ Production implementation authorization: `NO`
 Production deployment authorization: `NO`
 
 Staging implementation authorization decision: `APPROVE_REL001_PHASE1C_STAGING_SESSION_INGRESS_IMPLEMENTATION`
+
+Core tenancy bootstrap implementation authorization decision: `APPROVE_REL001_PHASE1C_CORE_BOOTSTRAP_STAGING_IMPLEMENTATION`
 
 Implementation evidence gate: `PASS_REL001_PHASE1C_TASK13`
 
