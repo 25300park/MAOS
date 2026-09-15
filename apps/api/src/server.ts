@@ -1,10 +1,12 @@
 import {
   loadApiConfig,
   loadDatabaseConfig,
+  loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
 } from "@maos/config";
 import {
   openPostgresDatabase,
+  PostgresCoreBootstrapRepository,
   PostgresSessionRepository,
 } from "@maos/database";
 import { createLogger } from "@maos/logging";
@@ -63,6 +65,7 @@ import {
 } from "./identity-session-routes.js";
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
+import { createCoreBootstrapRoutes } from "./core-bootstrap-routes.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
 import { createObservabilityRoutes } from "./observability-routes.js";
@@ -70,6 +73,10 @@ import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
 import { createStagingOperationsAuthenticator } from "./staging-operations-auth.js";
+import {
+  createStagingCoreBootstrapAuthenticator,
+  createStagingCoreBootstrapAuthRouter,
+} from "./staging-core-bootstrap-auth.js";
 import {
   createStagingApiAuthenticator,
   createStagingCredentialVerifier,
@@ -83,13 +90,27 @@ const alertEmailRuntime = await createAlertEmailApiRuntime(process.env);
 const operationsAuthenticate = createStagingOperationsAuthenticator(
   process.env,
 );
+const stagingCoreBootstrapConfig = loadStagingCoreBootstrapConfig(process.env);
+const coreBootstrapAuthenticate = createStagingCoreBootstrapAuthenticator(
+  process.env,
+);
 const stagingSessionConfig = loadStagingSessionApiConfig(process.env);
-const stagingSessionDatabase = stagingSessionConfig.enabled
-  ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
-  : undefined;
-const stagingSessionRepository = stagingSessionDatabase
-  ? new PostgresSessionRepository(stagingSessionDatabase)
-  : undefined;
+const stagingDatabase =
+  stagingSessionConfig.enabled || stagingCoreBootstrapConfig.enabled
+    ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+    : undefined;
+const stagingSessionRepository =
+  stagingSessionConfig.enabled && stagingDatabase
+    ? new PostgresSessionRepository(stagingDatabase)
+    : undefined;
+const stagingCoreBootstrapRepository =
+  stagingCoreBootstrapConfig.enabled && stagingDatabase
+    ? new PostgresCoreBootstrapRepository(stagingDatabase)
+    : undefined;
+const baseAuthenticate = createStagingCoreBootstrapAuthRouter({
+  bootstrap: coreBootstrapAuthenticate,
+  fallback: operationsAuthenticate,
+});
 const stagingSessionRuntime =
   stagingSessionConfig.enabled && stagingSessionRepository
     ? (() => {
@@ -167,7 +188,7 @@ const stagingSessionRuntime =
               ],
             },
           }),
-          operations: operationsAuthenticate,
+          operations: baseAuthenticate,
           sessionCredential: async (credential) => {
             if (!(await sessionCredentialMatch(credential))) return null;
             return stagingSessionRepository.resolveIdentityByExternalSubject(
@@ -183,8 +204,7 @@ const stagingSessionRuntime =
         };
       })()
     : undefined;
-const authenticate =
-  stagingSessionRuntime?.authenticate ?? operationsAuthenticate;
+const authenticate = stagingSessionRuntime?.authenticate ?? baseAuthenticate;
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -678,6 +698,16 @@ controlPlane.registerSystem({
 });
 const routes = [
   ...alertEmailRuntime.routes,
+  ...(stagingCoreBootstrapConfig.enabled && stagingCoreBootstrapRepository
+    ? createCoreBootstrapRoutes(
+        stagingCoreBootstrapRepository,
+        erpObservability,
+        {
+          environment: "staging",
+          manifest: stagingCoreBootstrapConfig.manifest,
+        },
+      )
+    : []),
   ...(stagingSessionRepository
     ? [
         ...createIdentityProvisioningRoutes(
@@ -781,7 +811,7 @@ const shutdown = (): void => {
   server.close(() => {
     void Promise.all([
       ...(alertEmailRuntime.enabled ? [alertEmailRuntime.close()] : []),
-      ...(stagingSessionDatabase ? [stagingSessionDatabase.close()] : []),
+      ...(stagingDatabase ? [stagingDatabase.close()] : []),
     ]);
   });
 };

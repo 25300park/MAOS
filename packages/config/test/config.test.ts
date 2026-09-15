@@ -5,10 +5,99 @@ import {
   loadApiConfig,
   loadDatabaseConfig,
   loadProductionConfig,
+  loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
   loadStagingSessionBffConfig,
   loadStagingOperationsAuthConfig,
 } from "../src/index.js";
+
+const stagingCoreBootstrapEnv = {
+  MAOS_ENV: "staging",
+  MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN: "synthetic-bff-token",
+  MAOS_STAGING_CORE_BOOTSTRAP_ACTOR_ID: "human-staging-bootstrap-owner",
+  MAOS_STAGING_CORE_BOOTSTRAP_BEARER_TOKEN: "synthetic-bootstrap-token",
+  MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_ID:
+    "00000000-0000-4000-8000-000000005002",
+  MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_NAME: "Platform Operations",
+  MAOS_STAGING_CORE_BOOTSTRAP_ENABLED: "true",
+  MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID:
+    "00000000-0000-4000-8000-000000005001",
+  MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_NAME: "MAOS Staging",
+  MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_SLUG: "maos-staging",
+  MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID:
+    "00000000-0000-4000-8000-000000005003",
+  MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_NAME: "MAOS",
+  MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN: "synthetic-admin-token",
+  MAOS_STAGING_OPERATIONS_BEARER_TOKEN: "synthetic-operations-token",
+  MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN: "synthetic-session-token",
+};
+
+test("loads an immutable staging Core bootstrap manifest and dedicated credential", () => {
+  assert.deepEqual(loadStagingCoreBootstrapConfig(stagingCoreBootstrapEnv), {
+    actorId: "human-staging-bootstrap-owner",
+    bearerToken: "synthetic-bootstrap-token",
+    enabled: true,
+    manifest: {
+      departmentId: "00000000-0000-4000-8000-000000005002",
+      departmentName: "Platform Operations",
+      organizationId: "00000000-0000-4000-8000-000000005001",
+      organizationName: "MAOS Staging",
+      organizationSlug: "maos-staging",
+      projectId: "00000000-0000-4000-8000-000000005003",
+      projectName: "MAOS",
+      scope: "project-maos",
+    },
+  });
+  assert.deepEqual(loadStagingCoreBootstrapConfig({ MAOS_ENV: "staging" }), {
+    enabled: false,
+  });
+});
+
+test("fails closed for invalid or overlapping staging Core bootstrap configuration", () => {
+  for (const name of [
+    "MAOS_STAGING_CORE_BOOTSTRAP_ACTOR_ID",
+    "MAOS_STAGING_CORE_BOOTSTRAP_BEARER_TOKEN",
+    "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID",
+    "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_NAME",
+    "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_SLUG",
+    "MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_ID",
+    "MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_NAME",
+    "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID",
+    "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_NAME",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingCoreBootstrapConfig({
+          ...stagingCoreBootstrapEnv,
+          [name]: undefined,
+        }),
+      new RegExp(`${name}_(?:REQUIRED|INVALID)`),
+    );
+  }
+  for (const name of [
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+    "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
+    "MAOS_STAGING_OPERATIONS_BEARER_TOKEN",
+    "MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingCoreBootstrapConfig({
+          ...stagingCoreBootstrapEnv,
+          [name]: "synthetic-bootstrap-token",
+        }),
+      /STAGING_CORE_BOOTSTRAP_CREDENTIAL_MUST_BE_DISTINCT/,
+    );
+  }
+  assert.throws(
+    () =>
+      loadStagingCoreBootstrapConfig({
+        ...stagingCoreBootstrapEnv,
+        MAOS_ENV: "production",
+      }),
+    /STAGING_CORE_BOOTSTRAP_FORBIDDEN/,
+  );
+});
 
 const stagingSessionEnv = {
   MAOS_CORE_API_ORIGIN: "https://maos-api-staging.example.test",

@@ -41,6 +41,26 @@ export type StagingOperationsAuthConfig =
       enabled: true;
     };
 
+export interface StagingCoreBootstrapManifest {
+  departmentId: string;
+  departmentName: string;
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+  projectId: string;
+  projectName: string;
+  scope: "project-maos";
+}
+
+export type StagingCoreBootstrapConfig =
+  | { enabled: false }
+  | {
+      actorId: string;
+      bearerToken: string;
+      enabled: true;
+      manifest: StagingCoreBootstrapManifest;
+    };
+
 export type StagingSessionApiConfig =
   | { enabled: false }
   | {
@@ -183,6 +203,91 @@ export function loadStagingOperationsAuthConfig(
   if (!actorId || !bearerToken?.trim()) return { enabled: false };
 
   return { actorId, bearerToken, enabled: true };
+}
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+function requiredUuid(
+  env: Record<string, string | undefined>,
+  name: string,
+): string {
+  const value = requiredValue(env, name);
+  if (!UUID.test(value)) throw new Error(`${name}_INVALID`);
+  return value;
+}
+
+export function loadStagingCoreBootstrapConfig(
+  env: Record<string, string | undefined>,
+): StagingCoreBootstrapConfig {
+  if (
+    env.MAOS_ENV === "production" &&
+    env.MAOS_STAGING_CORE_BOOTSTRAP_ENABLED !== undefined
+  ) {
+    throw new Error("STAGING_CORE_BOOTSTRAP_FORBIDDEN");
+  }
+  if (
+    env.MAOS_ENV !== "staging" ||
+    env.MAOS_STAGING_CORE_BOOTSTRAP_ENABLED !== "true"
+  ) {
+    return { enabled: false };
+  }
+
+  const bearerToken = requiredValue(
+    env,
+    "MAOS_STAGING_CORE_BOOTSTRAP_BEARER_TOKEN",
+  );
+  for (const credentialName of [
+    "MAOS_STAGING_OPERATIONS_BEARER_TOKEN",
+    "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
+    "MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN",
+    "MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN",
+  ]) {
+    const credential = env[credentialName];
+    if (credential?.trim() && credential === bearerToken) {
+      throw new Error("STAGING_CORE_BOOTSTRAP_CREDENTIAL_MUST_BE_DISTINCT");
+    }
+  }
+
+  const organizationSlug = requiredValue(
+    env,
+    "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_SLUG",
+  );
+  if (!SLUG.test(organizationSlug)) {
+    throw new Error("MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_SLUG_INVALID");
+  }
+
+  return {
+    actorId: requiredValue(env, "MAOS_STAGING_CORE_BOOTSTRAP_ACTOR_ID"),
+    bearerToken,
+    enabled: true,
+    manifest: {
+      departmentId: requiredUuid(
+        env,
+        "MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_ID",
+      ),
+      departmentName: requiredValue(
+        env,
+        "MAOS_STAGING_CORE_BOOTSTRAP_DEPARTMENT_NAME",
+      ),
+      organizationId: requiredUuid(
+        env,
+        "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID",
+      ),
+      organizationName: requiredValue(
+        env,
+        "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_NAME",
+      ),
+      organizationSlug,
+      projectId: requiredUuid(env, "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID"),
+      projectName: requiredValue(
+        env,
+        "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_NAME",
+      ),
+      scope: "project-maos",
+    },
+  };
 }
 
 const stagingSessionEnabled = (
