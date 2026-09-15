@@ -4,6 +4,7 @@ export * from "./alert-email-repository.js";
 export * from "./core-bootstrap-repository.js";
 export * from "./postgres.js";
 export * from "./session-repository.js";
+export * from "./session-audit-repository.js";
 export {
   getSchemaVersion,
   validateMigrationSafety,

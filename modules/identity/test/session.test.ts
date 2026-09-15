@@ -349,6 +349,7 @@ test("issues a version-one Session from a live exact assignment", async () => {
       result: "SUCCEEDED",
       session_version: 1,
       tenant_binding_origin: "identity.human_project_assignments",
+      tenant_binding_ref: "assignment-maos",
     },
   ]);
 });

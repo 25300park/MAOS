@@ -6,6 +6,7 @@ import {
 } from "@maos/config";
 import {
   openPostgresDatabase,
+  PostgresSessionAuditRepository,
   PostgresCoreBootstrapRepository,
   PostgresSessionRepository,
 } from "@maos/database";
@@ -103,6 +104,12 @@ const stagingSessionRepository =
   stagingSessionConfig.enabled && stagingDatabase
     ? new PostgresSessionRepository(stagingDatabase)
     : undefined;
+const stagingSessionAuditDatabase = stagingSessionConfig.enabled
+  ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+  : undefined;
+const stagingSessionAuditRepository = stagingSessionAuditDatabase
+  ? new PostgresSessionAuditRepository(stagingSessionAuditDatabase)
+  : undefined;
 const stagingCoreBootstrapRepository =
   stagingCoreBootstrapConfig.enabled && stagingDatabase
     ? new PostgresCoreBootstrapRepository(stagingDatabase)
@@ -150,6 +157,9 @@ const stagingSessionRuntime =
         const sessionService = new SessionService({
           audit: createSessionAuditSink(erpObservability, {
             bffServiceActorId: "service-control-room-bff",
+            ...(stagingSessionAuditRepository
+              ? { persistence: stagingSessionAuditRepository }
+              : {}),
             projectId: "project-maos",
           }),
           now: () => new Date(),
@@ -812,6 +822,9 @@ const shutdown = (): void => {
     void Promise.all([
       ...(alertEmailRuntime.enabled ? [alertEmailRuntime.close()] : []),
       ...(stagingDatabase ? [stagingDatabase.close()] : []),
+      ...(stagingSessionAuditDatabase
+        ? [stagingSessionAuditDatabase.close()]
+        : []),
     ]);
   });
 };

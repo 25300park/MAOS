@@ -1,5 +1,9 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import type { PostgresSessionRepository, StoredSession } from "@maos/database";
+import type {
+  PostgresSessionAuditRepository,
+  PostgresSessionRepository,
+  StoredSession,
+} from "@maos/database";
 import {
   SessionLifecycleError,
   type AuthenticationRequestContext,
@@ -92,17 +96,29 @@ export function createSessionAuditSink(
   options: {
     readonly bffServiceActorId: string;
     readonly evidenceId?: () => string;
+    readonly persistence?: Pick<
+      PostgresSessionAuditRepository,
+      "recordAudit" | "recordDenial"
+    >;
     readonly projectId: string;
   },
 ): SessionAuditSink {
   const evidenceId = options.evidenceId ?? randomUUID;
+  const safeTargetId = (sessionId: string): string => {
+    const hash = createHash("sha256").update(sessionId).digest("hex");
+    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  };
   return {
     createEvidenceReference: () => `evidence://audit/${evidenceId()}`,
-    record: (event) => {
-      if (!event.session_id || !event.audit_evidence_ref) {
+    record: async (event) => {
+      if (
+        !event.session_id ||
+        !event.audit_evidence_ref ||
+        !event.tenant_binding_ref
+      ) {
         throw new Error("Session audit requires bounded internal references");
       }
-      audit.recordAudit({
+      const record = audit.recordAudit({
         action: event.action,
         actor: { id: event.actor_id, type: "HUMAN" },
         context: {
@@ -123,11 +139,33 @@ export function createSessionAuditSink(
           tenant_binding_origin: event.tenant_binding_origin,
         },
         result: event.result,
-        target: { id: event.session_id, type: "SESSION" },
+        target: {
+          id: safeTargetId(event.session_id),
+          type: "SESSION",
+        },
+      });
+      if (event.action === "SESSION.RESOLVED") return;
+      await options.persistence?.recordAudit({
+        action: event.action,
+        actor_id: event.actor_id,
+        bff_service_actor_id: options.bffServiceActorId,
+        correlation_id: event.context.correlation_id,
+        evidence_refs: [event.audit_evidence_ref],
+        occurred_at: record.occurred_at,
+        project_scope: options.projectId,
+        request_id: event.context.request_id,
+        result: event.result,
+        session_version: event.session_version,
+        span_id:
+          event.context.span_id ?? `${event.context.trace_id}:session-span`,
+        target_id: record.target.id,
+        tenant_binding_origin: event.tenant_binding_origin,
+        tenant_binding_ref: event.tenant_binding_ref,
+        trace_id: event.context.trace_id,
       });
     },
-    recordFailure: (event) => {
-      audit.recordEvent({
+    recordFailure: async (event) => {
+      const recorded = audit.recordEvent({
         context: {
           correlation_id: event.context.correlation_id,
           project_id: options.projectId,
@@ -141,6 +179,21 @@ export function createSessionAuditSink(
           bff_service_actor_id: options.bffServiceActorId,
           reason: event.reason,
         },
+      });
+      await options.persistence?.recordDenial({
+        ...(event.actor_id ? { actor_id: event.actor_id } : {}),
+        bff_service_actor_id: options.bffServiceActorId,
+        correlation_id: event.context.correlation_id,
+        occurred_at: recorded.occurred_at,
+        project_scope: options.projectId,
+        reason: event.reason,
+        request_id: event.context.request_id,
+        span_id:
+          event.context.span_id ?? `${event.context.trace_id}:session-span`,
+        ...(event.tenant_binding_ref
+          ? { tenant_binding_ref: event.tenant_binding_ref }
+          : {}),
+        trace_id: event.context.trace_id,
       });
     },
   };

@@ -33,7 +33,7 @@ export interface TrustedAssignmentProjection {
   readonly organization_id: string;
   readonly project_id: string;
   readonly tenant_binding_origin: string;
-  readonly tenant_binding_ref?: string;
+  readonly tenant_binding_ref: string;
   readonly roles: IdentityContext["roles"];
 }
 
@@ -69,14 +69,17 @@ export interface SessionAuditEvent {
   readonly session_id?: string;
   readonly session_version: number;
   readonly tenant_binding_origin: string;
+  readonly tenant_binding_ref?: string;
 }
 
 export interface SessionAuditSink {
   createEvidenceReference?(): string;
   record(event: SessionAuditEvent): void | Promise<void>;
   recordFailure?(event: {
+    readonly actor_id?: string;
     readonly context: AuthenticationRequestContext;
     readonly reason: SessionFailureReason;
+    readonly tenant_binding_ref?: string;
   }): void | Promise<void>;
 }
 
@@ -343,6 +346,9 @@ export class SessionService {
       result: "SUCCEEDED",
       session_version: stored.session_version,
       tenant_binding_origin: stored.tenant_binding_origin,
+      ...(stored.tenant_binding_ref
+        ? { tenant_binding_ref: stored.tenant_binding_ref }
+        : {}),
     });
     return { identity, session: stored };
   }
@@ -366,7 +372,7 @@ export class SessionService {
         this.options.now().getTime(),
         input.mfaRequired || input.context.mfa_required,
       );
-      if (failure) return this.failure(input.context, failure);
+      if (failure) return this.failure(input.context, failure, current);
 
       const identity = await this.options.repository.resolveIdentity(
         current.actor_id,
@@ -376,6 +382,7 @@ export class SessionService {
         return this.failure(
           input.context,
           bindingFailure ?? "IDENTITY_UNAVAILABLE",
+          current,
         );
       }
       const touched = await this.options.repository.touch(
@@ -399,6 +406,9 @@ export class SessionService {
           result: "SUCCEEDED",
           session_version: touched.session_version,
           tenant_binding_origin: touched.tenant_binding_origin,
+          ...(touched.tenant_binding_ref
+            ? { tenant_binding_ref: touched.tenant_binding_ref }
+            : {}),
         });
         return { authenticated: true, identity, session: touched };
       }
@@ -441,6 +451,9 @@ export class SessionService {
       result: "SUCCEEDED",
       session_version: revoked.session_version,
       tenant_binding_origin: revoked.tenant_binding_origin,
+      ...(revoked.tenant_binding_ref
+        ? { tenant_binding_ref: revoked.tenant_binding_ref }
+        : {}),
     });
     return revoked;
   }
@@ -448,8 +461,18 @@ export class SessionService {
   private async failure(
     context: AuthenticationRequestContext,
     reason: SessionFailureReason,
+    session?: Pick<SessionRecord, "actor_id" | "tenant_binding_ref">,
   ): Promise<SessionResolution> {
-    await this.options.audit.recordFailure?.({ context, reason });
+    await this.options.audit.recordFailure?.({
+      ...(session
+        ? {
+            actor_id: session.actor_id,
+            tenant_binding_ref: session.tenant_binding_ref,
+          }
+        : {}),
+      context,
+      reason,
+    });
     return { authenticated: false, reason };
   }
 }
