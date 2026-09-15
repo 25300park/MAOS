@@ -81,7 +81,7 @@ export function validateStagingPackaging(): {
     vercel.installCommand !== "npm ci" ||
     vercel.buildCommand !== "npm run build --workspace @maos/web" ||
     webScripts.prebuild !==
-      "npm run build --workspace @maos/logging && npm run build --workspace @maos/module-operations && npm run build --workspace @maos/config" ||
+      "npm run build --workspace @maos/logging && npm run build --workspace @maos/database && npm run build --workspace @maos/module-operations && npm run build --workspace @maos/config" ||
     webDependencies["@maos/config"] !== "0.0.0" ||
     webDependencies["@maos/module-operations"] !== "0.0.0" ||
     !functions["api/control-room.ts"] ||
