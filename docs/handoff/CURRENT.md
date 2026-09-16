@@ -173,6 +173,7 @@ Establish governed optimization, learning, and expansion foundations in which ve
 - Phase 14K traceability: `docs/implementation/phase-14k/PHASE14K_TRACEABILITY_REGISTER.md`
 - Phase 14K C2 blockers: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
 - Phase 14L readiness: `BLOCKED_PENDING_RUNTIME_IMPLEMENTATION`
+- Phase 14R-0 bounded validation waiver: `docs/implementation/phase-14r0/PHASE14R0_VALIDATION_WAIVER.md`; scope is limited to the isolated environmental OOM and the pre-existing deterministic Session-audit fixture timestamp failure for the preservation-to-main integration gate only.
 - Production changes from Phase 14K governance closeout: `NO`
 - Production changes from Phase 14A governance closeout: `NO`
 - Session lifecycle evidence: exchange, authenticated read, logout/revocation, and post-revocation denial all passed in Staging.
