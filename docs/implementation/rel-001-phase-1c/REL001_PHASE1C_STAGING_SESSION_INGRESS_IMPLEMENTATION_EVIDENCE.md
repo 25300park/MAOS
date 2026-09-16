@@ -2,11 +2,11 @@
 
 ## Result
 
-`IMPLEMENTED_LOCALLY / STAGING_EVIDENCE_PENDING`
+`COMPLETE / CLOSED`
 
-The MAOS-CR-003 Staging-only Session ingress is implemented and verified locally. This record does not represent a Staging deployment, production implementation authorization, production deployment authorization, or production-readiness approval.
+The MAOS-CR-003 Staging-only Session ingress is implemented and verified locally and in the approved live Staging boundary. This record does not represent production implementation authorization, production deployment authorization, or production-readiness approval.
 
-`STAGING_DEPLOYMENT_NOT_PERFORMED`
+`PASS_REL001_PHASE1C_FINAL_CLOSURE`
 
 ## Verified implementation boundary
 
@@ -44,6 +44,27 @@ Twenty generated workspace `dist` directories were enumerated under validated `a
 
 The Phase 1C E2E verifies Browser to BFF to Core API to PostgreSQL flow, version touch, restart durability, exact idle and absolute bounds, MFA freshness, tenant and scope isolation, Origin and CSRF enforcement, concurrent optimistic revalidation, logout, irreversible revocation, and post-restart rejection. Failure responses conceal Session material, and repository safety/redaction checks found no committed secret or generated artifact.
 
+## Live Staging closure evidence
+
+| Evidence                                              | Result                                                         |
+| ----------------------------------------------------- | -------------------------------------------------------------- |
+| Stable Staging Preview deployment                     | `dpl_6CohwUKbuDMFS77k8ocUJmQevNBJ` — READY                     |
+| Stable Staging alias target                           | Current Preview deployment confirmed                           |
+| Session exchange                                      | PASS                                                           |
+| Authenticated Session context read                    | PASS                                                           |
+| Logout and irreversible revocation                    | PASS                                                           |
+| Post-revocation fail-closed denial                    | PASS                                                           |
+| Durable Session state                                 | PASS — revoked                                                 |
+| `SESSION.ISSUED` persistence and queryability         | PASS — audit class C                                           |
+| `SESSION.REVOKED` persistence and queryability        | PASS — audit class C                                           |
+| `POST_REVOCATION_DENIAL` persistence and queryability | PASS — audit class C                                           |
+| Independent process/database reconnection             | PASS — all three records remained queryable                    |
+| Append-only integrity                                 | PASS — mutation-rejection triggers and valid unique hash chain |
+| Idempotency                                           | PASS — one issuance and one revocation; no duplicate effects   |
+| Sensitive-data inspection                             | PASS — no Session or credential material exposed               |
+
+The issuance and revocation evidence resides in canonical `audit.audit_records`. Post-revocation denial evidence resides in canonical `audit.observability_events` as `SESSION.RESOLUTION_FAILED` with reason `REVOKED`. Each record is correlated to the Staging project and `project-maos` scope. Query reconstruction confirmed persistence independently of the originating runtime process.
+
 ## Migration evidence
 
 The deterministic clean initialization applied these migrations once and skipped all 19 on replay:
@@ -76,9 +97,11 @@ Migration `0019_staging_session_ingress` remains additive and forward-only. No p
 - Pre-existing `.gitignore` modification: preserved and unstaged.
 - Production implementation authorization: `NO`.
 - Production deployment authorization: `NO`.
-- Staging deployment: `NOT_PERFORMED`.
-- Push: `NOT_PERFORMED`.
+- Staging deployment and live evidence: `COMPLETE`.
+- Stable Staging alias: current approved Preview deployment.
+- Production changes: `NO`.
+- Secrets exposed: `NO`.
 
 ## Next governed checkpoint
 
-Real Staging migration, configuration, provisioning, deployment, and provider evidence require separate human authorization. Until that evidence exists, the canonical status is `IMPLEMENTED_LOCALLY / STAGING_EVIDENCE_PENDING`.
+REL-001 Phase 1C is formally closed with canonical status `COMPLETE / CLOSED` and final recommendation `PASS_REL001_PHASE1C_FINAL_CLOSURE`. Production implementation authorization, production deployment authorization, and production-ready status remain unchanged and are not granted by this closure.
