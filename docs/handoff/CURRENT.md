@@ -1,6 +1,6 @@
 # MAOS CURRENT STATE
 
-Last updated: 2026-09-09
+Last updated: 2026-09-16
 
 ## Current Phase
 
@@ -9,6 +9,30 @@ Last updated: 2026-09-09
 Status: **COMPLETE**
 
 Phase 1 MVP, Phase 1P, and Phases 2 through 13 are complete. Phase 13 established governed optimization, learning, and expansion candidates without permitting uncontrolled self-improvement or changing production-readiness status.
+
+REL-001 Phase 1C status: **COMPLETE / CLOSED**. The approved Staging Session ingress passed the complete live lifecycle and durable audit closure gate. This does not authorize production implementation or deployment.
+
+Phase 14A status: **COMPLETE**. MAOS-CR-005 is `APPROVED_C2`, MAOS-020 is the approved/frozen additive v1.2 portal architecture, and Phase 14B is architecture-ready but remains separately implementation-gated.
+
+Phase 14B status: **COMPLETE**. MAOS-CR-006 is `APPROVED_C2`, MAOS-021 is the approved/frozen additive v1.3 Human Messenger and CommandEnvelope architecture, and frozen v1.2 remains unchanged. Phase 14C is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14C status: **COMPLETE**. MAOS-CR-007 is `APPROVED_C2`, MAOS-022 is the approved/frozen additive v1.4 Planner/Reviewer routing architecture, and frozen v1.3 remains unchanged. Phase 14D is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14D status: **COMPLETE**. MAOS-CR-008 is `APPROVED_C2`, MAOS-023 is the approved/frozen additive v1.5 Executor routing architecture, and frozen v1.4 remains unchanged. Phase 14E is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14E status: **COMPLETE**. MAOS-CR-009 is `APPROVED_C2`, MAOS-024 is the approved/frozen additive v1.6 Verification routing and handoff architecture, and frozen v1.5 remains unchanged. Phase 14F is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14F status: **COMPLETE**. MAOS-CR-010 is `APPROVED_C2`, MAOS-025 is the approved/frozen additive v1.7 Human Approval Gate architecture, and frozen v1.6 remains unchanged. Phase 14G is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14G status: **COMPLETE**. MAOS-CR-011 is `APPROVED_C2`, MAOS-026 is the approved/frozen additive v1.8 Evidence and Audit governance architecture, and frozen v1.7 remains unchanged. Phase 14H is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14H status: **COMPLETE**. MAOS-CR-012 is `APPROVED_C2`, MAOS-027 is the approved/frozen additive v1.9 Mobile Messenger architecture, and frozen v1.8 remains unchanged. Phase 14I is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14I status: **COMPLETE**. MAOS-CR-013 is `APPROVED_C2`, MAOS-028 is the approved/frozen additive v2.0 Approval UX architecture, and frozen v1.9 remains unchanged. Phase 14J is `READY` for separately authorized planning; runtime implementation remains unauthorized.
+
+Phase 14J status: **COMPLETE**. MAOS-CR-014 is `APPROVED_C2`, MAOS-029 is the approved/frozen additive v2.1 Project Portal Integration architecture, and frozen v2.0 remains unchanged. Phase 14K is `READY` for separately authorized planning; runtime implementation and integration activation remain unauthorized.
+
+Phase 14K status: **COMPLETE**. MAOS-CR-015 is `APPROVED_C2`, MAOS-030 is the approved/frozen additive v2.2 Development Team Portal architecture, and frozen v2.1 remains unchanged. Phase 14L is `BLOCKED_PENDING_RUNTIME_IMPLEMENTATION`; provider/repository mutation and Production remain unauthorized.
 
 ## Completed
 
@@ -55,6 +79,18 @@ Phase 1 MVP, Phase 1P, and Phases 2 through 13 are complete. Phase 13 establishe
 - Phase 1.17 — Release / Approval / Deployment: **COMPLETE**
 - Phase 1.18 — RBS / Admin Pilot: **COMPLETE**
 - Phase 1.19 — Full E2E + Loop Verification: **COMPLETE**
+- REL-001 Phase 1C — Durable Staging Session ingress: **COMPLETE / CLOSED**
+- Phase 14A — Company / Team Portal Architecture: **COMPLETE**
+- Phase 14B — Messenger / Command Contract: **COMPLETE**
+- Phase 14C — Planner / Reviewer Routing: **COMPLETE**
+- Phase 14D — Executor Routing: **COMPLETE**
+- Phase 14E — Verification Routing / Handoff: **COMPLETE**
+- Phase 14F — Human Approval Gate: **COMPLETE**
+- Phase 14G — Evidence / Audit Architecture: **COMPLETE**
+- Phase 14H — Mobile Messenger Architecture: **COMPLETE**
+- Phase 14I — Approval UX Architecture: **COMPLETE**
+- Phase 14J — Project Portal Integration Architecture: **COMPLETE**
+- Phase 14K — Development Team Portal Architecture: **COMPLETE**
 
 ## Repository Baseline
 
@@ -72,6 +108,76 @@ Establish governed optimization, learning, and expansion foundations in which ve
 - Phase 12 control commit: `d7cf29e48920d5365b60f67885e3bd7ceb1f21eb`
 - Phase 12 implementation/evidence commit: `d4b36455330d1b1a1ce3823d0cc45f106ad4ee85`
 - Phase 12 evidence: `docs/implementation/phase-12-enterprise-production-readiness-evidence.md`
+- REL-001 Phase 1C completion: `docs/implementation/rel-001-phase-1c/REL001_PHASE1C_COMPLETION_REPORT.md`
+- REL-001 Phase 1C live evidence: `docs/implementation/rel-001-phase-1c/REL001_PHASE1C_STAGING_SESSION_INGRESS_IMPLEMENTATION_EVIDENCE.md`
+- REL-001 Phase 1C final gate: `PASS_REL001_PHASE1C_FINAL_CLOSURE`
+- Phase 14A candidate: `docs/architecture/MAOS-020-company-team-project-portal-architecture-v1.2-candidate.md`
+- Phase 14A C2 request: `docs/change-requests/MAOS-CR-005-company-team-project-portal-architecture.md`
+- Phase 14A traceability: `docs/implementation/phase-14a/PHASE14A_TRACEABILITY_REGISTER.md`
+- Phase 14A C2 blockers: `NONE`; candidate corrections: `NONE`; Human approval: `GRANTED`
+- Phase 14B readiness: `READY — IMPLEMENTATION REQUIRES SEPARATE AUTHORIZATION`
+- Phase 14B candidate: `docs/architecture/MAOS-021-human-messenger-governed-command-contract-v1.3-candidate.md`
+- Phase 14B C2 request: `docs/change-requests/MAOS-CR-006-human-messenger-governed-command-contract.md`
+- Phase 14B traceability: `docs/implementation/phase-14b/PHASE14B_TRACEABILITY_REGISTER.md`
+- Phase 14B C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14C readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14B governance closeout: `NO`
+- Phase 14C candidate: `docs/architecture/MAOS-022-planner-reviewer-policy-routing-v1.4-candidate.md`
+- Phase 14C C2 request: `docs/change-requests/MAOS-CR-007-planner-reviewer-policy-routing.md`
+- Phase 14C traceability: `docs/implementation/phase-14c/PHASE14C_TRACEABILITY_REGISTER.md`
+- Phase 14C C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14D readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14C governance closeout: `NO`
+- Phase 14D candidate: `docs/architecture/MAOS-023-executor-policy-routing-v1.5-candidate.md`
+- Phase 14D C2 request: `docs/change-requests/MAOS-CR-008-executor-policy-routing.md`
+- Phase 14D traceability: `docs/implementation/phase-14d/PHASE14D_TRACEABILITY_REGISTER.md`
+- Phase 14D C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14E readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14D governance closeout: `NO`
+- Phase 14E candidate: `docs/architecture/MAOS-024-verification-policy-routing-v1.6-candidate.md`
+- Phase 14E C2 request: `docs/change-requests/MAOS-CR-009-verification-policy-routing.md`
+- Phase 14E traceability: `docs/implementation/phase-14e/PHASE14E_TRACEABILITY_REGISTER.md`
+- Phase 14E C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14F readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14E governance closeout: `NO`
+- Phase 14F candidate: `docs/architecture/MAOS-025-human-approval-gate-v1.7-candidate.md`
+- Phase 14F C2 request: `docs/change-requests/MAOS-CR-010-human-approval-gate.md`
+- Phase 14F traceability: `docs/implementation/phase-14f/PHASE14F_TRACEABILITY_REGISTER.md`
+- Phase 14F C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14G readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14F governance closeout: `NO`
+- Phase 14G candidate: `docs/architecture/MAOS-026-evidence-audit-governance-v1.8-candidate.md`
+- Phase 14G C2 request: `docs/change-requests/MAOS-CR-011-evidence-audit-governance.md`
+- Phase 14G traceability: `docs/implementation/phase-14g/PHASE14G_TRACEABILITY_REGISTER.md`
+- Phase 14G C2 blockers: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14H readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14G governance closeout: `NO`
+- Phase 14H candidate: `docs/architecture/MAOS-027-mobile-messenger-v1.9-candidate.md`
+- Phase 14H C2 request: `docs/change-requests/MAOS-CR-012-mobile-messenger.md`
+- Phase 14H traceability: `docs/implementation/phase-14h/PHASE14H_TRACEABILITY_REGISTER.md`
+- Phase 14H C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14I readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14H governance closeout: `NO`
+- Phase 14I candidate: `docs/architecture/MAOS-028-approval-ux-v2.0-candidate.md`
+- Phase 14I C2 request: `docs/change-requests/MAOS-CR-013-approval-ux.md`
+- Phase 14I traceability: `docs/implementation/phase-14i/PHASE14I_TRACEABILITY_REGISTER.md`
+- Phase 14I C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14J readiness: `READY — PLANNING/IMPLEMENTATION REQUIRE SEPARATE AUTHORIZATION`
+- Production changes from Phase 14I governance closeout: `NO`
+- Phase 14J candidate: `docs/architecture/MAOS-029-project-portal-integration-v2.1-candidate.md`
+- Phase 14J C2 request: `docs/change-requests/MAOS-CR-014-project-portal-integration.md`
+- Phase 14J traceability: `docs/implementation/phase-14j/PHASE14J_TRACEABILITY_REGISTER.md`
+- Phase 14J C2 blockers: `NONE`; non-blocking findings: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14K candidate: `docs/architecture/MAOS-030-development-team-portal-v2.2-candidate.md`
+- Phase 14K C2 request: `docs/change-requests/MAOS-CR-015-development-team-portal.md`
+- Phase 14K traceability: `docs/implementation/phase-14k/PHASE14K_TRACEABILITY_REGISTER.md`
+- Phase 14K C2 blockers: `NONE`; candidate correction required: `NO`; Human approval: `GRANTED`
+- Phase 14L readiness: `BLOCKED_PENDING_RUNTIME_IMPLEMENTATION`
+- Production changes from Phase 14K governance closeout: `NO`
+- Production changes from Phase 14A governance closeout: `NO`
+- Session lifecycle evidence: exchange, authenticated read, logout/revocation, and post-revocation denial all passed in Staging.
+- Session audit evidence: `SESSION.ISSUED`, `SESSION.REVOKED`, and `POST_REVOCATION_DENIAL` are durable, restart-safe, independently queryable audit class C records.
+- Stable Staging alias targets the current approved Preview deployment; production changed `NO`; secrets exposed `NO`.
 - Phase 11 control commit: `cb4198e4eb05c1a476faaca0ab515c9643cbe46c`
 - Phase 11 implementation commit: `6e1d22af92256e44ab77b84bce0e7fa5975fbcf8`
 - Phase 10 control commit: `a0157e2b475b1874ae1f792c3cd4674854b168ea`
