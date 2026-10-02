@@ -10,6 +10,38 @@ import {
 } from "../src/index.js";
 
 const migrationsDirectory = resolve("packages/database/migrations");
+const canonicalMigrationIds = Object.freeze([
+  "0001_canonical_schemas",
+  "0002_core_foundation",
+  "0003_approval_authority_foundation",
+  "0004_project_task_workflow_foundation",
+  "0005_agent_model_runner_foundation",
+  "0006_skill_tool_mcp_foundation",
+  "0007_local_execution_bridge_foundation",
+  "0008_ai_memory_gateway_integration",
+  "0009_observability_audit_foundation",
+  "0010_release_deployment_foundation",
+  "0011_rbs_admin_pilot_foundation",
+  "0012_core_control_plane_generalization",
+  "0013_ai_memory_knowledge_integration",
+  "0014_marketing_automation_integration",
+  "0015_ai_mls_integration",
+  "0016_crm_human_work_integration",
+  "0017_optimization_learning_foundation",
+  "0018_alert_email_delivery",
+  "0019_staging_session_ingress",
+  "0020_phase14_runtime_foundation",
+  "0021_command_clarification_receipts",
+  "0022_phase14_routing_policy_versions",
+  "0023_human_approval_runtime",
+  "0024_executor_routing_policy",
+  "0025_verification_runtime",
+  "0026_phase14_evidence_audit_runtime",
+  "0027_phase14l_canonical_alignment",
+  "0028_phase14m_security_kill_switch",
+  "0029_phase15b_ai_provider_model_capability_registry",
+  "0030_phase15b_r0_durable_assignment_authority",
+]);
 
 test("initializes canonical schemas and Phase 1.4 foundation tables on a clean database", async (t) => {
   const database = new PGlite();
@@ -19,27 +51,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
   const result = await applyMigrations(database, migrations);
 
   assert.deepEqual(result, {
-    applied: [
-      "0001_canonical_schemas",
-      "0002_core_foundation",
-      "0003_approval_authority_foundation",
-      "0004_project_task_workflow_foundation",
-      "0005_agent_model_runner_foundation",
-      "0006_skill_tool_mcp_foundation",
-      "0007_local_execution_bridge_foundation",
-      "0008_ai_memory_gateway_integration",
-      "0009_observability_audit_foundation",
-      "0010_release_deployment_foundation",
-      "0011_rbs_admin_pilot_foundation",
-      "0012_core_control_plane_generalization",
-      "0013_ai_memory_knowledge_integration",
-      "0014_marketing_automation_integration",
-      "0015_ai_mls_integration",
-      "0016_crm_human_work_integration",
-      "0017_optimization_learning_foundation",
-      "0018_alert_email_delivery",
-      "0019_staging_session_ingress",
-    ],
+    applied: canonicalMigrationIds,
     skipped: [],
   });
 
@@ -85,23 +97,37 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
     [
       "core.departments",
       "core.organizations",
+      "core.portal_bindings",
       "core.project_members",
       "core.project_system_links",
       "core.projects",
       "core.schema_migrations",
       "governance.approvals",
       "governance.authority_rules",
+      "governance.governed_artifact_refs",
+      "governance.human_approval_decisions",
+      "governance.human_approval_requests",
       "governance.learning_candidate_decisions",
       "governance.learning_candidates",
       "governance.optimization_evaluations",
       "governance.reviews",
+      "governance.routing_envelopes",
+      "governance.routing_policy_versions",
+      "governance.security_cancellations",
+      "governance.security_control_transitions",
+      "governance.security_controls",
       "governance.tool_permissions",
+      "governance.verification_handoff_artifacts",
+      "governance.verification_handoffs",
       "governance.verified_result_references",
       "identity.assignment_permissions",
       "identity.human_project_assignments",
       "identity.humans",
       "identity.session_revocations",
       "identity.sessions",
+      "work.command_clarification_receipts",
+      "work.command_envelope_versions",
+      "work.command_envelopes",
       "work.task_assignments",
       "work.task_dependencies",
       "work.tasks",
@@ -1024,6 +1050,69 @@ test("persists alerts, transactional email outbox, and append-only delivery evid
   assert.deepEqual(sensitiveColumns.rows, []);
 });
 
+test("rejects R0 through 0029 and permits R0, R1, and R2 only after 0030", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+  const migrations = await loadMigrations(migrationsDirectory);
+  const migration0030Index = migrations.findIndex(
+    ({ id }) => id === "0030_phase15b_r0_durable_assignment_authority",
+  );
+  assert.equal(migration0030Index, 29);
+  await applyMigrations(database, migrations.slice(0, migration0030Index));
+  await database.exec(`
+    INSERT INTO core.organizations (id, name, slug)
+    VALUES ('00000000-0000-4000-8000-000000003001', 'R0 Boundary Org', 'r0-boundary-org');
+    INSERT INTO core.departments (id, organization_id, name)
+    VALUES ('00000000-0000-4000-8000-000000003002', '00000000-0000-4000-8000-000000003001', 'R0 Boundary Team');
+    INSERT INTO core.projects (id, organization_id, department_id, name)
+    VALUES ('00000000-0000-4000-8000-000000003003', '00000000-0000-4000-8000-000000003001', '00000000-0000-4000-8000-000000003002', 'R0 Boundary Project');
+    INSERT INTO identity.humans (id, organization_id, display_name, external_subject)
+    VALUES ('00000000-0000-4000-8000-000000003004', '00000000-0000-4000-8000-000000003001', 'R0 Boundary Owner', 'subject-r0-boundary-owner');
+    INSERT INTO identity.human_project_assignments (
+      id, human_id, organization_id, project_id, scope
+    ) VALUES (
+      '00000000-0000-4000-8000-000000003005',
+      '00000000-0000-4000-8000-000000003004',
+      '00000000-0000-4000-8000-000000003001',
+      '00000000-0000-4000-8000-000000003003',
+      'project-r0-boundary'
+    );
+  `);
+  const insertRisk = (risk: string) =>
+    database.exec(`
+      INSERT INTO identity.assignment_permissions (
+        assignment_id, action, resource, environment, risk, effect
+      ) VALUES (
+        '00000000-0000-4000-8000-000000003005',
+        'READ_${risk}', 'SYSTEM', 'staging', '${risk}', 'ALLOW'
+      )
+    `);
+
+  await assert.rejects(() => insertRisk("R0"), /check constraint/i);
+  const before0030 = await database.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM identity.assignment_permissions",
+  );
+  assert.equal(before0030.rows[0]?.count, "0");
+
+  await applyMigrations(database, [migrations[migration0030Index]!]);
+  const after0030 = await database.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM identity.assignment_permissions",
+  );
+  assert.equal(after0030.rows[0]?.count, "0");
+
+  for (const risk of ["R0", "R1", "R2"]) await insertRisk(risk);
+  const accepted = await database.query<{ risk: string }>(`
+    SELECT risk FROM identity.assignment_permissions ORDER BY risk
+  `);
+  assert.deepEqual(
+    accepted.rows.map(({ risk }) => risk),
+    ["R0", "R1", "R2"],
+  );
+  for (const risk of ["R3", "R4", "UNKNOWN"]) {
+    await assert.rejects(() => insertRisk(risk), /check constraint/i);
+  }
+});
+
 test("creates constrained durable staging Session and assignment persistence", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
@@ -1131,7 +1220,7 @@ test("creates constrained durable staging Session and assignment persistence", a
   );
   for (const invalidPermission of [
     { environment: "production", risk: "R2" },
-    { environment: "staging", risk: "R1" },
+    { environment: "staging", risk: "R3" },
   ]) {
     await assert.rejects(
       () =>
@@ -1246,27 +1335,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
   await applyMigrations(database, migrations);
   assert.deepEqual(await applyMigrations(database, migrations), {
     applied: [],
-    skipped: [
-      "0001_canonical_schemas",
-      "0002_core_foundation",
-      "0003_approval_authority_foundation",
-      "0004_project_task_workflow_foundation",
-      "0005_agent_model_runner_foundation",
-      "0006_skill_tool_mcp_foundation",
-      "0007_local_execution_bridge_foundation",
-      "0008_ai_memory_gateway_integration",
-      "0009_observability_audit_foundation",
-      "0010_release_deployment_foundation",
-      "0011_rbs_admin_pilot_foundation",
-      "0012_core_control_plane_generalization",
-      "0013_ai_memory_knowledge_integration",
-      "0014_marketing_automation_integration",
-      "0015_ai_mls_integration",
-      "0016_crm_human_work_integration",
-      "0017_optimization_learning_foundation",
-      "0018_alert_email_delivery",
-      "0019_staging_session_ingress",
-    ],
+    skipped: canonicalMigrationIds,
   });
 
   const drifted = migrations.map((migration, index) =>
@@ -1283,8 +1352,11 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 19);
-  assert.equal(version.latest_id, "0019_staging_session_ingress");
+  assert.equal(version.applied_count, 30);
+  assert.equal(
+    version.latest_id,
+    "0030_phase15b_r0_durable_assignment_authority",
+  );
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

@@ -222,6 +222,80 @@ test("keeps all four staging authentication paths non-overlapping", async () => 
   );
 });
 
+test("routes both identity provisioning endpoints through the same identity administrator boundary", async (t) => {
+  const path = "/api/v1/identity/provisioning/assignment-permissions";
+  const server = createApiServer({
+    authenticate: createAuthenticator(),
+    environment: "staging",
+    routes: [
+      {
+        access: {
+          action: "PROVISION",
+          environment: "staging",
+          resource: "IDENTITY",
+          risk: "R2",
+          scope: "organization-maos/project-maos",
+        },
+        handle: () => ({ reached: true }),
+        method: "POST",
+        path,
+      },
+    ],
+    service: "api",
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  const port = (server.address() as AddressInfo).port;
+  const request = (headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${port}${path}`, {
+      headers,
+      method: "POST",
+    });
+
+  assert.equal((await request()).status, 401);
+  assert.equal(
+    (
+      await request({
+        authorization: "Bearer synthetic-identity-admin-token",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request({
+        "x-maos-bff-service-authorization":
+          "Bearer synthetic-bff-service-token",
+        "x-session-id": "session-opaque-reference",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request({
+        "x-maos-bff-service-authorization":
+          "Bearer synthetic-bff-service-token",
+        "x-session-id": "revoked-or-unknown-session",
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await request({
+        authorization: "Bearer synthetic-session-credential",
+      })
+    ).status,
+    401,
+  );
+});
+
 test("fails closed for malformed, partial, or invalid BFF Session headers", async () => {
   const authenticate = createAuthenticator();
   const context = requestContext("/api/v1/identity/session-context");

@@ -17,6 +17,10 @@ import {
   type RbsAdminView,
 } from "./control-room.js";
 import {
+  loadAiRegistryPortal,
+  type AiRegistryPortalView,
+} from "./ai-registry.js";
+import {
   createSessionBffRequestHandler,
   type SessionBffRuntimeOptions,
 } from "./session-bff.js";
@@ -319,6 +323,7 @@ export const CONTROL_ROOM_PREVIEW_OPTIMIZATION: OptimizationView = {
 };
 
 export interface ControlRoomServerOptions {
+  ai_registry?: AiRegistryPortalView | undefined;
   ai_mls?: AiMlsView | undefined;
   control_plane?: ControlPlaneView | undefined;
   crm?: CrmView | undefined;
@@ -348,6 +353,7 @@ function createRenderedControlRoomRequestHandler(
     const spanId = randomUUID();
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const html = renderControlRoom({
+      ai_registry: options.ai_registry,
       ai_mls: options.ai_mls,
       control_plane: options.control_plane,
       crm: options.crm,
@@ -390,11 +396,26 @@ export function createControlRoomRequestHandler(
   if (options.session_bff) {
     return createSessionBffRequestHandler(
       options.session_bff,
-      (request, response, identity) =>
-        createRenderedControlRoomRequestHandler(options, identity)(
-          request,
-          response,
-        ),
+      async (request, response, identity, readCore) => {
+        const path = new URL(request.url ?? "/", "http://localhost").pathname;
+        let aiRegistry = options.ai_registry;
+        if (
+          !aiRegistry &&
+          path === "/systems/ai-registry" &&
+          identity?.permissions.includes("SYSTEM:READ") &&
+          readCore
+        ) {
+          try {
+            aiRegistry = await loadAiRegistryPortal(readCore);
+          } catch {
+            aiRegistry = undefined;
+          }
+        }
+        createRenderedControlRoomRequestHandler(
+          { ...options, ai_registry: aiRegistry },
+          identity,
+        )(request, response);
+      },
     );
   }
   return createRenderedControlRoomRequestHandler(

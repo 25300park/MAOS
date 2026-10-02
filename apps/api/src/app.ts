@@ -36,6 +36,7 @@ export interface ApiRoute {
     context: RequestContext;
     identity: IdentityContext | null;
     input: unknown;
+    params: Readonly<Record<string, string>>;
     request: IncomingMessage;
   }): Promise<unknown> | unknown;
   governance?: (input: {
@@ -174,6 +175,27 @@ export function createApiServer(options: ApiServerOptions): Server {
   });
 }
 
+function matchRoutePath(
+  routePath: string,
+  requestPath: string,
+): Readonly<Record<string, string>> | null {
+  const routeSegments = routePath.split("/");
+  const requestSegments = requestPath.split("/");
+  if (routeSegments.length !== requestSegments.length) return null;
+  const params: Record<string, string> = {};
+  for (let index = 0; index < routeSegments.length; index += 1) {
+    const routeSegment = routeSegments[index]!;
+    const requestSegment = requestSegments[index]!;
+    if (routeSegment.startsWith(":")) {
+      if (requestSegment.length === 0) return null;
+      params[routeSegment.slice(1)] = requestSegment;
+    } else if (routeSegment !== requestSegment) {
+      return null;
+    }
+  }
+  return params;
+}
+
 async function handleRequest(
   options: ApiServerOptions,
   routes: readonly ApiRoute[],
@@ -190,6 +212,7 @@ async function handleRequest(
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   const method = request.method ?? "UNKNOWN";
   const apiVersion = routeVersion(path);
+  let loggedPath = path;
   let identity: IdentityContext | null = null;
 
   const complete = (statusCode: number, body: unknown): void => {
@@ -201,7 +224,7 @@ async function handleRequest(
       api_version: apiVersion,
       duration_ms: performance.now() - startedAt,
       method,
-      path,
+      path: loggedPath,
       status_code: statusCode,
     });
   };
@@ -275,10 +298,12 @@ async function handleRequest(
       return;
     }
 
-    const route = routes.find(
-      (candidate) => candidate.method === method && candidate.path === path,
-    );
-    if (route) {
+    const routeMatch = routes
+      .map((route) => ({ params: matchRoutePath(route.path, path), route }))
+      .find(({ params, route }) => params !== null && route.method === method);
+    if (routeMatch) {
+      const { params, route } = routeMatch;
+      loggedPath = route.path;
       if (route.access !== "PUBLIC") {
         const authenticationContext: AuthenticationRequestContext = {
           correlation_id: context.correlation_id,
@@ -405,6 +430,7 @@ async function handleRequest(
         context,
         identity,
         input: validation.value,
+        params: params!,
         request,
       });
       complete(200, successEnvelope(data, context));
@@ -412,7 +438,7 @@ async function handleRequest(
     }
 
     const allowedMethods = routes
-      .filter((candidate) => candidate.path === path)
+      .filter((candidate) => matchRoutePath(candidate.path, path) !== null)
       .map((candidate) => candidate.method);
     if (allowedMethods.length > 0) {
       response.setHeader("allow", allowedMethods.join(", "));
@@ -455,7 +481,7 @@ async function handleRequest(
       ...context,
       api_version: apiVersion,
       method,
-      path,
+      path: loggedPath,
     });
     complete(
       500,

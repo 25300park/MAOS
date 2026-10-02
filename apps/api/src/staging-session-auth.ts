@@ -86,7 +86,8 @@ export function createStagingApiAuthenticator(input: {
 
     if (
       context?.method === "POST" &&
-      context.path === "/api/v1/identity/provisioning/humans"
+      (context.path === "/api/v1/identity/provisioning/humans" ||
+        context.path === "/api/v1/identity/provisioning/assignment-permissions")
     ) {
       return authenticateIdentityAdmin(headers, context);
     }

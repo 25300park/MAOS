@@ -45,6 +45,28 @@ const canonicalChecksums = Object.freeze({
     "8a9212accac15dec523a77d57fee6f60fcca4c36c23687e5beecf8a1b4dd8654",
   "0019_staging_session_ingress":
     "f2a8c8cd5abd48bae8f0ce51676b8b01f234ed520f66429393d2fc5070ae9626",
+  "0020_phase14_runtime_foundation":
+    "c982e3d6bdc60833b1ef2feaf63ea5f2b6331ab961a81ec32262b2e48bbd3232",
+  "0021_command_clarification_receipts":
+    "a9f95a4d107415f585377654bddd05564aba38644b14929ffd7594f862146b81",
+  "0022_phase14_routing_policy_versions":
+    "895148f540dbffd7e0f9b6dfb548fe19d0349352ac20ce157505e026c20b0016",
+  "0023_human_approval_runtime":
+    "9c785c331077b8a8a373fe5812bea070d57a61ec005ed3f6f23baf05def26666",
+  "0024_executor_routing_policy":
+    "1bd5deec64aedabc70cc5a2f0221fe2ebdc74637879e92907c68ab11327b91f8",
+  "0025_verification_runtime":
+    "72c0601cb54332001d77a9000c74a1aa166976392d75f33ce0f156748bcfd9e2",
+  "0026_phase14_evidence_audit_runtime":
+    "e2eb6a0b68ca969abe9508259bf5968a54a3a7adac9de4511acda6654882fac4",
+  "0027_phase14l_canonical_alignment":
+    "524fa4eba6e78f97e6f987bf3e8b3e92e2965bae4450f5559577866984a7be42",
+  "0028_phase14m_security_kill_switch":
+    "37d4ef844494762dae816e727b712325a7ae8bbb85b3dcf6bc3fe7a5da829e50",
+  "0029_phase15b_ai_provider_model_capability_registry":
+    "916c4cb600bdb36e41d93192374186e9364ad643d9fb1efbd839cecd68b82ad7",
+  "0030_phase15b_r0_durable_assignment_authority":
+    "f1445748f0b55731013711c6606a78d275f8f70e02114306ce33b19144e39e1d",
 });
 
 async function temporaryMigrations(t: test.TestContext): Promise<string> {
@@ -86,10 +108,10 @@ test("changes the checksum for content drift while preserving strict replay sema
   assert.notEqual(original?.checksum, changed?.checksum);
 });
 
-test("keeps canonical LF checksums stable for migrations 0001 through 0019", async () => {
+test("keeps canonical LF checksums stable for migrations 0001 through 0030", async () => {
   const migrations = await loadMigrations("packages/database/migrations");
   assert.deepEqual(
-    Object.fromEntries(migrations.map(({ checksum, id }) => [id, checksum])),
-    canonicalChecksums,
+    migrations.map(({ checksum, id }) => [id, checksum]),
+    Object.entries(canonicalChecksums),
   );
 });

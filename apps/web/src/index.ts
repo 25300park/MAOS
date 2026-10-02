@@ -4,4 +4,5 @@ export const WEB_APP = Object.freeze({
 });
 
 export * from "./control-room.js";
+export * from "./ai-registry.js";
 export * from "./server.js";
