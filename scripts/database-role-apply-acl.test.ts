@@ -213,6 +213,162 @@ test("ACL preflight accepts the exact grant-option alternative", async () => {
   );
 });
 
+test("provider bootstrap administrator is accepted only in explicit staging ACL mode", async () => {
+  const database = {
+    query: async <Row>(sql: string) => {
+      if (sql.includes("ACL_ADMIN_IDENTITY"))
+        return {
+          rows: [
+            {
+              current_role: "provider_admin",
+              privileged_membership: false,
+              rolbypassrls: false,
+              rolcreatedb: true,
+              rolcreaterole: true,
+              rolreplication: false,
+              rolsuper: true,
+            },
+          ] as Row[],
+        };
+      if (sql.includes("ACL_OPERATION_AUTHORITY"))
+        return {
+          rows: [
+            {
+              direct_owner: false,
+              grant_option: false,
+              owner_member: false,
+              owner_role: "postgres",
+            },
+          ] as Row[],
+        };
+      return { rows: [] as Row[] };
+    },
+  };
+  const result = await inspectPhase15cAclAdminAuthority(database, {
+    aclAdminRole: "provider_admin",
+    approvedOwnerRoles: [],
+    bootstrapMode: "PROVIDER_BOOTSTRAP_ADMIN",
+    environment: "staging",
+    migrationRole: "app_migration",
+    runtimeRole: "app_runtime",
+  });
+  assert.equal(result.status, "PASS");
+  assert.equal(result.rows.length, 9);
+  assert.equal(
+    result.rows.every((row) => row.authority === "PROVIDER_BOOTSTRAP_ADMIN"),
+    true,
+  );
+});
+
+test("provider bootstrap administrator fails closed outside explicit staging ACL mode", async () => {
+  const database = {
+    query: async <Row>(sql: string) => {
+      if (sql.includes("ACL_ADMIN_IDENTITY"))
+        return {
+          rows: [
+            {
+              current_role: "provider_admin",
+              privileged_membership: false,
+              rolbypassrls: false,
+              rolcreatedb: true,
+              rolcreaterole: true,
+              rolreplication: false,
+              rolsuper: true,
+            },
+          ] as Row[],
+        };
+      if (sql.includes("ACL_OPERATION_AUTHORITY"))
+        return {
+          rows: [
+            {
+              direct_owner: false,
+              grant_option: false,
+              owner_member: false,
+              owner_role: "postgres",
+            },
+          ] as Row[],
+        };
+      return { rows: [] as Row[] };
+    },
+  };
+  const base = {
+    aclAdminRole: "provider_admin",
+    approvedOwnerRoles: [],
+    migrationRole: "app_migration",
+    runtimeRole: "app_runtime",
+  };
+  assert.equal(
+    (
+      await inspectPhase15cAclAdminAuthority(database, {
+        ...base,
+        environment: "staging",
+      })
+    ).status,
+    "FAILED",
+  );
+  assert.equal(
+    (
+      await inspectPhase15cAclAdminAuthority(database, {
+        ...base,
+        bootstrapMode: "PROVIDER_BOOTSTRAP_ADMIN",
+        environment: "production",
+      })
+    ).status,
+    "FAILED",
+  );
+});
+
+test("provider bootstrap administrator fails closed when any allowlisted target is absent", async () => {
+  let authorityReads = 0;
+  const result = await inspectPhase15cAclAdminAuthority(
+    {
+      query: async <Row>(sql: string) => {
+        if (sql.includes("ACL_ADMIN_IDENTITY"))
+          return {
+            rows: [
+              {
+                current_role: "provider_admin",
+                privileged_membership: false,
+                rolbypassrls: false,
+                rolcreatedb: true,
+                rolcreaterole: true,
+                rolreplication: false,
+                rolsuper: true,
+              },
+            ] as Row[],
+          };
+        if (sql.includes("ACL_OPERATION_AUTHORITY")) {
+          authorityReads += 1;
+          return {
+            rows:
+              authorityReads === 4
+                ? ([] as Row[])
+                : ([
+                    {
+                      direct_owner: false,
+                      grant_option: false,
+                      owner_member: false,
+                      owner_role: "postgres",
+                    },
+                  ] as Row[]),
+          };
+        }
+        return { rows: [] as Row[] };
+      },
+    },
+    {
+      aclAdminRole: "provider_admin",
+      approvedOwnerRoles: [],
+      bootstrapMode: "PROVIDER_BOOTSTRAP_ADMIN",
+      environment: "staging",
+      migrationRole: "app_migration",
+      runtimeRole: "app_runtime",
+    },
+  );
+  assert.equal(result.status, "FAILED");
+  assert.equal(result.rows.filter((row) => row.result === "FAIL").length, 1);
+});
+
 test("ACL operation failure rolls back the fixed transaction", async () => {
   const executed: string[] = [];
   const database = {
@@ -366,6 +522,12 @@ test("runtime ACL verifier fails on forbidden privilege or PUBLIC leakage", asyn
     "PASS",
   );
   checks.public_ai_create = true;
+  assert.equal(
+    (await verifyPhase15cRuntimeAcl(database, input)).status,
+    "FAILED",
+  );
+  checks.public_ai_create = false;
+  checks.role_attributes_safe = false;
   assert.equal(
     (await verifyPhase15cRuntimeAcl(database, input)).status,
     "FAILED",

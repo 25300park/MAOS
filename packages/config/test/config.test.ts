@@ -459,6 +459,34 @@ test("loads a distinct server-only ACL administrator without credential fallback
   );
 });
 
+test("loads explicit provider bootstrap ACL mode only for staging", () => {
+  assert.equal(
+    loadDatabaseAclAdminConfig({
+      DATABASE_URL: "postgresql://runtime@localhost/maos",
+      MAOS_DATABASE_ACL_ADMIN_BOOTSTRAP_MODE: "PROVIDER_BOOTSTRAP_ADMIN",
+      MAOS_DATABASE_ACL_ADMIN_ROLE: "provider_admin",
+      MAOS_DATABASE_ACL_ADMIN_URL: "postgresql://acl@localhost/maos",
+      MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+      MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+      MAOS_ENV: "staging",
+    }).bootstrapMode,
+    "PROVIDER_BOOTSTRAP_ADMIN",
+  );
+  assert.throws(
+    () =>
+      loadDatabaseAclAdminConfig({
+        DATABASE_URL: "postgresql://runtime@localhost/maos",
+        MAOS_DATABASE_ACL_ADMIN_BOOTSTRAP_MODE: "PROVIDER_BOOTSTRAP_ADMIN",
+        MAOS_DATABASE_ACL_ADMIN_ROLE: "provider_admin",
+        MAOS_DATABASE_ACL_ADMIN_URL: "postgresql://acl@localhost/maos",
+        MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+        MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+        MAOS_ENV: "production",
+      }),
+    /PROVIDER_BOOTSTRAP_ADMIN_STAGING_ONLY/,
+  );
+});
+
 test("ACL administration never falls back to runtime or migration credentials", () => {
   const base = {
     DATABASE_URL: "postgresql://runtime@localhost/maos",

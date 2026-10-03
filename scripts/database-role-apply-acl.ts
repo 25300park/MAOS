@@ -9,7 +9,9 @@ import {
 
 export async function runDatabaseRoleApplyAcl(
   env: Record<string, string | undefined>,
-  write = (line: string) => process.stdout.write(`${line}\n`),
+  write: (line: string) => unknown = (line) =>
+    process.stdout.write(`${line}\n`),
+  openDatabase = openPostgresDatabase,
 ) {
   let aclAdmin;
   let runtime;
@@ -17,13 +19,14 @@ export async function runDatabaseRoleApplyAcl(
     if (env.MAOS_ENV === "production")
       throw new Error("PRODUCTION_ACL_FORBIDDEN");
     const config = loadDatabaseAclAdminConfig(env);
-    aclAdmin = await openPostgresDatabase(config.aclAdminUrl);
+    aclAdmin = await openDatabase(config.aclAdminUrl);
     const input = {
       aclAdminRole: config.aclAdminRole,
       approvedOwnerRoles: (env.MAOS_DATABASE_ACL_APPROVED_OWNER_ROLES ?? "")
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean),
+      ...(config.bootstrapMode ? { bootstrapMode: config.bootstrapMode } : {}),
       environment: config.environment,
       migrationRole: config.migrationRole,
       runtimeRole: config.runtimeRole,
@@ -34,7 +37,7 @@ export async function runDatabaseRoleApplyAcl(
       throw new Error("DATABASE_ROLE_ACL_REPLAY_FAILED");
     await aclAdmin.close();
     aclAdmin = undefined;
-    runtime = await openPostgresDatabase(config.runtimeUrl);
+    runtime = await openDatabase(config.runtimeUrl);
     const verified = await verifyPhase15cRuntimeAcl(runtime, {
       aclAdminRole: config.aclAdminRole,
       migrationRole: config.migrationRole,

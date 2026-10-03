@@ -290,50 +290,42 @@ test(
         } finally {
           await noInheritAclAdmin.close();
         }
-        await admin.exec(`
-          REVOKE phase15c_legacy_owner, ${governedMigrationRole} FROM ${aclAdminRole};
-          GRANT phase15c_legacy_owner, ${governedMigrationRole} TO ${aclAdminRole} WITH INHERIT TRUE;
-        `);
-        const aclAdmin = await openPostgresDatabase(
-          `postgresql://${aclAdminRole}@127.0.0.1:${context.port}/${context.databaseName}`,
+        const providerAdminRole = "postgres";
+        const appliedAcl = await applyPhase15cRuntimeAcl(admin, {
+          aclAdminRole: providerAdminRole,
+          approvedOwnerRoles: [],
+          bootstrapMode: "PROVIDER_BOOTSTRAP_ADMIN",
+          environment: "staging",
+          migrationRole: governedMigrationRole,
+          runtimeRole: context.runtimeRole,
+        });
+        assert.equal(appliedAcl.status, "APPLIED");
+        const replayedAcl = await applyPhase15cRuntimeAcl(admin, {
+          aclAdminRole: providerAdminRole,
+          approvedOwnerRoles: [],
+          bootstrapMode: "PROVIDER_BOOTSTRAP_ADMIN",
+          environment: "staging",
+          migrationRole: governedMigrationRole,
+          runtimeRole: context.runtimeRole,
+        });
+        assert.equal(replayedAcl.status, "REUSED");
+        await admin.exec(
+          `GRANT REFERENCES ON work.requests TO ${context.runtimeRole}`,
         );
-        try {
-          const appliedAcl = await applyPhase15cRuntimeAcl(aclAdmin, {
-            aclAdminRole,
-            approvedOwnerRoles: approvedAclOwnerRoles,
-            environment: "development",
-            migrationRole: governedMigrationRole,
-            runtimeRole: context.runtimeRole,
-          });
-          assert.equal(appliedAcl.status, "APPLIED");
-          const replayedAcl = await applyPhase15cRuntimeAcl(aclAdmin, {
-            aclAdminRole,
-            approvedOwnerRoles: approvedAclOwnerRoles,
-            environment: "development",
-            migrationRole: governedMigrationRole,
-            runtimeRole: context.runtimeRole,
-          });
-          assert.equal(replayedAcl.status, "REUSED");
-          await aclAdmin.exec(
-            `GRANT REFERENCES ON work.requests TO ${context.runtimeRole}`,
-          );
-          assert.equal(
-            (
-              await verifyPhase15cRuntimeAcl(aclAdmin, {
-                aclAdminRole,
-                migrationRole: governedMigrationRole,
-                requireRuntimeIdentity: false,
-                runtimeRole: context.runtimeRole,
-              })
-            ).status,
-            "FAILED",
-          );
-          await aclAdmin.exec(
-            `REVOKE REFERENCES ON work.requests FROM ${context.runtimeRole}`,
-          );
-        } finally {
-          await aclAdmin.close();
-        }
+        assert.equal(
+          (
+            await verifyPhase15cRuntimeAcl(admin, {
+              aclAdminRole: providerAdminRole,
+              migrationRole: governedMigrationRole,
+              requireRuntimeIdentity: false,
+              runtimeRole: context.runtimeRole,
+            })
+          ).status,
+          "FAILED",
+        );
+        await admin.exec(
+          `REVOKE REFERENCES ON work.requests FROM ${context.runtimeRole}`,
+        );
       } finally {
         await initializer.close();
         await admin.close();
@@ -353,7 +345,7 @@ test(
         assert.equal(
           (
             await verifyPhase15cRuntimeAcl(runtime, {
-              aclAdminRole,
+              aclAdminRole: "postgres",
               migrationRole: governedMigrationRole,
               requireRuntimeIdentity: true,
               runtimeRole: context.runtimeRole,
@@ -410,7 +402,7 @@ test(
         assert.equal(
           (
             await verifyPhase15cRuntimeAcl(reconnected, {
-              aclAdminRole,
+              aclAdminRole: "postgres",
               migrationRole: governedMigrationRole,
               requireRuntimeIdentity: true,
               runtimeRole: context.runtimeRole,

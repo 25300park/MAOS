@@ -28,6 +28,7 @@ export interface DatabaseMigrationConfig {
 export interface DatabaseAclAdminConfig {
   aclAdminRole: string;
   aclAdminUrl: string;
+  bootstrapMode?: "PROVIDER_BOOTSTRAP_ADMIN";
   environment: Environment;
   migrationRole: string;
   runtimeRole: string;
@@ -223,6 +224,15 @@ export function loadDatabaseAclAdminConfig(
   const aclAdminUrl = env.MAOS_DATABASE_ACL_ADMIN_URL?.trim();
   if (!aclAdminUrl) throw new Error("MAOS_DATABASE_ACL_ADMIN_URL_REQUIRED");
   loadDatabaseConfig({ DATABASE_URL: aclAdminUrl });
+  const bootstrapMode = env.MAOS_DATABASE_ACL_ADMIN_BOOTSTRAP_MODE?.trim();
+  if (
+    bootstrapMode !== undefined &&
+    bootstrapMode !== "" &&
+    bootstrapMode !== "PROVIDER_BOOTSTRAP_ADMIN"
+  )
+    throw new Error("DATABASE_ACL_ADMIN_BOOTSTRAP_MODE_INVALID");
+  if (bootstrapMode === "PROVIDER_BOOTSTRAP_ADMIN" && environment !== "staging")
+    throw new Error("PROVIDER_BOOTSTRAP_ADMIN_STAGING_ONLY");
   if (
     new Set([runtimeRole, migrationRole, aclAdminRole]).size !== 3 ||
     aclAdminUrl === runtimeUrl ||
@@ -233,6 +243,7 @@ export function loadDatabaseAclAdminConfig(
   return {
     aclAdminRole,
     aclAdminUrl,
+    ...(bootstrapMode === "PROVIDER_BOOTSTRAP_ADMIN" ? { bootstrapMode } : {}),
     environment: environment as Environment,
     migrationRole,
     runtimeRole,

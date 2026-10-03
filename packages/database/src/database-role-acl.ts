@@ -17,7 +17,11 @@ export interface DatabaseRoleAclVerificationResult {
 
 export interface AclAuthorityRow {
   readonly authority:
-    "DIRECT_OWNER" | "APPROVED_OWNER_ROLE" | "GRANT_OPTION" | "NONE";
+    | "DIRECT_OWNER"
+    | "APPROVED_OWNER_ROLE"
+    | "GRANT_OPTION"
+    | "PROVIDER_BOOTSTRAP_ADMIN"
+    | "NONE";
   readonly objectName: string;
   readonly operation: string;
   readonly result: "PASS" | "FAIL";
@@ -31,6 +35,8 @@ export interface AclAdminAuthorityResult {
 interface AclInput {
   readonly aclAdminRole: string;
   readonly approvedOwnerRoles: readonly string[];
+  readonly bootstrapMode?: "PROVIDER_BOOTSTRAP_ADMIN";
+  readonly environment?: string;
   readonly migrationRole: string;
   readonly runtimeRole: string;
 }
@@ -209,17 +215,27 @@ export async function inspectPhase15cAclAdminAuthority(
     `/* ACL_ADMIN_IDENTITY */ SELECT current_user AS current_role,role.rolsuper,role.rolcreatedb,role.rolcreaterole,role.rolreplication,role.rolbypassrls,EXISTS (SELECT 1 FROM pg_roles inherited WHERE inherited.oid<>role.oid AND pg_has_role(current_user,inherited.oid,'MEMBER') AND (inherited.rolsuper OR inherited.rolcreatedb OR inherited.rolcreaterole OR inherited.rolreplication OR inherited.rolbypassrls)) AS privileged_membership FROM pg_roles role WHERE role.rolname=current_user`,
   );
   const actor = identity.rows[0];
-  const identitySafe = Boolean(
+  const identitiesSeparated = Boolean(
     actor &&
     actor.current_role === input.aclAdminRole &&
     actor.current_role !== input.runtimeRole &&
-    actor.current_role !== input.migrationRole &&
+    actor.current_role !== input.migrationRole,
+  );
+  const standardIdentitySafe = Boolean(
+    identitiesSeparated &&
+    actor &&
     !actor.rolsuper &&
     !actor.rolcreatedb &&
     !actor.rolcreaterole &&
     !actor.rolreplication &&
     !actor.rolbypassrls &&
     !actor.privileged_membership,
+  );
+  const providerBootstrapAdmin = Boolean(
+    identitiesSeparated &&
+    actor?.rolsuper &&
+    input.bootstrapMode === "PROVIDER_BOOTSTRAP_ADMIN" &&
+    input.environment === "staging",
   );
   const rows: AclAuthorityRow[] = [];
   for (const operation of ACL_OPERATIONS) {
@@ -232,18 +248,26 @@ export async function inspectPhase15cAclAdminAuthority(
     const grantOption = Boolean(
       !operation.requiresOwner && authority?.grant_option,
     );
-    const kind: AclAuthorityRow["authority"] = authority?.direct_owner
-      ? "DIRECT_OWNER"
-      : approvedMember
-        ? "APPROVED_OWNER_ROLE"
-        : grantOption
-          ? "GRANT_OPTION"
-          : "NONE";
+    const providerOperationAuthority = Boolean(
+      providerBootstrapAdmin && authority,
+    );
+    const kind: AclAuthorityRow["authority"] = providerOperationAuthority
+      ? "PROVIDER_BOOTSTRAP_ADMIN"
+      : authority?.direct_owner
+        ? "DIRECT_OWNER"
+        : approvedMember
+          ? "APPROVED_OWNER_ROLE"
+          : grantOption
+            ? "GRANT_OPTION"
+            : "NONE";
     rows.push({
       authority: kind,
       objectName: operation.objectName,
       operation: operation.operation,
-      result: identitySafe && kind !== "NONE" ? "PASS" : "FAIL",
+      result:
+        (standardIdentitySafe || providerOperationAuthority) && kind !== "NONE"
+          ? "PASS"
+          : "FAIL",
     });
   }
   return {
@@ -257,6 +281,7 @@ const contractFingerprint = (input: ApplyAclInput) =>
     .update(
       JSON.stringify({
         contractVersion: PHASE15C_ACL_CONTRACT_VERSION,
+        bootstrapMode: input.bootstrapMode ?? "STANDARD",
         environment: input.environment,
         objects: ACL_OPERATIONS.map(({ objectName, operation }) => ({
           objectName,
@@ -304,6 +329,8 @@ export async function applyPhase15cRuntimeAcl(
   database: Pick<MigrationDatabase, "query" | "exec">,
   input: ApplyAclInput,
 ): Promise<DatabaseRoleAclResult> {
+  if (input.environment === "production")
+    throw new Error("PRODUCTION_ACL_FORBIDDEN");
   if (
     input.contractVersion !== undefined &&
     input.contractVersion !== PHASE15C_ACL_CONTRACT_VERSION
