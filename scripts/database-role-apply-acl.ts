@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { loadDatabaseMigrationConfig } from "@maos/config";
+import { loadDatabaseAclAdminConfig } from "@maos/config";
 import {
   applyPhase15cRuntimeAcl,
   openPostgresDatabase,
@@ -11,25 +11,42 @@ export async function runDatabaseRoleApplyAcl(
   env: Record<string, string | undefined>,
   write = (line: string) => process.stdout.write(`${line}\n`),
 ) {
-  let migration;
+  let aclAdmin;
   let runtime;
   try {
     if (env.MAOS_ENV === "production")
       throw new Error("PRODUCTION_ACL_FORBIDDEN");
-    const config = loadDatabaseMigrationConfig(env);
-    migration = await openPostgresDatabase(config.migrationUrl);
-    const applied = await applyPhase15cRuntimeAcl(migration, {
+    const config = loadDatabaseAclAdminConfig(env);
+    aclAdmin = await openPostgresDatabase(config.aclAdminUrl);
+    const input = {
+      aclAdminRole: config.aclAdminRole,
+      approvedOwnerRoles: (env.MAOS_DATABASE_ACL_APPROVED_OWNER_ROLES ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      environment: config.environment,
+      migrationRole: config.migrationRole,
       runtimeRole: config.runtimeRole,
-    });
-    await migration.close();
-    migration = undefined;
+    };
+    const applied = await applyPhase15cRuntimeAcl(aclAdmin, input);
+    const replay = await applyPhase15cRuntimeAcl(aclAdmin, input);
+    if (replay.status !== "REUSED")
+      throw new Error("DATABASE_ROLE_ACL_REPLAY_FAILED");
+    await aclAdmin.close();
+    aclAdmin = undefined;
     runtime = await openPostgresDatabase(config.runtimeUrl);
     const verified = await verifyPhase15cRuntimeAcl(runtime, {
+      aclAdminRole: config.aclAdminRole,
+      migrationRole: config.migrationRole,
+      requireRuntimeIdentity: true,
       runtimeRole: config.runtimeRole,
     });
     write(
       JSON.stringify({
         applied_statements: applied.statementCount,
+        apply_status: applied.status,
+        contract_fingerprint: applied.contractFingerprint,
+        replay_status: replay.status,
         status: verified.status,
       }),
     );
@@ -40,7 +57,7 @@ export async function runDatabaseRoleApplyAcl(
     );
     return 1;
   } finally {
-    await migration?.close().catch(() => undefined);
+    await aclAdmin?.close().catch(() => undefined);
     await runtime?.close().catch(() => undefined);
   }
 }

@@ -25,6 +25,15 @@ export interface DatabaseMigrationConfig {
   runtimeUrl: string;
 }
 
+export interface DatabaseAclAdminConfig {
+  aclAdminRole: string;
+  aclAdminUrl: string;
+  environment: Environment;
+  migrationRole: string;
+  runtimeRole: string;
+  runtimeUrl: string;
+}
+
 export type AlertEmailConfig =
   | { enabled: false }
   | {
@@ -178,6 +187,54 @@ export function loadDatabaseMigrationConfig(
     allowSharedLocalRole,
     migrationRole,
     migrationUrl,
+    runtimeRole,
+    runtimeUrl,
+  };
+}
+
+const databaseRoleIdentifier = (
+  env: Record<string, string | undefined>,
+  name: string,
+): string => {
+  const value = env[name]?.trim();
+  if (!value) throw new Error(`${name}_REQUIRED`);
+  if (!/^[A-Za-z_][A-Za-z0-9_$]*$/u.test(value))
+    throw new Error(`${name}_INVALID`);
+  return value;
+};
+
+export function loadDatabaseAclAdminConfig(
+  env: Record<string, string | undefined>,
+): DatabaseAclAdminConfig {
+  const environment = env.MAOS_ENV;
+  if (!ENVIRONMENTS.includes(environment as Environment)) {
+    throw new Error(`MAOS_ENV must be one of: ${ENVIRONMENTS.join(", ")}`);
+  }
+  const runtimeUrl = loadDatabaseConfig(env).databaseUrl;
+  const runtimeRole = databaseRoleIdentifier(env, "MAOS_DATABASE_RUNTIME_ROLE");
+  const migrationRole = databaseRoleIdentifier(
+    env,
+    "MAOS_DATABASE_MIGRATION_ROLE",
+  );
+  const aclAdminRole = databaseRoleIdentifier(
+    env,
+    "MAOS_DATABASE_ACL_ADMIN_ROLE",
+  );
+  const aclAdminUrl = env.MAOS_DATABASE_ACL_ADMIN_URL?.trim();
+  if (!aclAdminUrl) throw new Error("MAOS_DATABASE_ACL_ADMIN_URL_REQUIRED");
+  loadDatabaseConfig({ DATABASE_URL: aclAdminUrl });
+  if (
+    new Set([runtimeRole, migrationRole, aclAdminRole]).size !== 3 ||
+    aclAdminUrl === runtimeUrl ||
+    aclAdminUrl === env.MAOS_DATABASE_MIGRATION_URL?.trim()
+  ) {
+    throw new Error("DATABASE_ACL_ADMIN_ROLE_SEPARATION_REQUIRED");
+  }
+  return {
+    aclAdminRole,
+    aclAdminUrl,
+    environment: environment as Environment,
+    migrationRole,
     runtimeRole,
     runtimeUrl,
   };

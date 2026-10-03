@@ -199,16 +199,18 @@ The minimal future contract is:
 | --- | --- | --- |
 | `DATABASE_URL` | `APPLICATION_RUNTIME` connection | secret |
 | `MAOS_DATABASE_MIGRATION_URL` | `MIGRATION_OWNER` connection | secret |
+| `MAOS_DATABASE_ACL_ADMIN_URL` | explicitly authorized ephemeral `EPHEMERAL_ACL_ADMIN` bootstrap connection | secret |
 | `MAOS_DATABASE_RUNTIME_ROLE` | exact physical role name bound to `APPLICATION_RUNTIME` | non-secret identifier |
 | `MAOS_DATABASE_MIGRATION_ROLE` | exact physical role name bound to `MIGRATION_OWNER` | non-secret identifier |
+| `MAOS_DATABASE_ACL_ADMIN_ROLE` | exact physical role name bound to `EPHEMERAL_ACL_ADMIN` | non-secret identifier |
 
-Runtime code reads only `DATABASE_URL`. Migration and ACL tooling prefer and, in governed environments, require `MAOS_DATABASE_MIGRATION_URL`. They must never print either URL.
+Runtime code reads only `DATABASE_URL`. Migration tooling requires `MAOS_DATABASE_MIGRATION_URL`. The separately invoked ACL bootstrap command requires `MAOS_DATABASE_ACL_ADMIN_URL`; it never falls back to either runtime or migration connection and normal API/Web/runtime composition never loads it. No command may print any URL.
 
 Activation behavior:
 
 - **Local development:** distinct roles are preferred. A shared connection may be permitted only by an explicit local/test-only compatibility option, only when `MAOS_ENV=development`, and never as evidence for Staging readiness.
 - **Disposable tests:** the harness creates unique temporary physical role names and supplies both URLs/identifiers directly to the test process.
-- **Staging:** both URLs and both identifiers are required; roles and effective memberships must be distinct. No fallback to `DATABASE_URL` is permitted.
+- **Staging:** runtime and migration connections/identifiers are required for migration. The ACL admin connection/identifier is additionally required only during an explicitly authorized ACL bootstrap. All three authorities remain distinct and no fallback is permitted.
 - **Production:** the same separation is mandatory before any future Production authorization. No fallback is permitted.
 
 After contract activation, absence, ambiguity, equality, mismatch with `current_user`, or a failed role-attribute check is a bounded configuration error, not a reason to reuse `DATABASE_URL`.
@@ -227,14 +229,14 @@ Before migration SQL executes, a mandatory legacy-owner preflight connects throu
 
 The ACL step accepts `MAOS_DATABASE_RUNTIME_ROLE` as data, not SQL. It must:
 
-1. connect through `MAOS_DATABASE_MIGRATION_URL`;
-2. verify `current_user` exactly matches `MAOS_DATABASE_MIGRATION_ROLE`;
+1. connect only through `MAOS_DATABASE_ACL_ADMIN_URL`;
+2. verify `current_user` exactly matches `MAOS_DATABASE_ACL_ADMIN_ROLE` and is neither migration nor runtime principal;
 3. resolve exactly one `pg_roles` row for `MAOS_DATABASE_RUNTIME_ROLE` using a parameterized query;
-4. verify both role attribute and membership invariants;
+4. verify all nine fixed operations are authorized by direct ownership, approved owner-role membership, or the exact required grant option, with no privileged/superuser assumption;
 5. obtain the SQL identifier using PostgreSQL `quote_ident($1)` and interpolate only that server-quoted identifier into a fixed, allowlisted ACL statement set;
 6. apply revocations and grants in one transaction;
 7. verify the effective ACL matrix and PUBLIC leakage before commit;
-8. return only bounded, non-secret evidence.
+8. replay the exact deterministic contract as `REUSED`, fail closed on contract/role-binding conflict, return only bounded non-secret evidence, and disconnect the ACL admin before runtime verification.
 
 No caller-supplied SQL fragment, schema name, table name, privilege list, or connection-string component may enter the statement template.
 

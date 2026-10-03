@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   loadAlertEmailConfig,
   loadApiConfig,
+  loadDatabaseAclAdminConfig,
   loadDatabaseConfig,
   loadDatabaseMigrationConfig,
   loadProductionConfig,
@@ -434,6 +435,60 @@ test("permits a shared local database role only with the explicit local flag", (
       runtimeRole: "maos_local",
       runtimeUrl: "postgresql://local@localhost/maos",
     },
+  );
+});
+
+test("loads a distinct server-only ACL administrator without credential fallback", () => {
+  assert.deepEqual(
+    loadDatabaseAclAdminConfig({
+      DATABASE_URL: "postgresql://runtime@localhost/maos",
+      MAOS_DATABASE_ACL_ADMIN_ROLE: "maos_acl_admin",
+      MAOS_DATABASE_ACL_ADMIN_URL: "postgresql://acl@localhost/maos",
+      MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+      MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+      MAOS_ENV: "staging",
+    }),
+    {
+      aclAdminRole: "maos_acl_admin",
+      aclAdminUrl: "postgresql://acl@localhost/maos",
+      environment: "staging",
+      migrationRole: "maos_migration",
+      runtimeRole: "maos_runtime",
+      runtimeUrl: "postgresql://runtime@localhost/maos",
+    },
+  );
+});
+
+test("ACL administration never falls back to runtime or migration credentials", () => {
+  const base = {
+    DATABASE_URL: "postgresql://runtime@localhost/maos",
+    MAOS_DATABASE_ACL_ADMIN_ROLE: "maos_acl_admin",
+    MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+    MAOS_DATABASE_MIGRATION_URL: "postgresql://migration@localhost/maos",
+    MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+    MAOS_ENV: "staging",
+  };
+  assert.throws(
+    () => loadDatabaseAclAdminConfig(base),
+    /MAOS_DATABASE_ACL_ADMIN_URL_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseAclAdminConfig({
+        ...base,
+        MAOS_DATABASE_ACL_ADMIN_ROLE: "maos_runtime",
+        MAOS_DATABASE_ACL_ADMIN_URL: base.DATABASE_URL,
+      }),
+    /DATABASE_ACL_ADMIN_ROLE_SEPARATION_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseAclAdminConfig({
+        ...base,
+        MAOS_DATABASE_ACL_ADMIN_ROLE: "maos_migration",
+        MAOS_DATABASE_ACL_ADMIN_URL: base.MAOS_DATABASE_MIGRATION_URL,
+      }),
+    /DATABASE_ACL_ADMIN_ROLE_SEPARATION_REQUIRED/,
   );
 });
 

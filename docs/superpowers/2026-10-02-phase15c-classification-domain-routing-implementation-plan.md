@@ -115,8 +115,10 @@ The exact future configuration contract is:
 
 - `DATABASE_URL`: secret `APPLICATION_RUNTIME` connection.
 - `MAOS_DATABASE_MIGRATION_URL`: secret `MIGRATION_OWNER` connection.
+- `MAOS_DATABASE_ACL_ADMIN_URL`: secret, server/bootstrap-only `EPHEMERAL_ACL_ADMIN` connection required only for an explicitly authorized fixed ACL operation; it never falls back to the runtime or migration URL.
 - `MAOS_DATABASE_RUNTIME_ROLE`: non-secret physical runtime role identifier.
 - `MAOS_DATABASE_MIGRATION_ROLE`: non-secret physical migration role identifier.
+- `MAOS_DATABASE_ACL_ADMIN_ROLE`: non-secret physical ACL administrator role identifier, distinct from both runtime and migration roles.
 - `MAOS_DATABASE_ALLOW_SHARED_LOCAL_ROLE`: exact development-only compatibility flag. Only literal `true` with `MAOS_ENV=development` permits local migration/runtime principal equality. It is rejected in Preview, Staging, and Production and never counts as governed readiness evidence.
 
 The initial cross-domain privilege budget is fixed as follows and must be confirmed against the final repository SQL before the ACL transaction is enabled:
@@ -191,7 +193,7 @@ Assert the runtime role is resolved by parameterized catalog lookup, its identif
 
 - [ ] **Step 7: Implement the post-migration ACL command**
 
-Implement `database-role-acl.ts` and `scripts/database-role-apply-acl.ts`. Connect only through `MAOS_DATABASE_MIGRATION_URL`, rerun the role/owner preflight, server-quote the runtime identifier, apply the fixed ACL transaction, verify effective privileges and PUBLIC leakage before commit, and emit only safe status evidence. The command is idempotent and never creates roles, credentials, memberships, or ownership transfers.
+Implement `database-role-acl.ts` and `scripts/database-role-apply-acl.ts`. Connect only through `MAOS_DATABASE_ACL_ADMIN_URL`; do not fall back to runtime or migration credentials. Run the exact nine-operation authority preflight, server-quote the runtime identifier, apply the fixed ACL transaction, verify the complete runtime/PUBLIC matrix before commit, replay the deterministic contract as `REUSED`, disconnect the ephemeral administrator, reconnect only as runtime, and emit only safe status evidence. The command never creates roles, credentials, memberships, or ownership transfers. A different contract version or effective runtime role binding fails closed.
 
 - [ ] **Step 8: Inventory cross-domain privileges before granting**
 
