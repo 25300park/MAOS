@@ -7,6 +7,7 @@ import {
   loadMigrations,
   PostgresSessionRepository,
 } from "../src/index.js";
+import type { MigrationDatabase } from "../src/index.js";
 
 const migrationsDirectory = resolve("packages/database/migrations");
 
@@ -68,6 +69,42 @@ const provisioning = {
   scope: "project-maos",
 } as const;
 
+const grantInput = {
+  actor_id: ids.actor,
+  actor_type: "HUMAN",
+  assignment_id: ids.assignment,
+  correlation_id: "correlation-r0-grant",
+  evidence_refs: ["evidence://phase15b/r0-grant"],
+  human_id: ids.actor,
+  idempotency_key: "phase15b-r0-grant",
+  organization_id: ids.organization,
+  permission: {
+    action: "READ",
+    effect: "ALLOW",
+    environment: "staging",
+    resource: "SYSTEM",
+    risk: "R0",
+  },
+  project_id: ids.project,
+  request_id: "request-r0-grant",
+  scope: "project-maos",
+  span_id: "span-r0-grant",
+  trace_id: "trace-r0-grant",
+} as const;
+
+test("fails closed when the complete assignment target is missing", async () => {
+  const database: MigrationDatabase = {
+    exec: async () => undefined,
+    query: async <Row>() => ({ rows: [] as Row[] }),
+  };
+  const repository = new PostgresSessionRepository(database);
+
+  await assert.rejects(
+    repository.grantAssignmentPermission(grantInput),
+    /ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND/,
+  );
+});
+
 test("provisions an exact assignment idempotently and derives its permissions", async (t) => {
   const database = await createDatabase();
   t.after(() => database.close());
@@ -120,6 +157,247 @@ test("provisions an exact assignment idempotently and derives its permissions", 
     }),
     /external subject.*organization/i,
   );
+});
+
+test("grants one durable R0 permission and reuses its canonical audit on exact replay", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  const repository = new PostgresSessionRepository(database);
+  await repository.provisionHuman(provisioning);
+
+  const created = await repository.grantAssignmentPermission(grantInput);
+  const replayed = await repository.grantAssignmentPermission({
+    ...grantInput,
+    correlation_id: "correlation-r0-grant-replay",
+    request_id: "request-r0-grant-replay",
+    span_id: "span-r0-grant-replay",
+    trace_id: "trace-r0-grant-replay",
+  });
+
+  assert.equal(created.status, "CREATED");
+  assert.equal(replayed.status, "REUSED");
+  assert.equal(replayed.audit_ref, created.audit_ref);
+  assert.match(
+    created.audit_ref,
+    /^audit:\/\/identity\/assignment-permission\/[0-9a-f-]{36}$/,
+  );
+  const permissions = await database.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM identity.assignment_permissions
+     WHERE assignment_id = $1 AND action = 'READ' AND resource = 'SYSTEM'
+       AND environment = 'staging' AND risk = 'R0' AND effect = 'ALLOW'`,
+    [ids.assignment],
+  );
+  const audits = await database.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM audit.audit_records
+     WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'
+       AND target_id = $1`,
+    [ids.assignment],
+  );
+  assert.equal(permissions.rows[0]?.count, "1");
+  assert.equal(audits.rows[0]?.count, "1");
+  assert.ok(
+    created.identity.roles[0]?.permissions.some(
+      ({ action, resource, risk }) =>
+        action === "READ" && resource === "SYSTEM" && risk === "R0",
+    ),
+  );
+});
+
+test("rolls back a conflicting replay without a second permission or audit", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  const repository = new PostgresSessionRepository(database);
+  await repository.provisionHuman(provisioning);
+  await repository.grantAssignmentPermission(grantInput);
+
+  const conflicts = [
+    {
+      ...grantInput,
+      evidence_refs: ["evidence://phase15b/conflicting-intent"],
+    },
+    { ...grantInput, actor_id: "00000000-0000-4000-8000-000000003021" },
+    {
+      ...grantInput,
+      permission: { ...grantInput.permission, resource: "MODEL" },
+    },
+  ] as const;
+  for (const conflict of conflicts) {
+    await assert.rejects(
+      repository.grantAssignmentPermission(conflict),
+      /ASSIGNMENT_PERMISSION_REPLAY_CONFLICT/,
+    );
+  }
+  const permissions = await database.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM identity.assignment_permissions
+     WHERE assignment_id = $1 AND risk = 'R0'`,
+    [ids.assignment],
+  );
+  const audits = await database.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM audit.audit_records
+     WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'
+       AND target_id = $1`,
+    [ids.assignment],
+  );
+  assert.equal(permissions.rows[0]?.count, "1");
+  assert.equal(audits.rows[0]?.count, "1");
+});
+
+test("rejects every mismatched or inactive assignment binding before persistence", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  const repository = new PostgresSessionRepository(database);
+  await repository.provisionHuman(provisioning);
+  const cases = [
+    { ...grantInput, human_id: "00000000-0000-4000-8000-000000003008" },
+    { ...grantInput, organization_id: ids.otherOrganization },
+    { ...grantInput, project_id: "00000000-0000-4000-8000-000000003009" },
+    { ...grantInput, scope: "project-other" },
+    {
+      ...grantInput,
+      assignment_id: "00000000-0000-4000-8000-000000003010",
+    },
+  ] as const;
+  for (const input of cases) {
+    await assert.rejects(
+      repository.grantAssignmentPermission(input),
+      /ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND/,
+    );
+  }
+  await database.query(
+    `UPDATE identity.human_project_assignments
+     SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1`,
+    [ids.assignment],
+  );
+  await assert.rejects(
+    repository.grantAssignmentPermission(grantInput),
+    /ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND/,
+  );
+  const permissions = await database.query<{ count: string }>(
+    "SELECT COUNT(*)::text AS count FROM identity.assignment_permissions WHERE risk = 'R0'",
+  );
+  const audits = await database.query<{ count: string }>(
+    "SELECT COUNT(*)::text AS count FROM audit.audit_records WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'",
+  );
+  assert.equal(permissions.rows[0]?.count, "0");
+  assert.equal(audits.rows[0]?.count, "0");
+});
+
+test("rejects a nonexistent wrong project before permission or grant audit persistence", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  const repository = new PostgresSessionRepository(database);
+  await repository.provisionHuman(provisioning);
+
+  await assert.rejects(
+    repository.grantAssignmentPermission({
+      ...grantInput,
+      project_id: "00000000-0000-4000-8000-000000003009",
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message === "ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND",
+  );
+
+  const permissions = await database.query<{ count: string }>(
+    "SELECT COUNT(*)::text AS count FROM identity.assignment_permissions WHERE risk = 'R0'",
+  );
+  const audits = await database.query<{ count: string }>(
+    "SELECT COUNT(*)::text AS count FROM audit.audit_records WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'",
+  );
+  assert.equal(permissions.rows[0]?.count, "0");
+  assert.equal(audits.rows[0]?.count, "0");
+});
+
+test("rejects an ambiguous assignment target before persistence", async () => {
+  const statements: string[] = [];
+  const database: MigrationDatabase = {
+    exec: async (sql: string) => {
+      statements.push(sql);
+    },
+    query: async <Row>(sql: string) => {
+      statements.push(sql);
+      if (sql.includes("FROM identity.human_project_assignments")) {
+        return {
+          rows: [
+            { assignment_id: ids.assignment },
+            { assignment_id: ids.assignment },
+          ] as Row[],
+        };
+      }
+      return { rows: [] as Row[] };
+    },
+  };
+  const repository = new PostgresSessionRepository(database);
+
+  await assert.rejects(
+    repository.grantAssignmentPermission(grantInput),
+    /ASSIGNMENT_PERMISSION_TARGET_AMBIGUOUS/,
+  );
+  assert.equal(
+    statements.some((sql) =>
+      sql.includes("INSERT INTO identity.assignment_permissions"),
+    ),
+    false,
+  );
+  assert.ok(statements.includes("ROLLBACK"));
+  assert.equal(statements.includes("COMMIT"), false);
+});
+
+test("rejects a conflicting replay after resolving the exact active target", async () => {
+  const statements: string[] = [];
+  const database: MigrationDatabase = {
+    exec: async (sql: string) => {
+      statements.push(sql);
+    },
+    query: async <Row>(sql: string) => {
+      statements.push(sql);
+      if (sql.includes("FROM identity.human_project_assignments")) {
+        return { rows: [{ assignment_id: ids.assignment }] as Row[] };
+      }
+      if (sql.includes("FROM audit.audit_records WHERE id")) {
+        return {
+          rows: [
+            {
+              action: "DIFFERENT.ACTION",
+              actor_id: ids.actor,
+              actor_type: "HUMAN",
+              approval_id: null,
+              correlation_id: "ignored",
+              evidence_refs: [],
+              metadata: {},
+              project_id: ids.project,
+              request_id: "ignored",
+              result: "SUCCEEDED",
+              run_id: null,
+              span_id: "ignored",
+              target_id: ids.assignment,
+              target_type: "HUMAN_PROJECT_ASSIGNMENT",
+              task_id: null,
+              tool_call_id: null,
+              trace_id: "ignored",
+              workflow_instance_id: null,
+            },
+          ] as Row[],
+        };
+      }
+      return { rows: [] as Row[] };
+    },
+  };
+  const repository = new PostgresSessionRepository(database);
+
+  await assert.rejects(
+    repository.grantAssignmentPermission({
+      ...grantInput,
+      permission: { ...grantInput.permission, effect: "DENY" },
+    }),
+    /ASSIGNMENT_PERMISSION_REPLAY_CONFLICT/,
+  );
+  assert.ok(
+    statements.some((sql) =>
+      sql.includes("FROM identity.human_project_assignments"),
+    ),
+  );
+  assert.ok(statements.includes("ROLLBACK"));
 });
 
 test("creates, touches, reconstructs, and irreversibly revokes a Session", async (t) => {

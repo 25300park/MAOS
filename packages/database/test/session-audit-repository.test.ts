@@ -10,6 +10,11 @@ import {
 
 const migrationsDirectory = resolve("packages/database/migrations");
 
+const fixtureTime = {
+  assignmentCreatedAt: "2026-09-16T00:00:00.000Z",
+  revokedAt: "2026-09-16T01:10:00.000Z",
+} as const;
+
 const ids = {
   actor: "00000000-0000-4000-8000-000000007001",
   assignment: "00000000-0000-4000-8000-000000007002",
@@ -45,9 +50,15 @@ async function createDatabase(): Promise<PGlite> {
   );
   await database.query(
     `INSERT INTO identity.human_project_assignments (
-       id, human_id, organization_id, project_id, scope
-     ) VALUES ($1, $2, $3, $4, 'project-maos')`,
-    [ids.assignment, ids.actor, ids.organization, ids.project],
+       id, human_id, organization_id, project_id, scope, created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, 'project-maos', $5, $5)`,
+    [
+      ids.assignment,
+      ids.actor,
+      ids.organization,
+      ids.project,
+      fixtureTime.assignmentCreatedAt,
+    ],
   );
   return database;
 }
@@ -133,9 +144,9 @@ test("persists redacted Session audit records across repository reconstruction",
 
   await database.query(
     `UPDATE identity.human_project_assignments
-        SET revoked_at = '2026-09-16T01:10:00.000Z'
+        SET revoked_at = $2
       WHERE id = $1`,
-    [ids.assignment],
+    [ids.assignment, fixtureTime.revokedAt],
   );
   await assert.rejects(
     repository.recordAudit({
@@ -144,7 +155,7 @@ test("persists redacted Session audit records across repository reconstruction",
       bff_service_actor_id: "service-control-room-bff",
       correlation_id: "correlation-revoked-binding",
       evidence_refs: ["evidence://audit/revoked-binding"],
-      occurred_at: "2026-09-16T01:10:00.000Z",
+      occurred_at: fixtureTime.revokedAt,
       project_scope: "project-maos",
       request_id: "request-revoked-binding",
       result: "SUCCEEDED",

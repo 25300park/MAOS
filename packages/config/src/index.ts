@@ -17,6 +17,14 @@ export interface DatabaseConfig {
   databaseUrl: string;
 }
 
+export interface DatabaseMigrationConfig {
+  allowSharedLocalRole: boolean;
+  migrationRole: string;
+  migrationUrl: string;
+  runtimeRole: string;
+  runtimeUrl: string;
+}
+
 export type AlertEmailConfig =
   | { enabled: false }
   | {
@@ -130,6 +138,49 @@ export function loadDatabaseConfig(
   }
 
   return { databaseUrl };
+}
+
+export function loadDatabaseMigrationConfig(
+  env: Record<string, string | undefined>,
+): DatabaseMigrationConfig {
+  const environment = env.MAOS_ENV;
+  if (!ENVIRONMENTS.includes(environment as Environment)) {
+    throw new Error(`MAOS_ENV must be one of: ${ENVIRONMENTS.join(", ")}`);
+  }
+
+  const runtimeUrl = loadDatabaseConfig(env).databaseUrl;
+  const runtimeRole = env.MAOS_DATABASE_RUNTIME_ROLE?.trim();
+  const migrationRole = env.MAOS_DATABASE_MIGRATION_ROLE?.trim();
+  if (!runtimeRole) throw new Error("MAOS_DATABASE_RUNTIME_ROLE_REQUIRED");
+  if (!migrationRole) throw new Error("MAOS_DATABASE_MIGRATION_ROLE_REQUIRED");
+
+  const allowSharedLocalRole =
+    environment === "development" &&
+    env.MAOS_DATABASE_ALLOW_SHARED_LOCAL_ROLE === "true";
+  if (
+    environment === "development" &&
+    runtimeRole === migrationRole &&
+    !allowSharedLocalRole
+  ) {
+    throw new Error("MAOS_DATABASE_ALLOW_SHARED_LOCAL_ROLE_REQUIRED");
+  }
+  const migrationUrl =
+    env.MAOS_DATABASE_MIGRATION_URL?.trim() ||
+    (allowSharedLocalRole ? runtimeUrl : undefined);
+  if (!migrationUrl) throw new Error("MAOS_DATABASE_MIGRATION_URL_REQUIRED");
+  loadDatabaseConfig({ DATABASE_URL: migrationUrl });
+
+  if (runtimeRole === migrationRole && !allowSharedLocalRole) {
+    throw new Error("DATABASE_ROLE_SEPARATION_REQUIRED");
+  }
+
+  return {
+    allowSharedLocalRole,
+    migrationRole,
+    migrationUrl,
+    runtimeRole,
+    runtimeUrl,
+  };
 }
 
 const requiredValue = (

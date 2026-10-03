@@ -1,12 +1,42 @@
 import type { MigrationDatabase } from "./types.js";
+import {
+  deterministicAuditUuid,
+  PostgresAuditRecordRepository,
+} from "./audit-record-repository.js";
 
 export interface StoredAssignmentPermission {
   readonly action: string;
   readonly effect: "ALLOW" | "DENY";
   readonly environment: "staging";
   readonly resource: string;
-  readonly risk: "R2";
+  readonly risk: "R0" | "R1" | "R2";
   readonly scope: string;
+}
+
+export interface StoredAssignmentTargetBinding {
+  readonly assignment_id: string;
+  readonly human_id: string;
+  readonly organization_id: string;
+  readonly project_id: string;
+  readonly scope: string;
+}
+
+export interface StoredAssignmentPermissionGrant extends StoredAssignmentTargetBinding {
+  readonly actor_id: string;
+  readonly actor_type: "HUMAN" | "AGENT" | "SYSTEM";
+  readonly correlation_id: string;
+  readonly evidence_refs: readonly string[];
+  readonly idempotency_key: string;
+  readonly permission: Omit<StoredAssignmentPermission, "scope">;
+  readonly request_id: string;
+  readonly span_id: string;
+  readonly trace_id: string;
+}
+
+export interface StoredAssignmentPermissionGrantResult {
+  readonly audit_ref: string;
+  readonly identity: StoredHumanIdentity;
+  readonly status: "CREATED" | "REUSED";
 }
 
 export interface StoredHumanProvisioning {
@@ -77,7 +107,7 @@ type IdentityRow = {
   external_subject: string;
   organization_id: string;
   resource: string | null;
-  risk: "R2" | null;
+  risk: "R0" | "R1" | "R2" | null;
   scope: string | null;
 };
 
@@ -190,6 +220,107 @@ const sessionSelect = `
 
 export class PostgresSessionRepository {
   constructor(private readonly database: MigrationDatabase) {}
+
+  async grantAssignmentPermission(
+    input: StoredAssignmentPermissionGrant,
+  ): Promise<StoredAssignmentPermissionGrantResult> {
+    const auditAction = "IDENTITY.ASSIGNMENT_PERMISSION_GRANTED";
+    const auditId = deterministicAuditUuid(
+      `${auditAction}:${input.idempotency_key}`,
+    );
+    await this.database.exec("BEGIN");
+    try {
+      const target = await this.database.query<{ assignment_id: string }>(
+        `SELECT a.id AS assignment_id
+           FROM identity.human_project_assignments a
+          WHERE a.id = $1
+            AND a.human_id = $2
+            AND a.organization_id = $3
+            AND a.project_id = $4
+            AND a.scope = $5
+            AND a.revoked_at IS NULL`,
+        [
+          input.assignment_id,
+          input.human_id,
+          input.organization_id,
+          input.project_id,
+          input.scope,
+        ],
+      );
+      if (target.rows.length === 0) {
+        throw new Error("ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND");
+      }
+      if (target.rows.length !== 1) {
+        throw new Error("ASSIGNMENT_PERMISSION_TARGET_AMBIGUOUS");
+      }
+
+      const audit = new PostgresAuditRecordRepository(this.database);
+      await audit.recordInTransaction({
+        action: auditAction,
+        actorId: input.actor_id,
+        actorType: input.actor_type,
+        correlationId: input.correlation_id,
+        evidenceRefs: input.evidence_refs,
+        idempotencyKey: input.idempotency_key,
+        metadata: {
+          action: input.permission.action,
+          assignment_id: input.assignment_id,
+          effect: input.permission.effect,
+          environment: input.permission.environment,
+          human_id: input.human_id,
+          organization_id: input.organization_id,
+          project_id: input.project_id,
+          resource: input.permission.resource,
+          risk: input.permission.risk,
+          scope: input.scope,
+        },
+        projectId: input.project_id,
+        replayTransportFieldsAreVolatile: true,
+        requestId: input.request_id,
+        result: "SUCCEEDED",
+        spanId: input.span_id,
+        targetId: input.assignment_id,
+        targetType: "HUMAN_PROJECT_ASSIGNMENT",
+        traceId: input.trace_id,
+      });
+
+      const inserted = await this.database.query<{ assignment_id: string }>(
+        `INSERT INTO identity.assignment_permissions (
+           assignment_id, action, resource, environment, risk, effect
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT DO NOTHING
+         RETURNING assignment_id`,
+        [
+          input.assignment_id,
+          input.permission.action,
+          input.permission.resource,
+          input.permission.environment,
+          input.permission.risk,
+          input.permission.effect,
+        ],
+      );
+      const status = inserted.rows.length === 1 ? "CREATED" : "REUSED";
+      const identity = await this.resolveIdentityByActorId(input.human_id);
+      if (!identity) {
+        throw new Error("ASSIGNMENT_PERMISSION_IDENTITY_NOT_FOUND");
+      }
+      await this.database.exec("COMMIT");
+      return {
+        audit_ref: `audit://identity/assignment-permission/${auditId}`,
+        identity,
+        status,
+      };
+    } catch (error) {
+      await this.database.exec("ROLLBACK");
+      if (
+        error instanceof Error &&
+        error.message === "AUDIT_RECORD_REPLAY_CONFLICT"
+      ) {
+        throw new Error("ASSIGNMENT_PERMISSION_REPLAY_CONFLICT");
+      }
+      throw error;
+    }
+  }
 
   async provisionHuman(
     input: StoredHumanProvisioning,

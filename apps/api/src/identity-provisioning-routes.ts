@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
+  StoredAssignmentPermissionGrant,
+  StoredAssignmentPermissionGrantResult,
   StoredHumanIdentity,
   StoredHumanProvisioning,
 } from "@maos/database";
@@ -14,6 +16,9 @@ import {
 type Input = Record<string, unknown>;
 
 interface IdentityProvisioningRepository {
+  grantAssignmentPermission(
+    input: StoredAssignmentPermissionGrant,
+  ): Promise<StoredAssignmentPermissionGrantResult>;
   provisionHuman(input: StoredHumanProvisioning): Promise<StoredHumanIdentity>;
 }
 
@@ -35,6 +40,13 @@ const APPROVED_PERMISSIONS = [
 ] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const R0_SYSTEM_READ = {
+  action: "READ",
+  effect: "ALLOW",
+  environment: "staging",
+  resource: "SYSTEM",
+  risk: "R0",
+} as const;
 
 function exactString(value: unknown): value is string {
   return (
@@ -127,6 +139,82 @@ function validateProvisioning(
       };
 }
 
+function validR0SystemRead(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const permission = value as Input;
+  const fields = Object.keys(R0_SYSTEM_READ);
+  return (
+    Object.keys(permission).length === fields.length &&
+    fields.every(
+      (field) =>
+        permission[field] ===
+        R0_SYSTEM_READ[field as keyof typeof R0_SYSTEM_READ],
+    )
+  );
+}
+
+function validateAssignmentPermissionGrant(
+  value: unknown,
+  configuredScope: string,
+): ValidationResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      details: [{ code: "OBJECT_REQUIRED", field: "body" }],
+      ok: false,
+    };
+  }
+  const input = value as Input;
+  const invalid: string[] = [];
+  for (const field of [
+    "assignment_id",
+    "human_id",
+    "organization_id",
+    "project_id",
+  ] as const) {
+    if (!exactString(input[field]) || !UUID.test(input[field])) {
+      invalid.push(field);
+    }
+  }
+  if (
+    !exactString(input.scope) ||
+    input.scope !== configuredScope ||
+    /[*?]/u.test(input.scope)
+  ) {
+    invalid.push("scope");
+  }
+  if (!validR0SystemRead(input.permission)) invalid.push("permission");
+  if (
+    !Array.isArray(input.evidence_refs) ||
+    input.evidence_refs.length === 0 ||
+    input.evidence_refs.some(
+      (reference) =>
+        !exactString(reference) || !reference.startsWith("evidence://"),
+    )
+  ) {
+    invalid.push("evidence_refs");
+  }
+  const allowedFields = new Set([
+    "assignment_id",
+    "evidence_refs",
+    "human_id",
+    "organization_id",
+    "permission",
+    "project_id",
+    "scope",
+  ]);
+  if (Object.keys(input).some((field) => !allowedFields.has(field))) {
+    invalid.push("body");
+  }
+  return invalid.length === 0
+    ? { ok: true, value: input }
+    : {
+        details: invalid.map((field) => ({ code: "INVALID", field })),
+        ok: false,
+      };
+}
+
 function deterministicUuid(purpose: string, idempotencyKey: string): string {
   const hex = createHash("sha256")
     .update(`${purpose}\0${idempotencyKey}`)
@@ -137,7 +225,7 @@ function deterministicUuid(purpose: string, idempotencyKey: string): string {
 }
 
 function idempotencyKey(value: string | string[] | undefined): string {
-  if (typeof value !== "string" || !exactString(value)) {
+  if (typeof value !== "string" || !exactString(value) || /\s/u.test(value)) {
     throw new ApiRequestError(422, {
       code: "IDEMPOTENCY_KEY_REQUIRED",
       details: {},
@@ -163,6 +251,56 @@ export function createIdentityProvisioningRoutes(
     throw new Error("Identity provisioning requires an exact configured scope");
   }
   return [
+    {
+      access: {
+        action: "PROVISION",
+        environment: options.environment,
+        resource: "IDENTITY",
+        risk: "R2",
+        scope: options.scope,
+      },
+      handle: async ({ context, identity, input, request }) => {
+        const key = idempotencyKey(request.headers["idempotency-key"]);
+        const value = input as Input;
+        const provisioningActor = actor(identity);
+        try {
+          return await repository.grantAssignmentPermission({
+            actor_id: provisioningActor.id,
+            actor_type: provisioningActor.type,
+            assignment_id: value.assignment_id as string,
+            correlation_id: context.correlation_id,
+            evidence_refs: value.evidence_refs as string[],
+            human_id: value.human_id as string,
+            idempotency_key: key,
+            organization_id: value.organization_id as string,
+            permission:
+              value.permission as StoredAssignmentPermissionGrant["permission"],
+            project_id: value.project_id as string,
+            request_id: context.request_id,
+            scope: value.scope as string,
+            span_id: context.span_id,
+            trace_id: context.trace_id,
+          });
+        } catch (error) {
+          const replayConflict =
+            error instanceof Error &&
+            error.message === "ASSIGNMENT_PERMISSION_REPLAY_CONFLICT";
+          throw new ApiRequestError(409, {
+            code: replayConflict
+              ? "ASSIGNMENT_PERMISSION_IDEMPOTENCY_CONFLICT"
+              : "ASSIGNMENT_PERMISSION_TARGET_CONFLICT",
+            details: {},
+            retryable: false,
+            severity: "INFO",
+            type: "CONFLICT",
+          });
+        }
+      },
+      method: "POST",
+      path: "/api/v1/identity/provisioning/assignment-permissions",
+      validate: (value) =>
+        validateAssignmentPermissionGrant(value, options.scope),
+    },
     {
       access: {
         action: "PROVISION",

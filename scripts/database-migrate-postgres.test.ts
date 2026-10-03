@@ -11,8 +11,44 @@ import { runPostgresMigrationCommand } from "./database-migrate-postgres.js";
 const SECRET_SENTINEL = "migration-secret-sentinel";
 const stagingEnv = Object.freeze({
   DATABASE_URL: `postgresql://maos:${SECRET_SENTINEL}@localhost:5432/maos`,
+  MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+  MAOS_DATABASE_MIGRATION_URL: `postgresql://migration:${SECRET_SENTINEL}@localhost:5432/maos`,
+  MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
   MAOS_DATABASE_MIGRATION_TARGET: "staging",
   MAOS_ENV: "staging",
+});
+
+test("opens only the migration URL and runs owner preflight before applying", async () => {
+  const opened: string[] = [];
+  const events: string[] = [];
+  const output = capture();
+  const database = {
+    close: async () => undefined,
+    exec: async () => undefined,
+    query: async <Row>() => ({ rows: [] as Row[] }),
+  };
+  const code = await runPostgresMigrationCommand({
+    dependencies: {
+      openDatabase: async (url) => {
+        opened.push(url);
+        return database;
+      },
+      inspectRoleContract: async () => {
+        events.push("preflight");
+        return { status: "PASS", currentUser: "maos_migration", rows: [] };
+      },
+      acquireMaintenanceLock: async () => {
+        events.push("lock");
+      },
+      releaseMaintenanceLock: async () => undefined,
+      loadMigrations: async () => [],
+    },
+    env: stagingEnv,
+    ...output,
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(opened, [stagingEnv.MAOS_DATABASE_MIGRATION_URL]);
+  assert.deepEqual(events, ["preflight", "lock"]);
 });
 
 function capture() {
@@ -97,7 +133,7 @@ test("a migration cannot start while the shared maintenance lock is held", async
   );
 });
 
-test("rejects a missing DATABASE_URL before opening a connection", async () => {
+test("rejects a missing migration URL before opening a connection", async () => {
   const output = capture();
   let opened = false;
   const exitCode = await runPostgresMigrationCommand({
@@ -107,7 +143,7 @@ test("rejects a missing DATABASE_URL before opening a connection", async () => {
         throw new Error("must not connect");
       },
     },
-    env: { ...stagingEnv, DATABASE_URL: undefined },
+    env: { ...stagingEnv, MAOS_DATABASE_MIGRATION_URL: undefined },
     ...output,
   });
 
@@ -115,11 +151,11 @@ test("rejects a missing DATABASE_URL before opening a connection", async () => {
   assert.equal(opened, false);
   assert.deepEqual(
     output.stderr.map((line) => JSON.parse(line)),
-    [{ code: "DATABASE_URL_REQUIRED", status: "FAILED" }],
+    [{ code: "DATABASE_ROLE_CONFIG_INVALID", status: "FAILED" }],
   );
 });
 
-test("rejects malformed and non-PostgreSQL URLs before opening", async () => {
+test("rejects malformed and non-PostgreSQL migration URLs before opening", async () => {
   for (const databaseUrl of ["not-a-url", "mysql://localhost/maos"]) {
     const output = capture();
     let opened = false;
@@ -130,7 +166,7 @@ test("rejects malformed and non-PostgreSQL URLs before opening", async () => {
           throw new Error("must not connect");
         },
       },
-      env: { ...stagingEnv, DATABASE_URL: databaseUrl },
+      env: { ...stagingEnv, MAOS_DATABASE_MIGRATION_URL: databaseUrl },
       ...output,
     });
 
@@ -138,7 +174,7 @@ test("rejects malformed and non-PostgreSQL URLs before opening", async () => {
     assert.equal(opened, false);
     assert.deepEqual(
       output.stderr.map((line) => JSON.parse(line)),
-      [{ code: "DATABASE_URL_INVALID", status: "FAILED" }],
+      [{ code: "DATABASE_ROLE_CONFIG_INVALID", status: "FAILED" }],
     );
   }
 });
@@ -218,7 +254,7 @@ test("requires an exact staging migration target before opening", async () => {
   }
 });
 
-test("applies migrations 0001 through 0019 and skips all 19 on replay", async (t) => {
+test("applies migrations 0001 through 0031 and skips all 31 on replay", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
   let closeCount = 0;
@@ -237,14 +273,53 @@ test("applies migrations 0001 through 0019 and skips all 19 on replay", async (t
     0,
   );
   const firstRecords = first.stdout.map((line) => JSON.parse(line));
-  assert.equal(firstRecords.length, 20);
+  assert.equal(firstRecords.length, 32);
   assert.equal(firstRecords[0].migration_id, "0001_canonical_schemas");
   assert.equal(firstRecords[18].migration_id, "0019_staging_session_ingress");
-  assert.ok(
-    firstRecords.slice(0, 19).every(({ status }) => status === "APPLIED"),
+  assert.equal(
+    firstRecords[19].migration_id,
+    "0020_phase14_runtime_foundation",
   );
-  assert.deepEqual(firstRecords[19], {
-    applied: 19,
+  assert.equal(
+    firstRecords[20].migration_id,
+    "0021_command_clarification_receipts",
+  );
+  assert.equal(
+    firstRecords[21].migration_id,
+    "0022_phase14_routing_policy_versions",
+  );
+  assert.equal(firstRecords[22].migration_id, "0023_human_approval_runtime");
+  assert.equal(firstRecords[23].migration_id, "0024_executor_routing_policy");
+  assert.equal(firstRecords[24].migration_id, "0025_verification_runtime");
+  assert.equal(
+    firstRecords[25].migration_id,
+    "0026_phase14_evidence_audit_runtime",
+  );
+  assert.equal(
+    firstRecords[26].migration_id,
+    "0027_phase14l_canonical_alignment",
+  );
+  assert.equal(
+    firstRecords[27].migration_id,
+    "0028_phase14m_security_kill_switch",
+  );
+  assert.equal(
+    firstRecords[28].migration_id,
+    "0029_phase15b_ai_provider_model_capability_registry",
+  );
+  assert.equal(
+    firstRecords[29].migration_id,
+    "0030_phase15b_r0_durable_assignment_authority",
+  );
+  assert.equal(
+    firstRecords[30].migration_id,
+    "0031_phase15c_classification_domain_routing",
+  );
+  assert.ok(
+    firstRecords.slice(0, 31).every(({ status }) => status === "APPLIED"),
+  );
+  assert.deepEqual(firstRecords[31], {
+    applied: 31,
     skipped: 0,
     status: "SUCCEEDED",
   });
@@ -260,11 +335,11 @@ test("applies migrations 0001 through 0019 and skips all 19 on replay", async (t
   );
   const replayRecords = replay.stdout.map((line) => JSON.parse(line));
   assert.ok(
-    replayRecords.slice(0, 19).every(({ status }) => status === "SKIPPED"),
+    replayRecords.slice(0, 31).every(({ status }) => status === "SKIPPED"),
   );
-  assert.deepEqual(replayRecords[19], {
+  assert.deepEqual(replayRecords[31], {
     applied: 0,
-    skipped: 19,
+    skipped: 31,
     status: "SUCCEEDED",
   });
   assert.equal(closeCount, 2);

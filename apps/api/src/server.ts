@@ -6,9 +6,22 @@ import {
 } from "@maos/config";
 import {
   openPostgresDatabase,
+  PostgresCommandAuditRepository,
+  PostgresCommandClarificationRepository,
+  PostgresCommandEnvelopeRepository,
+  PostgresHumanApprovalRuntime,
+  PostgresExecutorRoutingRuntime,
+  PostgresMaos019RunnerIntegration,
+  PostgresPhase14ProvenanceRepository,
+  PostgresPlannerReviewerRoutingRuntime,
+  PostgresVerificationRoutingRuntime,
+  Maos019DispatchDeniedError,
   PostgresSessionAuditRepository,
   PostgresCoreBootstrapRepository,
   PostgresSessionRepository,
+  PostgresSecurityControlPropagation,
+  PostgresSecurityControlEvaluator,
+  PostgresSecurityControlRuntime,
 } from "@maos/database";
 import { createLogger } from "@maos/logging";
 import { ControlPlaneRegistry } from "@maos/module-control-plane";
@@ -54,6 +67,8 @@ import {
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
 import { createAlertEmailApiRuntime } from "./alert-email-runtime.js";
+import { composeAiRegistryRoutes } from "./ai-registry-server-composition.js";
+import { composeClassificationRoutes } from "./classification-server-composition.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
@@ -67,6 +82,15 @@ import {
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createCoreBootstrapRoutes } from "./core-bootstrap-routes.js";
+import { createCommandIntakeRoutes } from "./command-intake-routes.js";
+import { createPhase14PortalRoutes } from "./phase14-portal-routes.js";
+import { createPhase14RuntimeRoutes } from "./phase14-runtime-routes.js";
+import { createSecurityControlRoutes } from "./security-control-routes.js";
+import { Phase14RuntimeComposition } from "./phase14-runtime-composition.js";
+import {
+  HttpMaos019ExecutionPort,
+  loadStagingRunnerControlConfig,
+} from "./maos019-http-execution-port.js";
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
 import { createObservabilityRoutes } from "./observability-routes.js";
@@ -114,6 +138,118 @@ const stagingCoreBootstrapRepository =
   stagingCoreBootstrapConfig.enabled && stagingDatabase
     ? new PostgresCoreBootstrapRepository(stagingDatabase)
     : undefined;
+const stagingCommandProjectId =
+  process.env.MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID;
+const stagingCommandAuditDatabase =
+  stagingSessionConfig.enabled && stagingCommandProjectId
+    ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+    : undefined;
+const stagingCommandRuntime =
+  stagingSessionConfig.enabled &&
+  stagingDatabase &&
+  stagingCommandAuditDatabase &&
+  stagingCommandProjectId &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    stagingCommandProjectId,
+  )
+    ? {
+        audits: new PostgresCommandAuditRepository(stagingCommandAuditDatabase),
+        clarifications: new PostgresCommandClarificationRepository(
+          stagingDatabase,
+        ),
+        commands: new PostgresCommandEnvelopeRepository(stagingDatabase),
+        projectId: stagingCommandProjectId,
+      }
+    : undefined;
+const stagingRunnerControlConfig = loadStagingRunnerControlConfig(process.env);
+const stagingSecurityOwnerActorId =
+  process.env.MAOS_STAGING_SECURITY_OWNER_ACTOR_ID;
+const stagingPhase14Runtime = stagingCommandRuntime
+  ? (() => {
+      const plannerReviewer = new PostgresPlannerReviewerRoutingRuntime(
+        stagingDatabase!,
+      );
+      const approvals = new PostgresHumanApprovalRuntime(stagingDatabase!);
+      const executor = new PostgresExecutorRoutingRuntime(stagingDatabase!);
+      const runnerPort = stagingRunnerControlConfig
+        ? new HttpMaos019ExecutionPort(stagingRunnerControlConfig)
+        : {
+            execute: async (): Promise<never> => {
+              throw new Maos019DispatchDeniedError(
+                "RUNNER_CONTROL_PORT_UNAVAILABLE",
+              );
+            },
+            cancelExecution: async (): Promise<never> => {
+              throw new Maos019DispatchDeniedError(
+                "RUNNER_CONTROL_PORT_UNAVAILABLE",
+              );
+            },
+          };
+      const runner = new PostgresMaos019RunnerIntegration(
+        stagingDatabase!,
+        runnerPort,
+        executor,
+      );
+      const provenance = new PostgresPhase14ProvenanceRepository(
+        stagingDatabase!,
+      );
+      const security = new PostgresSecurityControlRuntime(stagingDatabase!);
+      const securityEvaluator = new PostgresSecurityControlEvaluator(
+        stagingDatabase!,
+      );
+      const securityPropagation = new PostgresSecurityControlPropagation(
+        stagingDatabase!,
+        {
+          requestCancellation: async (target) => {
+            if (target.targetType === "RUN") {
+              await stagingDatabase!.query(
+                `UPDATE execution.runs
+                    SET status='CANCELLED', cancellation_reason='SECURITY_CONTROL_ACTIVE',
+                        completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP),
+                        version=version+1
+                  WHERE id=$1 AND status IN ('REQUESTED','RUNNING')`,
+                [target.targetId],
+              );
+            } else if (target.targetType === "TOOL_CALL") {
+              await stagingDatabase!.query(
+                `UPDATE execution.tool_calls
+                    SET status='CANCELLED', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP),
+                        version=version+1
+                  WHERE id=$1 AND status IN ('REQUESTED','AUTHORIZED','EXECUTING')`,
+                [target.targetId],
+              );
+            } else if (target.targetType === "WORKFLOW") {
+              await stagingDatabase!.query(
+                `UPDATE work.workflow_instances
+                    SET status='CANCELLED', completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP),
+                        version=version+1, updated_at=CURRENT_TIMESTAMP
+                  WHERE id=$1 AND status NOT IN ('COMPLETED','FAILED','CANCELLED')`,
+                [target.targetId],
+              );
+            }
+          },
+        },
+      );
+      const composition = new Phase14RuntimeComposition({
+        approvals,
+        commands: stagingCommandRuntime.commands,
+        executor,
+        plannerReviewer,
+        provenance,
+        runner,
+        verification: new PostgresVerificationRoutingRuntime(stagingDatabase!),
+      });
+      return {
+        approvals,
+        composition,
+        provenance,
+        runner,
+        security,
+        securityEvaluator,
+        securityPropagation,
+      };
+    })()
+  : undefined;
 const baseAuthenticate = createStagingCoreBootstrapAuthRouter({
   bootstrap: coreBootstrapAuthenticate,
   fallback: operationsAuthenticate,
@@ -708,6 +844,25 @@ controlPlane.registerSystem({
 });
 const routes = [
   ...alertEmailRuntime.routes,
+  ...composeAiRegistryRoutes(stagingDatabase, {
+    environment: config.environment,
+    scope: "project-maos",
+  }),
+  ...(stagingCoreBootstrapConfig.enabled && stagingCommandRuntime
+    ? composeClassificationRoutes(stagingDatabase, {
+        environment: config.environment,
+        scope: "project-maos",
+        requestContext: {
+          organizationId: stagingCoreBootstrapConfig.manifest.organizationId,
+          projectId: stagingCommandRuntime.projectId,
+          companyScopeRef: "company-maos",
+          teamScopeRef: "team-development",
+          projectScopeRef: "project-maos",
+          systemScopeRef: null,
+          environment: "STAGING",
+        },
+      })
+    : []),
   ...(stagingCoreBootstrapConfig.enabled && stagingCoreBootstrapRepository
     ? createCoreBootstrapRoutes(
         stagingCoreBootstrapRepository,
@@ -735,6 +890,62 @@ const routes = [
             })
           : []),
       ]
+    : []),
+  ...(stagingCommandRuntime
+    ? createCommandIntakeRoutes(
+        stagingCommandRuntime.commands,
+        stagingCommandRuntime.clarifications,
+        stagingCommandRuntime.audits,
+        {
+          companyScopeRef: "company-maos",
+          environment: "staging",
+          policyRef: "policy://phase14/command-intake",
+          policyVersion: "1",
+          projectId: stagingCommandRuntime.projectId,
+          projectScopeRef: "project-maos",
+          teamScopeRef: "team-development",
+        },
+      )
+    : []),
+  ...(stagingCommandRuntime && stagingPhase14Runtime
+    ? createPhase14PortalRoutes(
+        {
+          approvals: stagingPhase14Runtime.approvals,
+          controls: stagingPhase14Runtime.runner,
+          provenance: stagingPhase14Runtime.provenance,
+          security: stagingPhase14Runtime.securityEvaluator,
+        },
+        {
+          companyScopeRef: "company-maos",
+          environment: "staging",
+          projectId: stagingCommandRuntime.projectId,
+          projectScopeRef: "project-maos",
+          teamScopeRef: "team-development",
+        },
+      )
+    : []),
+  ...(stagingCommandRuntime && stagingPhase14Runtime
+    ? createPhase14RuntimeRoutes(stagingPhase14Runtime.composition, {
+        environment: "staging",
+        projectId: stagingCommandRuntime.projectId,
+        projectScopeRef: "project-maos",
+      })
+    : []),
+  ...(stagingCommandRuntime &&
+  stagingPhase14Runtime &&
+  stagingSecurityOwnerActorId &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    stagingSecurityOwnerActorId,
+  )
+    ? createSecurityControlRoutes(
+        stagingPhase14Runtime.security,
+        stagingPhase14Runtime.securityPropagation,
+        {
+          environment: "staging",
+          ownerActorId: stagingSecurityOwnerActorId,
+          projectId: stagingCommandRuntime.projectId,
+        },
+      )
     : []),
   ...createOptimizationRoutes(optimization, {
     environment: config.environment,
@@ -824,6 +1035,9 @@ const shutdown = (): void => {
       ...(stagingDatabase ? [stagingDatabase.close()] : []),
       ...(stagingSessionAuditDatabase
         ? [stagingSessionAuditDatabase.close()]
+        : []),
+      ...(stagingCommandAuditDatabase
+        ? [stagingCommandAuditDatabase.close()]
         : []),
     ]);
   });

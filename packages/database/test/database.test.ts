@@ -39,6 +39,18 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0017_optimization_learning_foundation",
       "0018_alert_email_delivery",
       "0019_staging_session_ingress",
+      "0020_phase14_runtime_foundation",
+      "0021_command_clarification_receipts",
+      "0022_phase14_routing_policy_versions",
+      "0023_human_approval_runtime",
+      "0024_executor_routing_policy",
+      "0025_verification_runtime",
+      "0026_phase14_evidence_audit_runtime",
+      "0027_phase14l_canonical_alignment",
+      "0028_phase14m_security_kill_switch",
+      "0029_phase15b_ai_provider_model_capability_registry",
+      "0030_phase15b_r0_durable_assignment_authority",
+      "0031_phase15c_classification_domain_routing",
     ],
     skipped: [],
   });
@@ -85,23 +97,39 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
     [
       "core.departments",
       "core.organizations",
+      "core.portal_bindings",
       "core.project_members",
       "core.project_system_links",
       "core.projects",
       "core.schema_migrations",
       "governance.approvals",
       "governance.authority_rules",
+      "governance.governed_artifact_refs",
+      "governance.human_approval_decisions",
+      "governance.human_approval_requests",
       "governance.learning_candidate_decisions",
       "governance.learning_candidates",
       "governance.optimization_evaluations",
+      "governance.request_classification_versions",
       "governance.reviews",
+      "governance.routing_envelopes",
+      "governance.routing_policy_versions",
+      "governance.security_cancellations",
+      "governance.security_control_transitions",
+      "governance.security_controls",
       "governance.tool_permissions",
+      "governance.verification_handoff_artifacts",
+      "governance.verification_handoffs",
       "governance.verified_result_references",
       "identity.assignment_permissions",
       "identity.human_project_assignments",
       "identity.humans",
       "identity.session_revocations",
       "identity.sessions",
+      "work.command_clarification_receipts",
+      "work.command_envelope_versions",
+      "work.command_envelopes",
+      "work.requests",
       "work.task_assignments",
       "work.task_dependencies",
       "work.tasks",
@@ -110,6 +138,135 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "work.workflow_step_instances",
       "work.workflow_versions",
     ],
+  );
+});
+
+test("initializes the Phase 14 runtime foundation without secret-bearing storage", async (t) => {
+  const database = new PGlite();
+  t.after(() => database.close());
+
+  const result = await applyMigrations(
+    database,
+    await loadMigrations(migrationsDirectory),
+  );
+  assert.ok(result.applied.includes("0020_phase14_runtime_foundation"));
+
+  const tables = await database.query<{ qualified_name: string }>(`
+    SELECT table_schema || '.' || table_name AS qualified_name
+    FROM information_schema.tables
+    WHERE (table_schema, table_name) IN (
+      ('work', 'command_envelopes'),
+      ('work', 'command_envelope_versions'),
+      ('governance', 'routing_envelopes'),
+      ('governance', 'verification_handoffs'),
+      ('governance', 'verification_handoff_artifacts'),
+      ('governance', 'governed_artifact_refs'),
+      ('core', 'portal_bindings')
+    )
+    ORDER BY qualified_name
+  `);
+  assert.deepEqual(
+    tables.rows.map(({ qualified_name }) => qualified_name),
+    [
+      "core.portal_bindings",
+      "governance.governed_artifact_refs",
+      "governance.routing_envelopes",
+      "governance.verification_handoff_artifacts",
+      "governance.verification_handoffs",
+      "work.command_envelope_versions",
+      "work.command_envelopes",
+    ],
+  );
+
+  const indexes = await database.query<{ indexname: string }>(`
+    SELECT indexname
+    FROM pg_indexes
+    WHERE indexname IN (
+      'command_envelopes_project_correlation_idx',
+      'routing_envelopes_command_kind_idx',
+      'governed_artifact_refs_command_kind_idx',
+      'verification_handoffs_run_idx',
+      'portal_bindings_project_kind_idx'
+    )
+    ORDER BY indexname
+  `);
+  assert.deepEqual(
+    indexes.rows.map(({ indexname }) => indexname),
+    [
+      "command_envelopes_project_correlation_idx",
+      "governed_artifact_refs_command_kind_idx",
+      "portal_bindings_project_kind_idx",
+      "routing_envelopes_command_kind_idx",
+      "verification_handoffs_run_idx",
+    ],
+  );
+
+  const prohibitedColumns = await database.query<{
+    column_name: string;
+    table_name: string;
+  }>(`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema IN ('core', 'work', 'governance')
+      AND table_name IN (
+        'command_envelopes', 'command_envelope_versions', 'routing_envelopes',
+        'verification_handoffs', 'verification_handoff_artifacts',
+        'governed_artifact_refs', 'portal_bindings'
+      )
+      AND column_name ~ '(secret|credential|bearer|cookie|csrf|api_key|raw_message)'
+    ORDER BY table_name, column_name
+  `);
+  assert.deepEqual(prohibitedColumns.rows, []);
+
+  await database.query(`
+    INSERT INTO core.organizations (id, name, slug)
+    VALUES ('00000000-0000-4000-8000-000000014000', 'Phase 14 Org', 'phase-14-org')
+  `);
+  await database.query(`
+    INSERT INTO core.departments (id, organization_id, name)
+    VALUES (
+      '00000000-0000-4000-8000-000000014001',
+      '00000000-0000-4000-8000-000000014000',
+      'Phase 14 Team'
+    )
+  `);
+  await database.query(`
+    INSERT INTO core.projects (id, organization_id, department_id, name)
+    VALUES (
+      '00000000-0000-4000-8000-000000014002',
+      '00000000-0000-4000-8000-000000014000',
+      '00000000-0000-4000-8000-000000014001',
+      'Phase 14 Project'
+    )
+  `);
+  await database.query(`
+    INSERT INTO identity.humans (id, organization_id, display_name)
+    VALUES (
+      '00000000-0000-4000-8000-000000014003',
+      '00000000-0000-4000-8000-000000014000',
+      'Phase 14 Owner'
+    )
+  `);
+
+  await assert.rejects(
+    database.query(`
+      INSERT INTO work.command_envelopes (
+        id, project_id, human_actor_id, source_message_ref,
+        source_message_hash, company_scope_ref, project_scope_ref, environment,
+        normalized_intent, requested_outcome, command_classification,
+        risk_class, policy_ref, policy_version, lifecycle_state,
+        request_fingerprint, idempotency_key, correlation_id
+      ) VALUES (
+        '00000000-0000-4000-8000-000000014001',
+        '00000000-0000-4000-8000-000000014002',
+        '00000000-0000-4000-8000-000000014003',
+        'message://phase14/red', 'sha256:${"a".repeat(64)}',
+        'company-maos', 'project-maos', 'STAGING', 'observe', 'observe',
+        'UNSAFE_CLASS', 'R0', 'policy://phase14', '1', 'RECEIVED',
+        'sha256:${"b".repeat(64)}', 'phase14-red', 'phase14-red'
+      )
+    `),
+    /(check constraint|foreign key|does not exist)/i,
   );
 });
 
@@ -1131,7 +1288,7 @@ test("creates constrained durable staging Session and assignment persistence", a
   );
   for (const invalidPermission of [
     { environment: "production", risk: "R2" },
-    { environment: "staging", risk: "R1" },
+    { environment: "staging", risk: "R3" },
   ]) {
     await assert.rejects(
       () =>
@@ -1147,6 +1304,35 @@ test("creates constrained durable staging Session and assignment persistence", a
       /check constraint/i,
     );
   }
+  await database.exec(`
+    INSERT INTO identity.assignment_permissions (
+      assignment_id, action, resource, environment, risk, effect
+    ) VALUES (
+      '00000000-0000-4000-8000-000000001909',
+      'READ', 'SYSTEM', 'staging', 'R0', 'ALLOW'
+    )
+  `);
+  const durableReadAuthority = await database.query<{
+    action: string;
+    effect: string;
+    environment: string;
+    resource: string;
+    risk: string;
+  }>(`
+    SELECT action, resource, environment, risk, effect
+    FROM identity.assignment_permissions
+    WHERE assignment_id = '00000000-0000-4000-8000-000000001909'
+      AND risk = 'R0'
+  `);
+  assert.deepEqual(durableReadAuthority.rows, [
+    {
+      action: "READ",
+      effect: "ALLOW",
+      environment: "staging",
+      resource: "SYSTEM",
+      risk: "R0",
+    },
+  ]);
   await assert.rejects(
     () =>
       database.exec(`
@@ -1266,6 +1452,18 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0017_optimization_learning_foundation",
       "0018_alert_email_delivery",
       "0019_staging_session_ingress",
+      "0020_phase14_runtime_foundation",
+      "0021_command_clarification_receipts",
+      "0022_phase14_routing_policy_versions",
+      "0023_human_approval_runtime",
+      "0024_executor_routing_policy",
+      "0025_verification_runtime",
+      "0026_phase14_evidence_audit_runtime",
+      "0027_phase14l_canonical_alignment",
+      "0028_phase14m_security_kill_switch",
+      "0029_phase15b_ai_provider_model_capability_registry",
+      "0030_phase15b_r0_durable_assignment_authority",
+      "0031_phase15c_classification_domain_routing",
     ],
   });
 
@@ -1283,8 +1481,11 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 19);
-  assert.equal(version.latest_id, "0019_staging_session_ingress");
+  assert.equal(version.applied_count, 31);
+  assert.equal(
+    version.latest_id,
+    "0031_phase15c_classification_domain_routing",
+  );
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

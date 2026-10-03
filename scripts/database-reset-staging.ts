@@ -124,6 +124,66 @@ export const RESET_MIGRATION_MANIFEST = Object.freeze(
       "f2a8c8cd5abd48bae8f0ce51676b8b01f234ed520f66429393d2fc5070ae9626",
       "2a07345ecfc33adde97bf58d208a57b971be780d7e6c0f841589f1ef5f818b68",
     ],
+    [
+      "0020_phase14_runtime_foundation",
+      "c982e3d6bdc60833b1ef2feaf63ea5f2b6331ab961a81ec32262b2e48bbd3232",
+      "0db32a9fcd0a046780fe4b8ce027522c2e650542ae86cb03d0b95577eb5b4419",
+    ],
+    [
+      "0021_command_clarification_receipts",
+      "a9f95a4d107415f585377654bddd05564aba38644b14929ffd7594f862146b81",
+      "a5c2d9940941f9fa8d17c873b37dcc025e85b111973f4310b8004a329cb93853",
+    ],
+    [
+      "0022_phase14_routing_policy_versions",
+      "895148f540dbffd7e0f9b6dfb548fe19d0349352ac20ce157505e026c20b0016",
+      "98d2c0e80156ee36c63b889e86a6b8b5643586e43306ba7dcf1b34e5ca0243df",
+    ],
+    [
+      "0023_human_approval_runtime",
+      "9c785c331077b8a8a373fe5812bea070d57a61ec005ed3f6f23baf05def26666",
+      "9fa79c693af338de8cb434cd391c918955f9095a461f9b010af05e2345e0b3f2",
+    ],
+    [
+      "0024_executor_routing_policy",
+      "1bd5deec64aedabc70cc5a2f0221fe2ebdc74637879e92907c68ab11327b91f8",
+      "eeaaaa1351d616073e245e2a6997d41b73733d042da017a57a411bd882918548",
+    ],
+    [
+      "0025_verification_runtime",
+      "72c0601cb54332001d77a9000c74a1aa166976392d75f33ce0f156748bcfd9e2",
+      "735061bdcf402a07c323b3a158e8df70bc148ecf33b86fc25a07ad15456b5f4f",
+    ],
+    [
+      "0026_phase14_evidence_audit_runtime",
+      "e2eb6a0b68ca969abe9508259bf5968a54a3a7adac9de4511acda6654882fac4",
+      "ebcd3cf0b0894386235b2c03bc125e085a34489357705207ad13f5e6047fce95",
+    ],
+    [
+      "0027_phase14l_canonical_alignment",
+      "524fa4eba6e78f97e6f987bf3e8b3e92e2965bae4450f5559577866984a7be42",
+      "5d9ef97c7c1467fa4744627637943ea68f7670e837332a1f0dd6ca697df2c4c2",
+    ],
+    [
+      "0028_phase14m_security_kill_switch",
+      "37d4ef844494762dae816e727b712325a7ae8bbb85b3dcf6bc3fe7a5da829e50",
+      "face5b9ce257aea291e4c9c7ee494a984c1726f25ef34032e1652cfc30d2c7d0",
+    ],
+    [
+      "0029_phase15b_ai_provider_model_capability_registry",
+      "916c4cb600bdb36e41d93192374186e9364ad643d9fb1efbd839cecd68b82ad7",
+      "11fe4d57619b36cf40f9f277895a996cb7d05b23f20f76accfbfbd4d76a0f617",
+    ],
+    [
+      "0030_phase15b_r0_durable_assignment_authority",
+      "f1445748f0b55731013711c6606a78d275f8f70e02114306ce33b19144e39e1d",
+      "c2c817aa5da31cc41a3f461bb57bc07aa91d8ddc961df2528a6aafa172cc85cb",
+    ],
+    [
+      "0031_phase15c_classification_domain_routing",
+      "bf20bb6aed84323ed4b37eb0ec19e488d8ffc99f0d88c957e30dd32f23258ee1",
+      "6cf6a4d40b9985a6b288335da321eeb9c52e16138f687f1e315e4d8a0e204e7e",
+    ],
   ].map(([id, canonicalChecksum, legacyCrlfChecksum]) => ({
     canonicalChecksum: canonicalChecksum ?? "",
     id: id ?? "",

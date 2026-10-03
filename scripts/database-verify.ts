@@ -32,6 +32,13 @@ try {
     "0017_optimization_learning_foundation",
     "0018_alert_email_delivery",
     "0019_staging_session_ingress",
+    "0020_phase14_runtime_foundation",
+    "0021_command_clarification_receipts",
+    "0022_phase14_routing_policy_versions",
+    "0023_human_approval_runtime",
+    "0024_executor_routing_policy",
+    "0025_verification_runtime",
+    "0026_phase14_evidence_audit_runtime",
   ]);
   assert.deepEqual(second.applied, []);
   assert.deepEqual(second.skipped, [
@@ -54,16 +61,23 @@ try {
     "0017_optimization_learning_foundation",
     "0018_alert_email_delivery",
     "0019_staging_session_ingress",
+    "0020_phase14_runtime_foundation",
+    "0021_command_clarification_receipts",
+    "0022_phase14_routing_policy_versions",
+    "0023_human_approval_runtime",
+    "0024_executor_routing_policy",
+    "0025_verification_runtime",
+    "0026_phase14_evidence_audit_runtime",
   ]);
 
   const migrationCount = await database.query<{ count: string }>(
     "SELECT count(*)::text AS count FROM core.schema_migrations",
   );
-  assert.equal(migrationCount.rows[0]?.count, "19");
+  assert.equal(migrationCount.rows[0]?.count, "26");
 
   console.log("Clean database initialization: PASS");
-  console.log("Database migrations applied: 19");
-  console.log("Migration repeatability: PASS (19 skipped on replay)");
+  console.log("Database migrations applied: 26");
+  console.log("Migration repeatability: PASS (26 skipped on replay)");
 } finally {
   await database.close();
 }

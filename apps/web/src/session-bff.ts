@@ -50,11 +50,14 @@ export type SessionBffRuntimeOptions = Extract<
   timeoutMs?: number;
 };
 
+export type SessionBoundCoreRead = (path: string) => Promise<Response>;
+
 type RenderControlRoom = (
   request: IncomingMessage,
   response: ServerResponse,
   identity: ControlRoomIdentity | null,
-) => void;
+  readCore?: SessionBoundCoreRead,
+) => Promise<void> | void;
 
 interface ApiEnvelope {
   data?: unknown;
@@ -437,10 +440,19 @@ async function renderAuthenticated(
       },
     );
     if (!upstream.ok) throw new Error("SESSION_CONTEXT_REJECTED");
-    render(request, response, controlRoomIdentity(await apiEnvelope(upstream)));
+    await render(
+      request,
+      response,
+      controlRoomIdentity(await apiEnvelope(upstream)),
+      (path) =>
+        coreFetch(options, path, {
+          headers: coreHeaders(request, options, reference),
+          method: "GET",
+        }),
+    );
   } catch {
     if (reference) clearSessionCookies(response);
-    render(request, response, null);
+    await render(request, response, null);
   }
 }
 

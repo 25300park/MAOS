@@ -1,12 +1,14 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { loadDatabaseConfig } from "@maos/config";
+import { loadDatabaseMigrationConfig } from "@maos/config";
 import {
   applyMigrations,
   loadMigrations,
   openPostgresDatabase,
   type Migration,
   type RuntimeDatabase,
+  inspectDatabaseRoleContract,
+  type DatabaseRolePreflightResult,
 } from "@maos/database";
 import {
   acquireDatabaseMaintenanceLock,
@@ -20,6 +22,9 @@ export interface PostgresMigrationCommandDependencies {
   loadMigrations?: (directory: string) => Promise<Migration[]>;
   openDatabase?: (connectionString: string) => Promise<RuntimeDatabase>;
   releaseMaintenanceLock?: (database: RuntimeDatabase) => Promise<void>;
+  inspectRoleContract?: (
+    database: RuntimeDatabase,
+  ) => Promise<DatabaseRolePreflightResult>;
 }
 
 export interface PostgresMigrationCommandOptions {
@@ -57,11 +62,10 @@ function databaseUrl(env: Record<string, string | undefined>): {
   error?: string;
   value?: string;
 } {
-  if (!env.DATABASE_URL) return { error: "DATABASE_URL_REQUIRED" };
   try {
-    return { value: loadDatabaseConfig(env).databaseUrl };
+    return { value: loadDatabaseMigrationConfig(env).migrationUrl };
   } catch {
-    return { error: "DATABASE_URL_INVALID" };
+    return { error: "DATABASE_ROLE_CONFIG_INVALID" };
   }
 }
 
@@ -124,6 +128,28 @@ export async function runPostgresMigrationCommand(
   let exitCode = 1;
   let maintenanceLocked = false;
   try {
+    const inspect =
+      options.dependencies?.inspectRoleContract ??
+      (options.dependencies?.openDatabase
+        ? undefined
+        : (db: RuntimeDatabase) =>
+            inspectDatabaseRoleContract(db, {
+              migrationRole: options.env.MAOS_DATABASE_MIGRATION_ROLE!,
+              runtimeRole: options.env.MAOS_DATABASE_RUNTIME_ROLE!,
+              approvedOwnerRoles: (
+                options.env.MAOS_DATABASE_APPROVED_OWNER_ROLES ?? ""
+              )
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            }));
+    if (inspect) {
+      const preflight = await inspect(database);
+      if (preflight.status !== "PASS") {
+        writeStderr(failed("DATABASE_ROLE_PREFLIGHT_FAILED"));
+        return 1;
+      }
+    }
     const acquireMaintenance =
       options.dependencies?.acquireMaintenanceLock ??
       acquireDatabaseMaintenanceLock;

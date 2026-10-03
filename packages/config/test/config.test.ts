@@ -4,6 +4,7 @@ import {
   loadAlertEmailConfig,
   loadApiConfig,
   loadDatabaseConfig,
+  loadDatabaseMigrationConfig,
   loadProductionConfig,
   loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
@@ -366,6 +367,73 @@ test("fails fast when DATABASE_URL is missing or is not PostgreSQL", () => {
   assert.throws(
     () => loadDatabaseConfig({ DATABASE_URL: "file:local.db" }),
     /PostgreSQL/,
+  );
+});
+
+test("loads distinct runtime and migration database authority", () => {
+  assert.deepEqual(
+    loadDatabaseMigrationConfig({
+      DATABASE_URL: "postgresql://runtime@localhost/maos",
+      MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+      MAOS_DATABASE_MIGRATION_URL: "postgresql://migration@localhost/maos",
+      MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+      MAOS_ENV: "staging",
+    }),
+    {
+      allowSharedLocalRole: false,
+      migrationRole: "maos_migration",
+      migrationUrl: "postgresql://migration@localhost/maos",
+      runtimeRole: "maos_runtime",
+      runtimeUrl: "postgresql://runtime@localhost/maos",
+    },
+  );
+});
+
+test("fails closed when governed environments omit or share migration authority", () => {
+  const base = {
+    DATABASE_URL: "postgresql://runtime@localhost/maos",
+    MAOS_DATABASE_MIGRATION_ROLE: "maos_migration",
+    MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+    MAOS_ENV: "staging",
+  };
+  assert.throws(
+    () => loadDatabaseMigrationConfig(base),
+    /MAOS_DATABASE_MIGRATION_URL_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseMigrationConfig({
+        ...base,
+        MAOS_DATABASE_MIGRATION_ROLE: "maos_runtime",
+        MAOS_DATABASE_MIGRATION_URL: "postgresql://runtime@localhost/maos",
+      }),
+    /DATABASE_ROLE_SEPARATION_REQUIRED/,
+  );
+});
+
+test("permits a shared local database role only with the explicit local flag", () => {
+  const local = {
+    DATABASE_URL: "postgresql://local@localhost/maos",
+    MAOS_DATABASE_MIGRATION_ROLE: "maos_local",
+    MAOS_DATABASE_RUNTIME_ROLE: "maos_local",
+    MAOS_ENV: "development",
+  };
+  assert.throws(
+    () => loadDatabaseMigrationConfig(local),
+    /MAOS_DATABASE_ALLOW_SHARED_LOCAL_ROLE_REQUIRED/,
+  );
+  assert.deepEqual(
+    loadDatabaseMigrationConfig({
+      ...local,
+      MAOS_DATABASE_ALLOW_SHARED_LOCAL_ROLE: "true",
+    }),
+    {
+      allowSharedLocalRole: true,
+      migrationRole: "maos_local",
+      migrationUrl: "postgresql://local@localhost/maos",
+      runtimeRole: "maos_local",
+      runtimeUrl: "postgresql://local@localhost/maos",
+    },
   );
 });
 

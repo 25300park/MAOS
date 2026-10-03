@@ -1,5 +1,18 @@
 import { CONTROL_ROOM_CSS } from "./styles.js";
 import {
+  projectAiRegistryPortal,
+  renderAiRegistryPortal,
+  type AiRegistryPortalView,
+} from "./ai-registry.js";
+import {
+  renderClassificationPortal,
+  type ClassificationPortalView,
+} from "./classification.js";
+import {
+  renderPhase14Portal,
+  type Phase14PortalView,
+} from "./phase14-portal.js";
+import {
   renderDevelopmentWorkspace,
   type DevelopmentWorkspaceState,
   type Phase1VerificationSnapshot,
@@ -246,6 +259,8 @@ export interface OptimizationView {
 }
 
 export interface ControlRoomRenderInput {
+  ai_registry?: AiRegistryPortalView | undefined;
+  classification?: ClassificationPortalView | undefined;
   ai_mls?: AiMlsView | undefined;
   crm?: CrmView | undefined;
   context?: {
@@ -266,6 +281,7 @@ export interface ControlRoomRenderInput {
   optimization?: OptimizationView | undefined;
   marketing?: MarketingView | undefined;
   path: string;
+  phase14_portal?: Phase14PortalView | undefined;
   rbs_admin?: RbsAdminView | undefined;
   state?: ViewState;
   supplemental?: Record<string, unknown>;
@@ -640,7 +656,7 @@ function systemsPage(
   rbsAdmin?: RbsAdminView,
 ): string {
   const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
-  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="panel-head"><h2>AI systems</h2><span class="permission-note">SYSTEM:READ · read-only</span></div><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Provider, model, host, capability, compatibility, and domain restrictions.</p></div></section>${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
 }
 
 function rbsAdminPanel(view?: RbsAdminView): string {
@@ -784,6 +800,8 @@ function optimizationPage(view?: OptimizationView): string {
 }
 
 function routeContent(input: ControlRoomRenderInput): string {
+  if (input.path.startsWith("/development/phase14"))
+    return renderPhase14Portal(input.identity!, input.phase14_portal);
   const path = input.path === "/" ? "/today" : input.path;
   if (path === "/development" || path.startsWith("/development/"))
     return `${renderDevelopmentWorkspace({
@@ -807,6 +825,12 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/alerts") return alertsPage(input.supplemental);
   if (path === "/operations") return operationsPage(input.operations);
   if (path === "/optimization") return optimizationPage(input.optimization);
+  if (path === "/systems/ai-registry")
+    return renderAiRegistryPortal(
+      input.ai_registry ?? projectAiRegistryPortal({}),
+    );
+  if (path === "/systems/classifications" && input.classification)
+    return renderClassificationPortal(input.classification);
   if (path === "/systems")
     return systemsPage(
       input.control_plane,
