@@ -7,6 +7,28 @@
 - Scope: database-role governance and verification design only
 - Implementation, migration 0031, role provisioning, ACL mutation, deployment, Staging, and Production are not authorized by this document.
 
+### 1.1 R2 operation-aware authority amendment
+
+This amendment is authoritative over conflicting owner-only language below. Migration 0031 requires ownership only for `ai.domain_execution_constraints`; every other existing object is classified by the exact PostgreSQL operation actually performed.
+
+The governed migration authority is exactly:
+
+- owner: `ai.domain_execution_constraints`;
+- schema: `USAGE, CREATE` on `work`, `governance`, and `ai`; `USAGE` only on `core`;
+- migration registry: `SELECT, INSERT` on `core.schema_migrations`;
+- foreign-key construction: `REFERENCES` on `core.organizations`, `core.projects`, and `work.tasks`;
+- no `GRANT OPTION`, database `CREATE`, or `core` schema `CREATE`.
+
+The principal must also be distinct from `APPLICATION_RUNTIME`, have no runtime/bootstrap/admin membership, and have `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOREPLICATION`, and `NOBYPASSRLS`. Preflight classifies rows as `OWNER_REQUIRED`, `SCHEMA_PRIVILEGE_REQUIRED`, `TABLE_PRIVILEGE_REQUIRED`, `REFERENCES_REQUIRED`, or `NO_OPERATION`; missing or ambiguous authority fails closed and is never repaired automatically.
+
+Governed Staging/Production migration uses an explicit existing-registry mode. It performs no database/schema/table bootstrap, verifies that `core.schema_migrations` already exists with the canonical three-column/primary-key shape, and then uses only its approved `SELECT` and `INSERT` privileges. Missing `core`, missing registry, or incompatible registry shape fails before migration application. The existing ensure/create behavior remains only for explicitly authorized fresh/local initialization.
+
+Migration 0031 performs no operation on `ai.role_compatibilities`, the two existing Development guard functions/triggers, or existing sequences; those rows are `NO_OPERATION`, not ownership requirements. Existing logical behavior remains protected by regression tests.
+
+### 1.2 Post-migration ACL authority remains separate
+
+`MIGRATION_OWNER` cannot execute the complete post-migration runtime ACL transaction without prohibited grant authority on schemas/objects it does not own. R2 therefore does not add `GRANT OPTION` and does not introduce a privileged mechanism. The recommended boundary is a separately approved, one-time provider/bootstrap administrator session that applies the fixed allowlisted ACL transaction, verifies effective runtime privileges and PUBLIC leakage, records redacted evidence, and disconnects immediately. An existing narrowly scoped approved administrative mechanism may be substituted only after separate review. Runtime readiness remains blocked between migration completion and successful ACL verification.
+
 This contract separates semantic database authority from environment-specific PostgreSQL role names. It establishes two semantic role classes: `MIGRATION_OWNER` and `APPLICATION_RUNTIME`. It does not introduce a Phase 15C diagnostic login.
 
 ## 2. Problem

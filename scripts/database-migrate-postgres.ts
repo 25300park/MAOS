@@ -18,6 +18,7 @@ import {
 type WriteLine = (line: string) => void;
 
 export interface PostgresMigrationCommandDependencies {
+  applyMigrations?: typeof applyMigrations;
   acquireMaintenanceLock?: (database: RuntimeDatabase) => Promise<void>;
   loadMigrations?: (directory: string) => Promise<Migration[]>;
   openDatabase?: (connectionString: string) => Promise<RuntimeDatabase>;
@@ -160,7 +161,10 @@ export async function runPostgresMigrationCommand(
       writeStderr(failed("MIGRATION_LOCK_FAILED"));
       return 1;
     }
-    const result = await applyMigrations(database, migrations);
+    const apply = options.dependencies?.applyMigrations ?? applyMigrations;
+    const result = await apply(database, migrations, {
+      registryMode: "VERIFY_EXISTING",
+    });
     const applied = new Set(result.applied);
     const skipped = new Set(result.skipped);
     for (const migration of migrations) {

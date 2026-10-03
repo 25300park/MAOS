@@ -37,6 +37,10 @@ test("opens only the migration URL and runs owner preflight before applying", as
         events.push("preflight");
         return { status: "PASS", currentUser: "maos_migration", rows: [] };
       },
+      applyMigrations: async (_database, _migrations, options) => {
+        events.push(`apply:${options?.registryMode}`);
+        return { applied: [], skipped: [] };
+      },
       acquireMaintenanceLock: async () => {
         events.push("lock");
       },
@@ -48,7 +52,7 @@ test("opens only the migration URL and runs owner preflight before applying", as
   });
   assert.equal(code, 0);
   assert.deepEqual(opened, [stagingEnv.MAOS_DATABASE_MIGRATION_URL]);
-  assert.deepEqual(events, ["preflight", "lock"]);
+  assert.deepEqual(events, ["preflight", "lock", "apply:VERIFY_EXISTING"]);
 });
 
 function capture() {
@@ -82,9 +86,14 @@ function runtimeDatabase(
   };
 }
 
+async function initializeExistingRegistry(database: PGlite): Promise<void> {
+  await applyMigrations(runtimeDatabase(database), []);
+}
+
 test("serializes real PostgreSQL migration with the shared maintenance lock", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
+  await initializeExistingRegistry(database);
   const events: string[] = [];
   const output = capture();
   const exitCode = await runPostgresMigrationCommand({
@@ -257,6 +266,7 @@ test("requires an exact staging migration target before opening", async () => {
 test("applies migrations 0001 through 0031 and skips all 31 on replay", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
+  await initializeExistingRegistry(database);
   let closeCount = 0;
   const openDatabase = async () =>
     runtimeDatabase(database, async () => {
@@ -391,6 +401,7 @@ test("replays real-entrypoint migration loading across CRLF and LF checkouts", a
     await rm(crlfDirectory, { force: true, recursive: true });
     await rm(lfDirectory, { force: true, recursive: true });
   });
+  await initializeExistingRegistry(database);
   await writeFile(
     join(crlfDirectory, "0001_line_endings.sql"),
     "CREATE TABLE public.line_endings(id text);\r\n",
@@ -440,6 +451,7 @@ test("replays real-entrypoint migration loading across CRLF and LF checkouts", a
 test("preserves prior committed migrations when a later migration fails", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
+  await initializeExistingRegistry(database);
   const migrations: Migration[] = [
     {
       checksum: "a".repeat(64),
@@ -506,6 +518,7 @@ test("closes an opened database after application failure", async () => {
   const output = capture();
   let closed = false;
   const database = new PGlite();
+  await initializeExistingRegistry(database);
   const exitCode = await runPostgresMigrationCommand({
     dependencies: {
       loadMigrations: async () => [
@@ -532,6 +545,7 @@ test("closes an opened database after application failure", async () => {
 test("emits only allowlisted migration evidence and never the URL secret", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
+  await initializeExistingRegistry(database);
   const output = capture();
   assert.equal(
     await runPostgresMigrationCommand({

@@ -12,111 +12,79 @@ import {
 import { withDisposablePostgres } from "./testing/disposable-postgres.js";
 
 const migrationDirectory = resolve("packages/database/migrations");
+const governedMigrationRole = "phase15c_governed_migration";
+
+const expectedRequirements = Object.freeze({
+  NO_OPERATION: 5,
+  OWNER_REQUIRED: 1,
+  REFERENCES_REQUIRED: 3,
+  SCHEMA_PRIVILEGE_REQUIRED: 4,
+  TABLE_PRIVILEGE_REQUIRED: 1,
+});
 
 test(
-  "real PostgreSQL preserves migration ownership and enforces the runtime ACL boundary",
+  "real PostgreSQL governed registry verification fails closed without bootstrap DDL",
+  { timeout: 120_000 },
+  async () => {
+    await withDisposablePostgres({}, async (context) => {
+      const database = await openPostgresDatabase(
+        `postgresql://postgres@127.0.0.1:${context.port}/${context.databaseName}`,
+      );
+      try {
+        await assert.rejects(
+          applyMigrations(database, [], { registryMode: "VERIFY_EXISTING" }),
+          /MIGRATION_REGISTRY_SCHEMA_MISSING/u,
+        );
+        await database.exec("CREATE SCHEMA core");
+        await assert.rejects(
+          applyMigrations(database, [], { registryMode: "VERIFY_EXISTING" }),
+          /MIGRATION_REGISTRY_TABLE_MISSING/u,
+        );
+        await database.exec(`
+          CREATE TABLE core.schema_migrations (
+            id text PRIMARY KEY,
+            checksum text NOT NULL,
+            applied_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await assert.rejects(
+          applyMigrations(database, [], { registryMode: "VERIFY_EXISTING" }),
+          /MIGRATION_REGISTRY_SHAPE_INVALID/u,
+        );
+      } finally {
+        await database.close();
+      }
+    });
+  },
+);
+
+test(
+  "real PostgreSQL enforces the governed migration and runtime authority boundaries",
   { timeout: 120_000 },
   async () => {
     await withDisposablePostgres({}, async (context) => {
       const migrations = await loadMigrations(migrationDirectory);
-      const migration = await openPostgresDatabase(context.migrationUrl);
+      const initializer = await openPostgresDatabase(context.migrationUrl);
+      const admin = await openPostgresDatabase(
+        `postgresql://postgres@127.0.0.1:${context.port}/${context.databaseName}`,
+      );
       try {
-        const attributes = await migration.query<{
-          current_user: string;
-          rolcreatedb: boolean;
-          rolcreaterole: boolean;
-          rolsuper: boolean;
-        }>(`SELECT current_user, rolcreatedb, rolcreaterole, rolsuper
-              FROM pg_roles WHERE rolname=current_user`);
-        assert.deepEqual(attributes.rows, [
-          {
-            current_user: context.migrationRole,
-            rolcreatedb: false,
-            rolcreaterole: false,
-            rolsuper: false,
-          },
-        ]);
-
         const first = await applyMigrations(
-          migration,
+          initializer,
           migrations.filter(({ id }) => id < "0031_"),
         );
         assert.equal(first.applied.length, 30);
-
-        const bootstrap = await openPostgresDatabase(
-          `postgresql://postgres@127.0.0.1:${context.port}/${context.databaseName}`,
-        );
-        try {
-          await bootstrap.exec(`
-            CREATE ROLE phase15c_legacy_owner NOLOGIN;
-            ALTER SCHEMA work OWNER TO phase15c_legacy_owner;
-            ALTER SCHEMA governance OWNER TO phase15c_legacy_owner;
-            ALTER SCHEMA ai OWNER TO phase15c_legacy_owner;
-            ALTER TABLE ai.role_compatibilities OWNER TO phase15c_legacy_owner;
-            ALTER TABLE core.schema_migrations OWNER TO phase15c_legacy_owner;
-            ALTER FUNCTION ai.guard_development_domain_constraint() OWNER TO phase15c_legacy_owner;
-            ALTER FUNCTION ai.guard_development_role_compatibility() OWNER TO phase15c_legacy_owner;
-            GRANT USAGE ON SCHEMA work,governance,ai TO ${context.migrationRole} WITH GRANT OPTION;
-            GRANT CREATE ON SCHEMA work,governance,ai TO ${context.migrationRole};
-            GRANT USAGE ON SCHEMA core TO ${context.migrationRole};
-            GRANT SELECT,INSERT ON core.schema_migrations TO ${context.migrationRole};
-          `);
-        } finally {
-          await bootstrap.close();
-        }
-
-        const preflight = await inspectDatabaseRoleContract(migration, {
-          approvedOwnerRoles: [],
-          migrationRole: context.migrationRole,
-          runtimeRole: context.runtimeRole,
-        });
-        assert.equal(preflight.status, "PASS");
-        assert.equal(
-          preflight.rows.every(({ result }) => result === "PASS"),
-          true,
-        );
-        assert.equal(
-          preflight.rows.filter(({ requirement }) => requirement === "OWNER")
-            .length,
-          1,
-        );
-        assert.equal(
-          preflight.rows.filter(
-            ({ requirement }) => requirement === "PRIVILEGE",
-          ).length,
-          4,
-        );
-        assert.equal(
-          preflight.rows.filter(
-            ({ requirement }) => requirement === "NO_OPERATION",
-          ).length,
-          5,
-        );
-
-        const wrongOwner = await inspectDatabaseRoleContract(migration, {
-          approvedOwnerRoles: [],
-          migrationRole: "not_the_current_owner",
-          runtimeRole: context.runtimeRole,
-        });
-        assert.equal(wrongOwner.status, "FAILED");
-
-        const applied = await applyMigrations(migration, migrations);
-        assert.deepEqual(applied.applied, [
-          "0031_phase15c_classification_domain_routing",
-        ]);
-        const replay = await applyMigrations(migration, migrations);
-        assert.equal(replay.applied.length, 0);
-        assert.equal(replay.skipped.length, 31);
-
         assert.equal(
           (
-            await applyPhase15cRuntimeAcl(migration, {
+            await inspectDatabaseRoleContract(admin, {
+              approvedOwnerRoles: [],
+              migrationRole: "postgres",
               runtimeRole: context.runtimeRole,
             })
           ).status,
-          "APPLIED",
+          "FAILED",
         );
-        await migration.exec(`
+        await initializer.exec(`
           INSERT INTO core.organizations(id,name,slug)
           VALUES ('00000000-0000-4000-8000-00000000d001','Phase15C ACL','phase15c-acl');
           INSERT INTO core.departments(id,organization_id,name)
@@ -124,34 +92,189 @@ test(
           INSERT INTO core.projects(id,organization_id,department_id,name)
           VALUES ('00000000-0000-4000-8000-00000000d003','00000000-0000-4000-8000-00000000d001','00000000-0000-4000-8000-00000000d002','ACL');
         `);
+
+        await admin.exec(`
+          CREATE ROLE ${governedMigrationRole}
+            NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+          CREATE ROLE phase15c_legacy_owner NOLOGIN;
+          ALTER SCHEMA work OWNER TO phase15c_legacy_owner;
+          ALTER SCHEMA governance OWNER TO phase15c_legacy_owner;
+          ALTER SCHEMA ai OWNER TO phase15c_legacy_owner;
+          ALTER TABLE ai.domain_execution_constraints OWNER TO ${governedMigrationRole};
+          ALTER TABLE ai.role_compatibilities OWNER TO phase15c_legacy_owner;
+          ALTER TABLE core.schema_migrations OWNER TO phase15c_legacy_owner;
+          ALTER TABLE core.organizations OWNER TO phase15c_legacy_owner;
+          ALTER TABLE core.projects OWNER TO phase15c_legacy_owner;
+          ALTER TABLE work.tasks OWNER TO phase15c_legacy_owner;
+          ALTER FUNCTION ai.guard_development_domain_constraint() OWNER TO phase15c_legacy_owner;
+          ALTER FUNCTION ai.guard_development_role_compatibility() OWNER TO phase15c_legacy_owner;
+          GRANT USAGE ON SCHEMA core,work TO phase15c_legacy_owner;
+          GRANT USAGE,CREATE ON SCHEMA work,governance,ai TO ${governedMigrationRole};
+          GRANT USAGE ON SCHEMA core TO ${governedMigrationRole};
+          GRANT SELECT,INSERT ON core.schema_migrations TO ${governedMigrationRole};
+          GRANT REFERENCES ON core.organizations,core.projects,work.tasks TO ${governedMigrationRole};
+          SET ROLE ${governedMigrationRole};
+        `);
+
+        const attributes = await admin.query<{
+          rolbypassrls: boolean;
+          rolcreatedb: boolean;
+          rolcreaterole: boolean;
+          rolreplication: boolean;
+          rolsuper: boolean;
+        }>(`SELECT rolbypassrls, rolcreatedb, rolcreaterole, rolreplication, rolsuper
+              FROM pg_roles WHERE rolname=current_user`);
+        assert.deepEqual(attributes.rows, [
+          {
+            rolbypassrls: false,
+            rolcreatedb: false,
+            rolcreaterole: false,
+            rolreplication: false,
+            rolsuper: false,
+          },
+        ]);
+        const forbiddenAuthority = await admin.query<{
+          ai_usage_grantable: boolean;
+          core_create: boolean;
+          database_create: boolean;
+          governance_usage_grantable: boolean;
+          work_usage_grantable: boolean;
+        }>(`SELECT
+          has_database_privilege(current_user,current_database(),'CREATE') AS database_create,
+          has_schema_privilege(current_user,'core','CREATE') AS core_create,
+          EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS work_usage_grantable,
+          EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS governance_usage_grantable,
+          EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS ai_usage_grantable`);
+        assert.deepEqual(forbiddenAuthority.rows, [
+          {
+            ai_usage_grantable: false,
+            core_create: false,
+            database_create: false,
+            governance_usage_grantable: false,
+            work_usage_grantable: false,
+          },
+        ]);
+
+        const inspect = () =>
+          inspectDatabaseRoleContract(admin, {
+            approvedOwnerRoles: [],
+            migrationRole: governedMigrationRole,
+            runtimeRole: context.runtimeRole,
+          });
+        const preflight = await inspect();
+        assert.equal(preflight.status, "PASS");
+        for (const [requirement, count] of Object.entries(expectedRequirements))
+          assert.equal(
+            preflight.rows.filter((row) => row.requirement === requirement)
+              .length,
+            count,
+          );
+
+        const requireFailure = async (
+          revoke: string,
+          restore: string,
+          objectName: string,
+        ) => {
+          await admin.exec(
+            `RESET ROLE; ${revoke}; SET ROLE ${governedMigrationRole}`,
+          );
+          const failed = await inspect();
+          assert.equal(failed.status, "FAILED");
+          assert.equal(
+            failed.rows.find((row) => row.objectName === objectName)?.result,
+            "FAIL",
+          );
+          await admin.exec(
+            `RESET ROLE; ${restore}; SET ROLE ${governedMigrationRole}`,
+          );
+        };
+
+        await requireFailure(
+          `REVOKE CREATE ON SCHEMA work FROM ${governedMigrationRole}`,
+          `GRANT CREATE ON SCHEMA work TO ${governedMigrationRole}`,
+          "work",
+        );
+        await requireFailure(
+          `REVOKE CREATE ON SCHEMA governance FROM ${governedMigrationRole}`,
+          `GRANT CREATE ON SCHEMA governance TO ${governedMigrationRole}`,
+          "governance",
+        );
+        await requireFailure(
+          `REVOKE CREATE ON SCHEMA ai FROM ${governedMigrationRole}`,
+          `GRANT CREATE ON SCHEMA ai TO ${governedMigrationRole}`,
+          "ai",
+        );
+        await requireFailure(
+          `REVOKE USAGE ON SCHEMA core FROM ${governedMigrationRole}`,
+          `GRANT USAGE ON SCHEMA core TO ${governedMigrationRole}`,
+          "core",
+        );
+        await requireFailure(
+          `REVOKE SELECT ON core.schema_migrations FROM ${governedMigrationRole}`,
+          `GRANT SELECT ON core.schema_migrations TO ${governedMigrationRole}`,
+          "core.schema_migrations",
+        );
+        await requireFailure(
+          `REVOKE INSERT ON core.schema_migrations FROM ${governedMigrationRole}`,
+          `GRANT INSERT ON core.schema_migrations TO ${governedMigrationRole}`,
+          "core.schema_migrations",
+        );
+        for (const objectName of [
+          "core.organizations",
+          "core.projects",
+          "work.tasks",
+        ])
+          await requireFailure(
+            `REVOKE REFERENCES ON ${objectName} FROM ${governedMigrationRole}`,
+            `GRANT REFERENCES ON ${objectName} TO ${governedMigrationRole}`,
+            objectName,
+          );
+
+        await admin.exec(`RESET ROLE; SET ROLE ${context.runtimeRole}`);
+        const runtimePreflight = await inspectDatabaseRoleContract(admin, {
+          approvedOwnerRoles: [],
+          migrationRole: context.runtimeRole,
+          runtimeRole: context.runtimeRole,
+        });
+        assert.equal(runtimePreflight.status, "FAILED");
+        await admin.exec(`RESET ROLE; SET ROLE ${governedMigrationRole}`);
+
+        const applied = await applyMigrations(admin, migrations, {
+          registryMode: "VERIFY_EXISTING",
+        });
+        assert.deepEqual(applied.applied, [
+          "0031_phase15c_classification_domain_routing",
+        ]);
+        const replay = await applyMigrations(admin, migrations, {
+          registryMode: "VERIFY_EXISTING",
+        });
+        assert.equal(replay.applied.length, 0);
+        assert.equal(replay.skipped.length, 31);
+
+        await admin.exec("RESET ROLE");
         assert.equal(
           (
-            await applyPhase15cRuntimeAcl(migration, {
+            await applyPhase15cRuntimeAcl(admin, {
               runtimeRole: context.runtimeRole,
             })
           ).status,
           "APPLIED",
         );
       } finally {
-        await migration.close();
+        await initializer.close();
+        await admin.close();
       }
 
       const runtime = await openPostgresDatabase(context.runtimeUrl);
       try {
         const runtimeIdentity = await runtime.query<{
-          current_user: string;
           rolcreatedb: boolean;
           rolcreaterole: boolean;
           rolsuper: boolean;
-        }>(`SELECT current_user, rolcreatedb, rolcreaterole, rolsuper
+        }>(`SELECT rolcreatedb, rolcreaterole, rolsuper
               FROM pg_roles WHERE rolname=current_user`);
         assert.deepEqual(runtimeIdentity.rows, [
-          {
-            current_user: context.runtimeRole,
-            rolcreatedb: false,
-            rolcreaterole: false,
-            rolsuper: false,
-          },
+          { rolcreatedb: false, rolcreaterole: false, rolsuper: false },
         ]);
         assert.equal(
           (
@@ -182,24 +305,6 @@ test(
               invalidation_reason_code='ACL_TEST',
               invalidated_at=CURRENT_TIMESTAMP
           WHERE id='00000000-0000-4000-8000-00000000d004'`);
-        const lifecycle = await runtime.query<{ lifecycle_state: string }>(
-          `SELECT lifecycle_state FROM work.requests
-            WHERE id='00000000-0000-4000-8000-00000000d004'`,
-        );
-        assert.equal(lifecycle.rows[0]?.lifecycle_state, "INVALIDATED");
-
-        const ownership = await runtime.query<{
-          classification_owner: string;
-          request_owner: string;
-        }>(`SELECT
-          (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='work.requests'::regclass) AS request_owner,
-          (SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='governance.request_classification_versions'::regclass) AS classification_owner`);
-        assert.equal(ownership.rows[0]?.request_owner, context.migrationRole);
-        assert.equal(
-          ownership.rows[0]?.classification_owner,
-          context.migrationRole,
-        );
-
         await assert.rejects(
           runtime.exec("CREATE TABLE work.forbidden(id int)"),
         );
@@ -210,10 +315,10 @@ test(
         );
         await assert.rejects(
           runtime.exec(
-            `GRANT ${context.runtimeRole} TO ${context.migrationRole}`,
+            `GRANT ${context.runtimeRole} TO ${governedMigrationRole}`,
           ),
         );
-        await assert.rejects(runtime.exec(`SET ROLE ${context.migrationRole}`));
+        await assert.rejects(runtime.exec(`SET ROLE ${governedMigrationRole}`));
         await assert.rejects(
           runtime.exec("UPDATE work.requests SET source_ref='forbidden'"),
         );

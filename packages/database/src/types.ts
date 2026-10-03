@@ -17,3 +17,9 @@ export interface MigrationResult {
   applied: string[];
   skipped: string[];
 }
+
+export type MigrationRegistryMode = "ENSURE" | "VERIFY_EXISTING";
+
+export interface ApplyMigrationsOptions {
+  readonly registryMode?: MigrationRegistryMode;
+}

@@ -28,6 +28,21 @@
 - `APPLICATION_RUNTIME` receives no DDL, ownership, grant option, privileged membership, broad update, delete, truncate, or PUBLIC-derived write authority.
 - Legacy objects use `MODEL_A_BIND_MIGRATION_OWNER_TO_EXISTING_CANONICAL_OBJECT_OWNER`; every required owner/operation/authority row must pass before migration.
 
+### Phase 15C R2 authority reconciliation
+
+This R2 amendment supersedes Task 1 language that treats ownership or grant option as a proxy for every migration operation.
+
+The final preflight matrix requires ownership only for `ai.domain_execution_constraints`; `USAGE, CREATE` on `work`, `governance`, and `ai`; `USAGE` on `core`; `SELECT, INSERT` on `core.schema_migrations`; and `REFERENCES` on `core.organizations`, `core.projects`, and `work.tasks`. It classifies untouched legacy guards, compatibility tables, triggers, and sequences as `NO_OPERATION`. It rejects superuser, `CREATEDB`, `CREATEROLE`, replication, `BYPASSRLS`, database `CREATE`, `core` `CREATE`, grant options, runtime identity collapse, and unexpected privileged memberships.
+
+`applyMigrations` has two explicit modes:
+
+1. `ENSURE` preserves the existing fresh/local bootstrap behavior.
+2. `VERIFY_EXISTING` is mandatory for the governed migration command. It performs no registry DDL and validates the existing `core.schema_migrations` schema/table/column/primary-key contract before reading or writing migration metadata.
+
+Tests must prove real PostgreSQL success without database/core `CREATE`, fail-closed missing/malformed registry behavior, each required privilege independently, no grant-option dependency, runtime migration denial, migration 0031 apply/replay, and unchanged historical checksums.
+
+The post-migration ACL step is not executable by this minimal migration principal and is not solved by adding grant option. Its execution authority is a separate governance gate. The R2 recommendation is a separately approved, ephemeral provider/bootstrap administrator execution of the fixed allowlisted ACL transaction, followed by effective-privilege/PUBLIC-leakage verification and immediate disconnect. No new privileged helper, role, membership, ownership transfer, or `SECURITY DEFINER` mechanism is authorized here.
+
 ## Review Focus
 
 - Concurrent registration or classification append for one request must converge or conflict without duplicate authority rows; covered by Tasks 1–3.

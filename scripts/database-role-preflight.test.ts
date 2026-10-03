@@ -41,9 +41,13 @@ const ownerMatrix = [
   ["SCHEMA", "work"],
   ["SCHEMA", "governance"],
   ["SCHEMA", "ai"],
+  ["SCHEMA", "core"],
   ["TABLE", "ai.domain_execution_constraints"],
   ["TABLE", "ai.role_compatibilities"],
   ["TABLE", "core.schema_migrations"],
+  ["TABLE", "core.organizations"],
+  ["TABLE", "core.projects"],
+  ["TABLE", "work.tasks"],
   ["FUNCTION", "ai.guard_development_domain_constraint"],
   ["FUNCTION", "ai.guard_development_role_compatibility"],
   [
@@ -74,7 +78,11 @@ test("accepts the operation-aware minimum authority for migration 0031", async (
             "work",
             "governance",
             "ai",
+            "core",
             "core.schema_migrations",
+            "core.organizations",
+            "core.projects",
+            "work.tasks",
           ].includes(object_name),
         })) as Row[],
       };
@@ -92,11 +100,25 @@ test("accepts the operation-aware minimum authority for migration 0031", async (
     result.rows.find(
       ({ objectName }) => objectName === "ai.domain_execution_constraints",
     )?.requirement,
-    "OWNER",
+    "OWNER_REQUIRED",
   );
   assert.equal(
-    result.rows.filter(({ requirement }) => requirement === "PRIVILEGE").length,
+    result.rows.filter(
+      ({ requirement }) => requirement === "SCHEMA_PRIVILEGE_REQUIRED",
+    ).length,
     4,
+  );
+  assert.equal(
+    result.rows.filter(
+      ({ requirement }) => requirement === "TABLE_PRIVILEGE_REQUIRED",
+    ).length,
+    1,
+  );
+  assert.equal(
+    result.rows.filter(
+      ({ requirement }) => requirement === "REFERENCES_REQUIRED",
+    ).length,
+    3,
   );
   assert.equal(
     result.rows.filter(({ requirement }) => requirement === "NO_OPERATION")
@@ -126,9 +148,15 @@ test("fails closed when an exact required privilege is absent", async () => {
                   : "legacy_owner",
               privilege_satisfied:
                 object_name !== "work" &&
-                ["governance", "ai", "core.schema_migrations"].includes(
-                  object_name,
-                ),
+                [
+                  "governance",
+                  "ai",
+                  "core",
+                  "core.schema_migrations",
+                  "core.organizations",
+                  "core.projects",
+                  "work.tasks",
+                ].includes(object_name),
             })) as Row[],
           },
   };
@@ -170,6 +198,71 @@ test("rejects a superuser migration principal before catalog inspection", async 
   assert.deepEqual(result.rows, []);
 });
 
+test("rejects a CREATEDB migration principal before catalog inspection", async () => {
+  let catalogRead = false;
+  const result = await inspectDatabaseRoleContract(
+    {
+      exec: async () => undefined,
+      query: async <Row>(sql: string) => {
+        if (!sql.includes("FROM pg_roles")) catalogRead = true;
+        return {
+          rows: [
+            {
+              current_user: "migration_owner",
+              rolbypassrls: false,
+              rolcreatedb: true,
+              rolcreaterole: false,
+              rolreplication: false,
+              rolsuper: false,
+            },
+          ] as Row[],
+        };
+      },
+    },
+    {
+      migrationRole: "migration_owner",
+      runtimeRole: "app_runtime",
+      approvedOwnerRoles: [],
+    },
+  );
+
+  assert.equal(result.status, "FAILED");
+  assert.equal(catalogRead, false);
+  assert.deepEqual(result.rows, []);
+});
+
+test("rejects migration and runtime identity collapse before catalog inspection", async () => {
+  let catalogRead = false;
+  const result = await inspectDatabaseRoleContract(
+    {
+      exec: async () => undefined,
+      query: async <Row>(sql: string) => {
+        if (!sql.includes("FROM pg_roles")) catalogRead = true;
+        return {
+          rows: [
+            {
+              current_user: "shared_role",
+              rolbypassrls: false,
+              rolcreatedb: false,
+              rolcreaterole: false,
+              rolreplication: false,
+              rolsuper: false,
+            },
+          ] as Row[],
+        };
+      },
+    },
+    {
+      migrationRole: "shared_role",
+      runtimeRole: "shared_role",
+      approvedOwnerRoles: [],
+    },
+  );
+
+  assert.equal(result.status, "FAILED");
+  assert.equal(catalogRead, false);
+  assert.deepEqual(result.rows, []);
+});
 test("fails closed when migration owner lacks approved owner-role membership", async () => {
   const database = {
     exec: async () => undefined,

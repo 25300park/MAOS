@@ -38,4 +38,10 @@ export type {
   MigrationSafetyInput,
   SchemaVersion,
 } from "./production-readiness.js";
-export type { Migration, MigrationDatabase, MigrationResult } from "./types.js";
+export type {
+  ApplyMigrationsOptions,
+  Migration,
+  MigrationDatabase,
+  MigrationRegistryMode,
+  MigrationResult,
+} from "./types.js";

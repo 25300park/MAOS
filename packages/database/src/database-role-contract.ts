@@ -5,12 +5,20 @@ export interface DatabaseRoleContractInput {
   readonly runtimeRole: string;
   readonly approvedOwnerRoles: readonly string[];
 }
+
+export type DatabaseRoleRequirement =
+  | "OWNER_REQUIRED"
+  | "SCHEMA_PRIVILEGE_REQUIRED"
+  | "TABLE_PRIVILEGE_REQUIRED"
+  | "REFERENCES_REQUIRED"
+  | "NO_OPERATION";
+
 export interface DatabaseRolePreflightRow {
   readonly objectKind: string;
   readonly objectName: string;
   readonly ownerName: string | null;
   readonly requiredOperation: string;
-  readonly requirement: "OWNER" | "PRIVILEGE" | "NO_OPERATION";
+  readonly requirement: DatabaseRoleRequirement;
   readonly authority:
     | "DIRECT_OWNER"
     | "APPROVED_OWNER_ROLE"
@@ -20,6 +28,7 @@ export interface DatabaseRolePreflightRow {
     | "UNKNOWN";
   readonly result: "PASS" | "FAIL";
 }
+
 export interface DatabaseRolePreflightResult {
   readonly status: "PASS" | "FAILED";
   readonly currentUser: string;
@@ -27,27 +36,26 @@ export interface DatabaseRolePreflightResult {
 }
 
 const fixedObjects = [
-  ["SCHEMA", "work", "CREATE_OBJECTS_AND_GRANT_RUNTIME_USAGE", "PRIVILEGE"],
-  [
-    "SCHEMA",
-    "governance",
-    "CREATE_OBJECTS_AND_GRANT_RUNTIME_USAGE",
-    "PRIVILEGE",
-  ],
-  [
-    "SCHEMA",
-    "ai",
-    "CREATE_DEPENDENT_OBJECTS_AND_GRANT_RUNTIME_USAGE",
-    "PRIVILEGE",
-  ],
+  ["SCHEMA", "work", "USAGE_CREATE", "SCHEMA_PRIVILEGE_REQUIRED"],
+  ["SCHEMA", "governance", "USAGE_CREATE", "SCHEMA_PRIVILEGE_REQUIRED"],
+  ["SCHEMA", "ai", "USAGE_CREATE", "SCHEMA_PRIVILEGE_REQUIRED"],
+  ["SCHEMA", "core", "USAGE_ONLY", "SCHEMA_PRIVILEGE_REQUIRED"],
   [
     "TABLE",
     "ai.domain_execution_constraints",
-    "ALTER_TABLE_TRIGGER_AND_UPDATE",
-    "OWNER",
+    "ALTER_TABLE_TRIGGER_UPDATE_AND_UNIQUE_INDEX",
+    "OWNER_REQUIRED",
   ],
   ["TABLE", "ai.role_compatibilities", "NONE", "NO_OPERATION"],
-  ["TABLE", "core.schema_migrations", "SELECT_INSERT", "PRIVILEGE"],
+  [
+    "TABLE",
+    "core.schema_migrations",
+    "SELECT_INSERT",
+    "TABLE_PRIVILEGE_REQUIRED",
+  ],
+  ["TABLE", "core.organizations", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "core.projects", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "work.tasks", "REFERENCES", "REFERENCES_REQUIRED"],
   [
     "FUNCTION",
     "ai.guard_development_domain_constraint",
@@ -72,29 +80,68 @@ const fixedObjects = [
     "NONE",
     "NO_OPERATION",
   ],
-] as const;
+] as const satisfies readonly (readonly [
+  string,
+  string,
+  string,
+  DatabaseRoleRequirement,
+])[];
+
+interface RoleIdentity {
+  can_create_database: boolean;
+  current_user: string;
+  rolbypassrls: boolean;
+  rolcreatedb: boolean;
+  rolcreaterole: boolean;
+  rolreplication: boolean;
+  rolsuper: boolean;
+  role_memberships: string[] | null;
+}
 
 export async function inspectDatabaseRoleContract(
   database: Pick<MigrationDatabase, "query" | "exec">,
   input: DatabaseRoleContractInput,
 ): Promise<DatabaseRolePreflightResult> {
-  const identity = await database.query<{
-    current_user: string;
-    rolsuper: boolean;
-  }>(
-    `SELECT current_user, role.rolsuper FROM pg_roles role WHERE role.rolname=current_user`,
+  const identity = await database.query<RoleIdentity>(
+    `SELECT current_user,
+       role.rolsuper,
+       role.rolcreatedb,
+       role.rolcreaterole,
+       role.rolreplication,
+       role.rolbypassrls,
+       has_database_privilege(current_user,current_database(),'CREATE') AS can_create_database,
+       ARRAY(
+         SELECT parent.rolname::text
+         FROM pg_auth_members membership
+         JOIN pg_roles parent ON parent.oid=membership.roleid
+         WHERE membership.member=role.oid
+         ORDER BY parent.rolname
+       )::text[] AS role_memberships
+     FROM pg_roles role WHERE role.rolname=current_user`,
   );
   const current = identity.rows[0];
+  const memberships = current?.role_memberships ?? [];
+  const unexpectedMembership = memberships.some(
+    (role) => !input.approvedOwnerRoles.includes(role),
+  );
   if (
     !current ||
     current.current_user !== input.migrationRole ||
-    current.rolsuper
+    input.migrationRole === input.runtimeRole ||
+    current.rolsuper ||
+    current.rolcreatedb ||
+    current.rolcreaterole ||
+    current.rolreplication ||
+    current.rolbypassrls ||
+    current.can_create_database ||
+    unexpectedMembership
   )
     return {
       status: "FAILED",
       currentUser: current?.current_user ?? "UNKNOWN",
       rows: [],
     };
+
   const catalog = await database.query<{
     object_exists?: boolean;
     object_kind: string;
@@ -107,14 +154,23 @@ export async function inspectDatabaseRoleContract(
        WHEN 'SCHEMA' THEN (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname=objects.object_name)
        WHEN 'TABLE' THEN (SELECT pg_get_userbyid(c.relowner) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND c.relname=split_part(objects.object_name,'.',2) AND c.relkind IN ('r','p'))
        WHEN 'FUNCTION' THEN (SELECT pg_get_userbyid(p.proowner) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND p.proname=split_part(objects.object_name,'.',2) LIMIT 1)
-       WHEN 'TRIGGER' THEN (SELECT pg_get_userbyid(c.relowner) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND c.relname=split_part(objects.object_name,'.',2) AND t.tgname=split_part(objects.object_name,'.',3)) END owner_name
+       WHEN 'TRIGGER' THEN (SELECT pg_get_userbyid(c.relowner) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND c.relname=split_part(objects.object_name,'.',2) AND t.tgname=split_part(objects.object_name,'.',3)) END owner_name,
+      CASE objects.object_kind
+       WHEN 'SCHEMA' THEN (SELECT n.oid FROM pg_namespace n WHERE n.nspname=objects.object_name)
+       WHEN 'TABLE' THEN (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND c.relname=split_part(objects.object_name,'.',2) AND c.relkind IN ('r','p'))
+       WHEN 'FUNCTION' THEN (SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND p.proname=split_part(objects.object_name,'.',2) LIMIT 1)
+       WHEN 'TRIGGER' THEN (SELECT c.oid FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=split_part(objects.object_name,'.',1) AND c.relname=split_part(objects.object_name,'.',2) AND t.tgname=split_part(objects.object_name,'.',3)) END object_oid
     FROM objects)
     SELECT catalog.*,(catalog.owner_name IS NOT NULL) AS object_exists,
       CASE catalog.object_name
-       WHEN 'work' THEN has_schema_privilege(current_user,'work','USAGE') AND has_schema_privilege(current_user,'work','CREATE') AND EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable)
-       WHEN 'governance' THEN has_schema_privilege(current_user,'governance','USAGE') AND has_schema_privilege(current_user,'governance','CREATE') AND EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable)
-       WHEN 'ai' THEN has_schema_privilege(current_user,'ai','USAGE') AND has_schema_privilege(current_user,'ai','CREATE') AND EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable)
-       WHEN 'core.schema_migrations' THEN has_schema_privilege(current_user,'core','USAGE') AND has_table_privilege(current_user,'core.schema_migrations','SELECT') AND has_table_privilege(current_user,'core.schema_migrations','INSERT')
+       WHEN 'work' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'governance' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'ai' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'core' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND NOT has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'core.schema_migrations' THEN has_table_privilege(current_user,catalog.object_oid,'SELECT') AND has_table_privilege(current_user,catalog.object_oid,'INSERT') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='schema_migrations' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'core.organizations' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='organizations' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'core.projects' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='projects' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'work.tasks' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND c.relname='tasks' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
        ELSE NULL END AS privilege_satisfied
     FROM catalog ORDER BY 1,2`);
   const rows: DatabaseRolePreflightRow[] = [];
@@ -124,18 +180,21 @@ export async function inspectDatabaseRoleContract(
         kind === object.object_kind && name === object.object_name,
     );
     const requiredOperation = definition?.[2] ?? "UNKNOWN";
-    const requirement = definition?.[3] ?? "OWNER";
+    const requirement = definition?.[3] ?? "OWNER_REQUIRED";
     let authority: DatabaseRolePreflightRow["authority"] = "UNKNOWN";
     const objectExists = object.object_exists ?? object.owner_name !== null;
     if (!definition || !objectExists) authority = "UNKNOWN";
     else if (object.owner_name === input.runtimeRole) authority = "DENIED";
     else if (requirement === "NO_OPERATION") authority = "NOT_REQUIRED";
-    else if (object.owner_name === input.migrationRole)
+    else if (
+      requirement === "OWNER_REQUIRED" &&
+      object.owner_name === input.migrationRole
+    )
       authority = "DIRECT_OWNER";
-    else if (requirement === "PRIVILEGE" && object.privilege_satisfied)
+    else if (requirement !== "OWNER_REQUIRED" && object.privilege_satisfied)
       authority = "REQUIRED_PRIVILEGE";
     else if (
-      requirement === "OWNER" &&
+      requirement === "OWNER_REQUIRED" &&
       object.owner_name &&
       input.approvedOwnerRoles.includes(object.owner_name)
     ) {
