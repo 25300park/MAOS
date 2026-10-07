@@ -6,7 +6,9 @@ import {
   loadDatabaseAclAdminConfig,
   loadDatabaseConfig,
   loadDatabaseMigrationConfig,
+  loadDatabaseRuntimeConfig,
   loadProductionConfig,
+  loadStagingClassificationRuntimeConfig,
   loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
   loadStagingSessionBffConfig,
@@ -142,6 +144,52 @@ test("loads separate bounded staging Session API and BFF configuration", () => {
     }),
     { enabled: false },
   );
+});
+
+test("loads staging classification context independently of Core bootstrap mutation", () => {
+  assert.deepEqual(
+    loadStagingClassificationRuntimeConfig({
+      ...stagingSessionEnv,
+      MAOS_STAGING_CORE_BOOTSTRAP_ENABLED: "false",
+      MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID:
+        "00000000-0000-4000-8000-000000005001",
+      MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID:
+        "00000000-0000-4000-8000-000000005003",
+    }),
+    {
+      enabled: true,
+      organizationId: "00000000-0000-4000-8000-000000005001",
+      projectId: "00000000-0000-4000-8000-000000005003",
+      scope: "project-maos",
+    },
+  );
+  assert.deepEqual(
+    loadStagingClassificationRuntimeConfig({ MAOS_ENV: "staging" }),
+    { enabled: false },
+  );
+});
+
+test("fails closed when staging classification dependencies are missing", () => {
+  const base = {
+    ...stagingSessionEnv,
+    MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID:
+      "00000000-0000-4000-8000-000000005001",
+    MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID:
+      "00000000-0000-4000-8000-000000005003",
+  };
+  for (const name of [
+    "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID",
+    "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID",
+  ]) {
+    assert.throws(
+      () =>
+        loadStagingClassificationRuntimeConfig({
+          ...base,
+          [name]: undefined,
+        }),
+      new RegExp(`${name}_(?:REQUIRED|INVALID)`),
+    );
+  }
 });
 
 test("fails closed for invalid staging Session ingress configuration", () => {
@@ -360,6 +408,62 @@ test("loads a PostgreSQL database URL from runtime configuration", () => {
   assert.deepEqual(
     loadDatabaseConfig({ DATABASE_URL: "postgresql://localhost/maos" }),
     { databaseUrl: "postgresql://localhost/maos" },
+  );
+});
+
+test("loads an exact least-privilege runtime database authority", () => {
+  assert.deepEqual(
+    loadDatabaseRuntimeConfig({
+      DATABASE_URL: "postgresql://maos_runtime@localhost/maos",
+      MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+    }),
+    {
+      databaseUrl: "postgresql://maos_runtime@localhost/maos",
+      runtimeRole: "maos_runtime",
+    },
+  );
+});
+
+test("fails closed for missing, mismatched, or privileged runtime database authority", () => {
+  const base = {
+    DATABASE_URL: "postgresql://maos_runtime@localhost/maos",
+    MAOS_DATABASE_RUNTIME_ROLE: "maos_runtime",
+  };
+  assert.throws(
+    () => loadDatabaseRuntimeConfig({ DATABASE_URL: base.DATABASE_URL }),
+    /MAOS_DATABASE_RUNTIME_ROLE_REQUIRED/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseRuntimeConfig({
+        ...base,
+        DATABASE_URL: "postgresql://another_role@localhost/maos",
+      }),
+    /DATABASE_RUNTIME_ROLE_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseRuntimeConfig({
+        DATABASE_URL: "postgresql://postgres@localhost/maos",
+        MAOS_DATABASE_RUNTIME_ROLE: "postgres",
+      }),
+    /DATABASE_RUNTIME_ROLE_FORBIDDEN/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseRuntimeConfig({
+        ...base,
+        MAOS_DATABASE_MIGRATION_ROLE: "maos_runtime",
+      }),
+    /DATABASE_RUNTIME_ROLE_FORBIDDEN/,
+  );
+  assert.throws(
+    () =>
+      loadDatabaseRuntimeConfig({
+        ...base,
+        MAOS_DATABASE_ACL_ADMIN_ROLE: "maos_runtime",
+      }),
+    /DATABASE_RUNTIME_ROLE_FORBIDDEN/,
   );
 });
 

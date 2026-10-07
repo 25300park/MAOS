@@ -17,6 +17,10 @@ export interface DatabaseConfig {
   databaseUrl: string;
 }
 
+export interface DatabaseRuntimeConfig extends DatabaseConfig {
+  runtimeRole: string;
+}
+
 export interface DatabaseMigrationConfig {
   allowSharedLocalRole: boolean;
   migrationRole: string;
@@ -99,6 +103,15 @@ export type StagingSessionBffConfig =
       coreApiOrigin: string;
       csrfSecret: string;
       enabled: true;
+    };
+
+export type StagingClassificationRuntimeConfig =
+  | { enabled: false }
+  | {
+      enabled: true;
+      organizationId: string;
+      projectId: string;
+      scope: "project-maos";
     };
 
 export interface ProductionConfig {
@@ -203,6 +216,32 @@ const databaseRoleIdentifier = (
     throw new Error(`${name}_INVALID`);
   return value;
 };
+
+export function loadDatabaseRuntimeConfig(
+  env: Record<string, string | undefined>,
+): DatabaseRuntimeConfig {
+  const databaseUrl = loadDatabaseConfig(env).databaseUrl;
+  const runtimeRole = databaseRoleIdentifier(env, "MAOS_DATABASE_RUNTIME_ROLE");
+  if (
+    runtimeRole === "postgres" ||
+    runtimeRole === env.MAOS_DATABASE_MIGRATION_ROLE?.trim() ||
+    runtimeRole === env.MAOS_DATABASE_ACL_ADMIN_ROLE?.trim()
+  ) {
+    throw new Error("DATABASE_RUNTIME_ROLE_FORBIDDEN");
+  }
+
+  let databaseUser: string;
+  try {
+    databaseUser = decodeURIComponent(new URL(databaseUrl).username);
+  } catch {
+    throw new Error("DATABASE_RUNTIME_ROLE_MISMATCH");
+  }
+  if (databaseUser !== runtimeRole) {
+    throw new Error("DATABASE_RUNTIME_ROLE_MISMATCH");
+  }
+
+  return { databaseUrl, runtimeRole };
+}
 
 export function loadDatabaseAclAdminConfig(
   env: Record<string, string | undefined>,
@@ -423,6 +462,21 @@ const stagingSessionEnabled = (
     env.MAOS_STAGING_SESSION_INGRESS_ENABLED === "true"
   );
 };
+
+export function loadStagingClassificationRuntimeConfig(
+  env: Record<string, string | undefined>,
+): StagingClassificationRuntimeConfig {
+  if (!stagingSessionEnabled(env)) return { enabled: false };
+  return {
+    enabled: true,
+    organizationId: requiredUuid(
+      env,
+      "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID",
+    ),
+    projectId: requiredUuid(env, "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID"),
+    scope: "project-maos",
+  };
+}
 
 const exactHttpsOrigin = (
   env: Record<string, string | undefined>,

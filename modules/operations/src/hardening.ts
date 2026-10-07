@@ -193,9 +193,18 @@ export class OperationsHardeningService {
     >,
     initialAlerts: readonly OperationsAlert[] = [],
   ) {
-    for (const alert of initialAlerts) {
-      this.#alerts.set(alert.id, Object.freeze({ ...alert }));
-      this.#alertFingerprints.set(`${alert.target_id}:HEALTH`, alert.id);
+    this.restoreAlerts(initialAlerts);
+  }
+
+  restoreAlerts(alerts: readonly OperationsAlert[]): void {
+    for (const alert of alerts) {
+      if (!this.#alerts.has(alert.id)) {
+        this.#alerts.set(alert.id, Object.freeze({ ...alert }));
+      }
+      const fingerprint = `${alert.target_id}:HEALTH`;
+      if (!this.#alertFingerprints.has(fingerprint)) {
+        this.#alertFingerprints.set(fingerprint, alert.id);
+      }
     }
   }
 

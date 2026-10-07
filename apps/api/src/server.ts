@@ -1,6 +1,7 @@
 import {
   loadApiConfig,
-  loadDatabaseConfig,
+  loadDatabaseRuntimeConfig,
+  loadStagingClassificationRuntimeConfig,
   loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
 } from "@maos/config";
@@ -68,7 +69,7 @@ import {
 import { createApiServer } from "./app.js";
 import { createAlertEmailApiRuntime } from "./alert-email-runtime.js";
 import { composeAiRegistryRoutes } from "./ai-registry-server-composition.js";
-import { composeClassificationRoutes } from "./classification-server-composition.js";
+import { composeStagingClassificationRoutes } from "./classification-server-composition.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
@@ -94,6 +95,7 @@ import {
 import { createMemoryGatewayRoutes } from "./memory-gateway-routes.js";
 import { createMarketingRoutes } from "./marketing-routes.js";
 import { createObservabilityRoutes } from "./observability-routes.js";
+import { scheduleOptionalAlertStateInitialization } from "./optional-alert-state.js";
 import { createOptimizationRoutes } from "./optimization-routes.js";
 import { createOperationsRoutes } from "./operations-routes.js";
 import { createRbsAdminPilotRoutes } from "./rbs-admin-routes.js";
@@ -120,16 +122,24 @@ const coreBootstrapAuthenticate = createStagingCoreBootstrapAuthenticator(
   process.env,
 );
 const stagingSessionConfig = loadStagingSessionApiConfig(process.env);
-const stagingDatabase =
-  stagingSessionConfig.enabled || stagingCoreBootstrapConfig.enabled
-    ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+const stagingClassificationConfig = loadStagingClassificationRuntimeConfig(
+  process.env,
+);
+const stagingRuntimeDatabaseConfig =
+  stagingSessionConfig.enabled ||
+  stagingClassificationConfig.enabled ||
+  stagingCoreBootstrapConfig.enabled
+    ? loadDatabaseRuntimeConfig(process.env)
     : undefined;
+const stagingDatabase = stagingRuntimeDatabaseConfig
+  ? await openPostgresDatabase(stagingRuntimeDatabaseConfig.databaseUrl)
+  : undefined;
 const stagingSessionRepository =
   stagingSessionConfig.enabled && stagingDatabase
     ? new PostgresSessionRepository(stagingDatabase)
     : undefined;
 const stagingSessionAuditDatabase = stagingSessionConfig.enabled
-  ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+  ? await openPostgresDatabase(stagingRuntimeDatabaseConfig!.databaseUrl)
   : undefined;
 const stagingSessionAuditRepository = stagingSessionAuditDatabase
   ? new PostgresSessionAuditRepository(stagingSessionAuditDatabase)
@@ -142,7 +152,7 @@ const stagingCommandProjectId =
   process.env.MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID;
 const stagingCommandAuditDatabase =
   stagingSessionConfig.enabled && stagingCommandProjectId
-    ? await openPostgresDatabase(loadDatabaseConfig(process.env).databaseUrl)
+    ? await openPostgresDatabase(stagingRuntimeDatabaseConfig!.databaseUrl)
     : undefined;
 const stagingCommandRuntime =
   stagingSessionConfig.enabled &&
@@ -762,9 +772,6 @@ const operations = new OperationsHardeningService(
   () => new Date(),
   operationsMonitoring,
   alertEmailRuntime.enabled ? alertEmailRuntime.notifications : undefined,
-  alertEmailRuntime.enabled
-    ? await alertEmailRuntime.notifications.alerts()
-    : undefined,
 );
 const enterpriseReadiness = createConservativePhase12ReadinessAssessment();
 const enterpriseSystems: EnterpriseSystemReference[] = [
@@ -848,21 +855,25 @@ const routes = [
     environment: config.environment,
     scope: "project-maos",
   }),
-  ...(stagingCoreBootstrapConfig.enabled && stagingCommandRuntime
-    ? composeClassificationRoutes(stagingDatabase, {
-        environment: config.environment,
-        scope: "project-maos",
-        requestContext: {
-          organizationId: stagingCoreBootstrapConfig.manifest.organizationId,
-          projectId: stagingCommandRuntime.projectId,
-          companyScopeRef: "company-maos",
-          teamScopeRef: "team-development",
-          projectScopeRef: "project-maos",
-          systemScopeRef: null,
-          environment: "STAGING",
-        },
-      })
-    : []),
+  ...composeStagingClassificationRoutes(
+    stagingDatabase,
+    stagingClassificationConfig.enabled
+      ? {
+          enabled: true,
+          environment: config.environment,
+          scope: stagingClassificationConfig.scope,
+          requestContext: {
+            organizationId: stagingClassificationConfig.organizationId,
+            projectId: stagingClassificationConfig.projectId,
+            companyScopeRef: "company-maos",
+            teamScopeRef: "team-development",
+            projectScopeRef: stagingClassificationConfig.scope,
+            systemScopeRef: null,
+            environment: "STAGING",
+          },
+        }
+      : { enabled: false },
+  ),
   ...(stagingCoreBootstrapConfig.enabled && stagingCoreBootstrapRepository
     ? createCoreBootstrapRoutes(
         stagingCoreBootstrapRepository,
@@ -1022,6 +1033,26 @@ const server = createApiServer({
   ...(authenticate ? { authenticate } : {}),
   logger,
   routes,
+});
+
+void scheduleOptionalAlertStateInitialization(server, {
+  ...(alertEmailRuntime.enabled
+    ? { loadAlerts: () => alertEmailRuntime.notifications.alerts() }
+    : {}),
+  onState: (state) => {
+    const context = {
+      alert_runtime_state: state.state,
+      ...(state.state === "DEGRADED"
+        ? { alert_runtime_reason: state.reason }
+        : {}),
+    };
+    if (state.state === "DEGRADED") {
+      logger.warn("optional alert subsystem degraded", context);
+    } else {
+      logger.info("optional alert subsystem initialized", context);
+    }
+  },
+  restoreAlerts: (alerts) => operations.restoreAlerts(alerts),
 });
 
 server.listen(config.port, "0.0.0.0", () => {

@@ -15,6 +15,24 @@ export interface ClassificationCompositionOptions {
   readonly requestContext: WorkRequestContext;
 }
 
+export type StagingClassificationCompositionConfig =
+  | { readonly enabled: false }
+  | {
+      readonly enabled: true;
+      readonly environment: Environment;
+      readonly scope: string;
+      readonly requestContext: WorkRequestContext;
+    };
+
+export function composeStagingClassificationRoutes(
+  database: MigrationDatabase | undefined,
+  config: StagingClassificationCompositionConfig,
+): ApiRoute[] {
+  if (!config.enabled) return [];
+  if (!database) throw new Error("CLASSIFICATION_DATABASE_REQUIRED");
+  return composeClassificationRoutes(database, config);
+}
+
 export function composeClassificationRoutes(
   database: MigrationDatabase | undefined,
   options: ClassificationCompositionOptions,

@@ -141,6 +141,30 @@ test("aggregates canonical health and deduplicates repeated degraded alerts", ()
   assert.equal(operations.snapshot().overall_health, "UNAVAILABLE");
 });
 
+test("restores durable alert state after the operations service is constructed", () => {
+  const operations = new OperationsHardeningService();
+  assert.equal("restoreAlerts" in operations, true);
+  if (!("restoreAlerts" in operations)) return;
+
+  operations.restoreAlerts([
+    {
+      affected_system: "maos-api",
+      correlation_id: "corr-restored-alert",
+      evidence_refs: ["evidence://operations/restored-alert"],
+      first_detected_at: "2026-10-07T00:00:00.000Z",
+      id: "restored-alert",
+      last_observed_at: "2026-10-07T00:00:00.000Z",
+      occurrences: 1,
+      owner_reference: "role:platform-operations",
+      severity: "WARNING",
+      state: "OPEN",
+      target_id: "api-staging",
+    },
+  ]);
+
+  assert.equal(operations.alerts()[0]?.id, "restored-alert");
+});
+
 test("rejects non-canonical operations, alert, and incident values at runtime", () => {
   const operations = new OperationsHardeningService();
   assert.throws(

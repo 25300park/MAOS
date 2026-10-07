@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { applyMigrations, loadMigrations } from "@maos/database";
-import { composeClassificationRoutes } from "../src/classification-server-composition.js";
+import {
+  composeClassificationRoutes,
+  composeStagingClassificationRoutes,
+} from "../src/classification-server-composition.js";
 
 const context = {
   organizationId: "85000000-0000-4000-8000-000000000001",
@@ -22,6 +25,20 @@ test("composes from PostgreSQL only and reconstructs safe classification reads",
     requestContext: context,
   };
   assert.deepEqual(composeClassificationRoutes(undefined, options), []);
+  assert.deepEqual(
+    composeStagingClassificationRoutes(undefined, { enabled: false }),
+    [],
+  );
+  assert.throws(
+    () =>
+      composeStagingClassificationRoutes(undefined, {
+        enabled: true,
+        environment: "staging",
+        scope: "project-maos",
+        requestContext: context,
+      }),
+    /CLASSIFICATION_DATABASE_REQUIRED/,
+  );
   const db = new PGlite();
   t.after(() => db.close());
   await applyMigrations(
@@ -79,6 +96,13 @@ test("composes from PostgreSQL only and reconstructs safe classification reads",
   );
   const routes = composeClassificationRoutes(db, options);
   assert.equal(routes.length, 2);
+  const bootstrapDisabledRoutes = composeStagingClassificationRoutes(db, {
+    enabled: true,
+    environment: "staging",
+    scope: "project-maos",
+    requestContext: context,
+  });
+  assert.equal(bootstrapDisabledRoutes.length, 2);
   const current = (await routes[0]!.handle({
     context: {} as never,
     identity: null,
