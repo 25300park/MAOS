@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { loadStagingSessionBffConfig } from "@maos/config";
-import { createConservativePhase12ReadinessAssessment } from "@maos/module-operations";
+import { createConservativePhase12ReadinessAssessment } from "@maos/module-operations/enterprise-readiness";
 import {
   renderControlRoom,
   type AiMlsView,

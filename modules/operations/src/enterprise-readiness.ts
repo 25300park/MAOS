@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { OperationsError, type OperationsActor } from "./index.js";
+import { OperationsError, type OperationsActor } from "./core.js";
 import {
   RunbookRegistry,
   createPhase11RunbookCatalog,

@@ -5,7 +5,7 @@ import {
   type EnvironmentName,
   type OperationsActor,
   type OperationsHealth,
-} from "./index.js";
+} from "./core.js";
 import type { AlertNotificationService } from "./alert-delivery.js";
 
 export type OperationsTargetKind =

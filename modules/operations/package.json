@@ -5,6 +5,16 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./enterprise-readiness": {
+      "types": "./src/enterprise-readiness.ts",
+      "import": "./dist/enterprise-readiness.js"
+    }
+  },
   "dependencies": {
     "@maos/config": "0.0.0",
     "@maos/database": "0.0.0",

@@ -1,4 +1,4 @@
-import { OperationsError, type OperationsActor } from "./index.js";
+import { OperationsError, type OperationsActor } from "./core.js";
 
 export interface BackupReadinessInput {
   backup_id: string;
