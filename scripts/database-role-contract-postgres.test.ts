@@ -20,8 +20,8 @@ const approvedAclOwnerRoles = ["phase15c_legacy_owner", governedMigrationRole];
 const expectedRequirements = Object.freeze({
   NO_OPERATION: 5,
   OWNER_REQUIRED: 1,
-  REFERENCES_REQUIRED: 3,
-  SCHEMA_PRIVILEGE_REQUIRED: 4,
+  REFERENCES_REQUIRED: 11,
+  SCHEMA_PRIVILEGE_REQUIRED: 5,
   TABLE_PRIVILEGE_REQUIRED: 1,
 });
 
@@ -74,9 +74,9 @@ test(
       try {
         const first = await applyMigrations(
           initializer,
-          migrations.filter(({ id }) => id < "0031_"),
+          migrations.filter(({ id }) => id < "0032_"),
         );
-        assert.equal(first.applied.length, 30);
+        assert.equal(first.applied.length, 31);
         assert.equal(
           (
             await inspectDatabaseRoleContract(admin, {
@@ -116,9 +116,10 @@ test(
           ALTER FUNCTION ai.guard_development_role_compatibility() OWNER TO phase15c_legacy_owner;
           GRANT USAGE ON SCHEMA core,work TO phase15c_legacy_owner;
           GRANT USAGE,CREATE ON SCHEMA work,governance,ai TO ${governedMigrationRole};
-          GRANT USAGE ON SCHEMA core TO ${governedMigrationRole};
+          GRANT USAGE ON SCHEMA core,audit TO ${governedMigrationRole};
           GRANT SELECT,INSERT ON core.schema_migrations TO ${governedMigrationRole};
           GRANT REFERENCES ON core.organizations,core.projects,work.tasks TO ${governedMigrationRole};
+          GRANT REFERENCES ON audit.audit_records,work.requests,governance.request_classification_versions,governance.approvals,ai.model_providers,ai.models,ai.host_runtimes,ai.model_host_bindings TO ${governedMigrationRole};
           SET ROLE ${governedMigrationRole};
         `);
 
@@ -141,19 +142,25 @@ test(
         ]);
         const forbiddenAuthority = await admin.query<{
           ai_usage_grantable: boolean;
+          audit_create: boolean;
+          audit_usage_grantable: boolean;
           core_create: boolean;
           database_create: boolean;
           governance_usage_grantable: boolean;
           work_usage_grantable: boolean;
         }>(`SELECT
           has_database_privilege(current_user,current_database(),'CREATE') AS database_create,
+          has_schema_privilege(current_user,'audit','CREATE') AS audit_create,
           has_schema_privilege(current_user,'core','CREATE') AS core_create,
+          EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='audit' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS audit_usage_grantable,
           EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS work_usage_grantable,
           EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS governance_usage_grantable,
           EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND grantee.rolname=current_user AND acl.privilege_type='USAGE' AND acl.is_grantable) AS ai_usage_grantable`);
         assert.deepEqual(forbiddenAuthority.rows, [
           {
             ai_usage_grantable: false,
+            audit_create: false,
+            audit_usage_grantable: false,
             core_create: false,
             database_create: false,
             governance_usage_grantable: false,
@@ -216,6 +223,11 @@ test(
           "core",
         );
         await requireFailure(
+          `REVOKE USAGE ON SCHEMA audit FROM ${governedMigrationRole}`,
+          `GRANT USAGE ON SCHEMA audit TO ${governedMigrationRole}`,
+          "audit",
+        );
+        await requireFailure(
           `REVOKE SELECT ON core.schema_migrations FROM ${governedMigrationRole}`,
           `GRANT SELECT ON core.schema_migrations TO ${governedMigrationRole}`,
           "core.schema_migrations",
@@ -229,6 +241,14 @@ test(
           "core.organizations",
           "core.projects",
           "work.tasks",
+          "audit.audit_records",
+          "work.requests",
+          "governance.request_classification_versions",
+          "governance.approvals",
+          "ai.model_providers",
+          "ai.models",
+          "ai.host_runtimes",
+          "ai.model_host_bindings",
         ])
           await requireFailure(
             `REVOKE REFERENCES ON ${objectName} FROM ${governedMigrationRole}`,
@@ -249,13 +269,13 @@ test(
           registryMode: "VERIFY_EXISTING",
         });
         assert.deepEqual(applied.applied, [
-          "0031_phase15c_classification_domain_routing",
+          "0032_phase15d_multi_ai_role_model_routing",
         ]);
         const replay = await applyMigrations(admin, migrations, {
           registryMode: "VERIFY_EXISTING",
         });
         assert.equal(replay.applied.length, 0);
-        assert.equal(replay.skipped.length, 31);
+        assert.equal(replay.skipped.length, 32);
 
         await admin.exec("RESET ROLE");
         await assert.rejects(

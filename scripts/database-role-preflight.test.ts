@@ -42,12 +42,21 @@ const ownerMatrix = [
   ["SCHEMA", "governance"],
   ["SCHEMA", "ai"],
   ["SCHEMA", "core"],
+  ["SCHEMA", "audit"],
   ["TABLE", "ai.domain_execution_constraints"],
   ["TABLE", "ai.role_compatibilities"],
   ["TABLE", "core.schema_migrations"],
   ["TABLE", "core.organizations"],
   ["TABLE", "core.projects"],
   ["TABLE", "work.tasks"],
+  ["TABLE", "audit.audit_records"],
+  ["TABLE", "work.requests"],
+  ["TABLE", "governance.request_classification_versions"],
+  ["TABLE", "governance.approvals"],
+  ["TABLE", "ai.model_providers"],
+  ["TABLE", "ai.models"],
+  ["TABLE", "ai.host_runtimes"],
+  ["TABLE", "ai.model_host_bindings"],
   ["FUNCTION", "ai.guard_development_domain_constraint"],
   ["FUNCTION", "ai.guard_development_role_compatibility"],
   [
@@ -57,7 +66,7 @@ const ownerMatrix = [
   ["TRIGGER", "ai.role_compatibilities.role_compatibilities_guard_development"],
 ] as const;
 
-test("accepts the operation-aware minimum authority for migration 0031", async () => {
+test("accepts the operation-aware minimum authority through migration 0032", async () => {
   const database = {
     exec: async () => undefined,
     query: async <Row>(sql: string) => {
@@ -79,10 +88,19 @@ test("accepts the operation-aware minimum authority for migration 0031", async (
             "governance",
             "ai",
             "core",
+            "audit",
             "core.schema_migrations",
             "core.organizations",
             "core.projects",
             "work.tasks",
+            "audit.audit_records",
+            "work.requests",
+            "governance.request_classification_versions",
+            "governance.approvals",
+            "ai.model_providers",
+            "ai.models",
+            "ai.host_runtimes",
+            "ai.model_host_bindings",
           ].includes(object_name),
         })) as Row[],
       };
@@ -106,7 +124,7 @@ test("accepts the operation-aware minimum authority for migration 0031", async (
     result.rows.filter(
       ({ requirement }) => requirement === "SCHEMA_PRIVILEGE_REQUIRED",
     ).length,
-    4,
+    5,
   );
   assert.equal(
     result.rows.filter(
@@ -118,7 +136,7 @@ test("accepts the operation-aware minimum authority for migration 0031", async (
     result.rows.filter(
       ({ requirement }) => requirement === "REFERENCES_REQUIRED",
     ).length,
-    3,
+    11,
   );
   assert.equal(
     result.rows.filter(({ requirement }) => requirement === "NO_OPERATION")
@@ -152,10 +170,19 @@ test("fails closed when an exact required privilege is absent", async () => {
                   "governance",
                   "ai",
                   "core",
+                  "audit",
                   "core.schema_migrations",
                   "core.organizations",
                   "core.projects",
                   "work.tasks",
+                  "audit.audit_records",
+                  "work.requests",
+                  "governance.request_classification_versions",
+                  "governance.approvals",
+                  "ai.model_providers",
+                  "ai.models",
+                  "ai.host_runtimes",
+                  "ai.model_host_bindings",
                 ].includes(object_name),
             })) as Row[],
           },

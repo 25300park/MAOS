@@ -40,6 +40,7 @@ const fixedObjects = [
   ["SCHEMA", "governance", "USAGE_CREATE", "SCHEMA_PRIVILEGE_REQUIRED"],
   ["SCHEMA", "ai", "USAGE_CREATE", "SCHEMA_PRIVILEGE_REQUIRED"],
   ["SCHEMA", "core", "USAGE_ONLY", "SCHEMA_PRIVILEGE_REQUIRED"],
+  ["SCHEMA", "audit", "USAGE_ONLY", "SCHEMA_PRIVILEGE_REQUIRED"],
   [
     "TABLE",
     "ai.domain_execution_constraints",
@@ -56,6 +57,19 @@ const fixedObjects = [
   ["TABLE", "core.organizations", "REFERENCES", "REFERENCES_REQUIRED"],
   ["TABLE", "core.projects", "REFERENCES", "REFERENCES_REQUIRED"],
   ["TABLE", "work.tasks", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "audit.audit_records", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "work.requests", "REFERENCES", "REFERENCES_REQUIRED"],
+  [
+    "TABLE",
+    "governance.request_classification_versions",
+    "REFERENCES",
+    "REFERENCES_REQUIRED",
+  ],
+  ["TABLE", "governance.approvals", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "ai.model_providers", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "ai.models", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "ai.host_runtimes", "REFERENCES", "REFERENCES_REQUIRED"],
+  ["TABLE", "ai.model_host_bindings", "REFERENCES", "REFERENCES_REQUIRED"],
   [
     "FUNCTION",
     "ai.guard_development_domain_constraint",
@@ -167,10 +181,19 @@ export async function inspectDatabaseRoleContract(
        WHEN 'governance' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND grantee.rolname=current_user AND acl.is_grantable)
        WHEN 'ai' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND grantee.rolname=current_user AND acl.is_grantable)
        WHEN 'core' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND NOT has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND grantee.rolname=current_user AND acl.is_grantable)
+       WHEN 'audit' THEN has_schema_privilege(current_user,catalog.object_oid,'USAGE') AND NOT has_schema_privilege(current_user,catalog.object_oid,'CREATE') AND NOT EXISTS (SELECT 1 FROM pg_namespace n CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl,acldefault('n',n.nspowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='audit' AND grantee.rolname=current_user AND acl.is_grantable)
        WHEN 'core.schema_migrations' THEN has_table_privilege(current_user,catalog.object_oid,'SELECT') AND has_table_privilege(current_user,catalog.object_oid,'INSERT') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='schema_migrations' AND grantee.rolname=current_user AND acl.is_grantable)
        WHEN 'core.organizations' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='organizations' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
        WHEN 'core.projects' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='core' AND c.relname='projects' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
        WHEN 'work.tasks' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND c.relname='tasks' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'audit.audit_records' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='audit' AND c.relname='audit_records' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'work.requests' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='work' AND c.relname='requests' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'governance.request_classification_versions' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND c.relname='request_classification_versions' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'governance.approvals' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='governance' AND c.relname='approvals' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'ai.model_providers' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND c.relname='model_providers' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'ai.models' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND c.relname='models' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'ai.host_runtimes' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND c.relname='host_runtimes' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
+       WHEN 'ai.model_host_bindings' THEN has_table_privilege(current_user,catalog.object_oid,'REFERENCES') AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) acl JOIN pg_roles grantee ON grantee.oid=acl.grantee WHERE n.nspname='ai' AND c.relname='model_host_bindings' AND grantee.rolname=current_user AND acl.privilege_type='REFERENCES' AND acl.is_grantable)
        ELSE NULL END AS privilege_satisfied
     FROM catalog ORDER BY 1,2`);
   const rows: DatabaseRolePreflightRow[] = [];
