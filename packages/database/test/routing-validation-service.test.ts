@@ -881,7 +881,7 @@ test("Development fails closed when AIDOS projection authority changes after rea
   );
 });
 
-test("Development preserves bounded unavailable and onboarding failure codes", async () => {
+test("Development returns bounded unavailable and onboarding outcomes", async () => {
   const developmentClassification = classification({
     handoff: {
       ...classification().handoff,
@@ -900,34 +900,37 @@ test("Development preserves bounded unavailable and onboarding failure codes", a
     classifications: classifications(developmentClassification),
     policies: policies(developmentPolicy),
   };
-  await assert.rejects(
-    service({
-      ...baseOverrides,
-      aidos: {
-        ...aidos(),
-        readAidosAvailability: async () => {
-          throw new RoutingContractError("AIDOS_UNAVAILABLE");
-        },
-      },
-    }).validate({ ...validationInput, aidosTargetRef: "aidos-project" }),
-    (error) =>
-      error instanceof RoutingContractError &&
-      error.code === "AIDOS_UNAVAILABLE",
+  const unavailablePort = aidos();
+  const unavailable = await service({
+    ...baseOverrides,
+    aidos: {
+      ...unavailablePort,
+      readAidosAvailability: async (query) => ({
+        ...(await unavailablePort.readAidosAvailability(query)),
+        state: "UNAVAILABLE",
+      }),
+    },
+  }).validate({ ...validationInput, aidosTargetRef: "aidos-project" });
+  assert.equal(unavailable.developmentDelegationState, "AIDOS_UNAVAILABLE");
+  assert.equal(unavailable.aidos?.registrationRevision, null);
+  assert.equal(unavailable.aidos?.eligibilityRevision, null);
+
+  const onboardingPort = aidos();
+  const onboarding = await service({
+    ...baseOverrides,
+    aidos: {
+      ...onboardingPort,
+      readProjectOnboardingState: async (query) => ({
+        ...(await onboardingPort.readProjectOnboardingState(query)),
+        state: "PROJECT_NOT_ONBOARDED",
+      }),
+    },
+  }).validate({ ...validationInput, aidosTargetRef: "aidos-project" });
+  assert.equal(
+    onboarding.developmentDelegationState,
+    "WAITING_AIDOS_ONBOARDING",
   );
-  await assert.rejects(
-    service({
-      ...baseOverrides,
-      aidos: {
-        ...aidos(),
-        readProjectOnboardingState: async () => {
-          throw new RoutingContractError("WAITING_AIDOS_ONBOARDING");
-        },
-      },
-    }).validate({ ...validationInput, aidosTargetRef: "aidos-project" }),
-    (error) =>
-      error instanceof RoutingContractError &&
-      error.code === "WAITING_AIDOS_ONBOARDING",
-  );
+  assert.equal(onboarding.aidos?.eligibilityRevision, null);
 
   await assert.rejects(
     service({

@@ -197,7 +197,7 @@ test("rejects missing request and cross-stream predecessor", async (t) => {
 });
 
 test(
-  "real PostgreSQL serializes exact replay and rolls back a conflicting replay",
+  "real PostgreSQL separates exact replay from distinct competing successors",
   { timeout: 120_000 },
   async () => {
     await withDisposablePostgres({}, async (context) => {
@@ -240,15 +240,54 @@ test(
           }),
           /ROUTING_IDEMPOTENCY_CONFLICT/,
         );
+        const competing = await Promise.allSettled([
+          firstRepository.appendDecision({
+            ...appendInput,
+            routingDecisionId: id("30"),
+            expectedPredecessorId: appendInput.routingDecisionId,
+            idempotencyKey: "route-successor-a",
+            canonicalIntentFingerprint: sha("2"),
+            contextRefs: ["successor:a"],
+          }),
+          secondRepository.appendDecision({
+            ...appendInput,
+            routingDecisionId: id("31"),
+            expectedPredecessorId: appendInput.routingDecisionId,
+            idempotencyKey: "route-successor-b",
+            canonicalIntentFingerprint: sha("3"),
+            contextRefs: ["successor:b"],
+          }),
+        ]);
+        assert.equal(
+          competing.filter(({ status }) => status === "fulfilled").length,
+          1,
+        );
+        const rejected = competing.filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        );
+        assert.equal(rejected.length, 1);
+        assert.match(String(rejected[0]!.reason), /ROUTING_STREAM_CONFLICT/);
+        const head = await firstRepository.findCurrent(
+          appendInput.requestId,
+          appendInput.routingPurpose,
+        );
+        assert.equal(head?.routingVersion, 2);
         const counts = await first.query<{
           decisions: string;
           audits: string;
+          version_two_heads: string;
         }>(`
         SELECT
           (SELECT count(*)::text FROM governance.request_routing_decision_versions) AS decisions,
-          (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED') AS audits
+          (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED') AS audits,
+          (SELECT count(*)::text FROM governance.request_routing_decision_versions WHERE routing_version=2) AS version_two_heads
       `);
-        assert.deepEqual(counts.rows[0], { decisions: "1", audits: "1" });
+        assert.deepEqual(counts.rows[0], {
+          decisions: "2",
+          audits: "2",
+          version_two_heads: "1",
+        });
       } finally {
         await second.close();
         await first.close();

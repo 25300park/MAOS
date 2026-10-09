@@ -69,8 +69,8 @@ export interface CreateRoutingDecisionInput {
 export interface ValidatedAidosAuthority {
   readonly projectRef: string;
   readonly availabilityRevision: string;
-  readonly registrationRevision: string;
-  readonly eligibilityRevision: string;
+  readonly registrationRevision: string | null;
+  readonly eligibilityRevision: string | null;
   readonly checkedAt: string;
   readonly freshUntil: string;
   readonly evidenceRefs: readonly string[];
@@ -521,8 +521,54 @@ export class RoutingValidationService {
       );
       if (availability.state === "UNKNOWN")
         throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
-      if (availability.state === "UNAVAILABLE")
-        throw new RoutingContractError("AIDOS_UNAVAILABLE");
+      if (availability.state === "UNAVAILABLE") {
+        const currentAvailability =
+          await this.dependencies.aidos.readAidosAvailability({
+            environment: input.context.environment,
+            targetRef: input.aidosTargetRef,
+            organizationId: input.context.organizationId,
+            projectId: input.context.projectId,
+            scopeRef: input.scopeRef,
+            correlationId: classification.handoff.correlationId,
+          });
+        requireAidosSnapshotCurrent(
+          currentAvailability,
+          input.aidosTargetRef,
+          AIDOS_AVAILABILITY_SOURCE,
+          this.now(),
+        );
+        if (
+          currentAvailability.state !== "UNAVAILABLE" ||
+          currentAvailability.revision !== availability.revision
+        )
+          throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+        await this.revalidateCommonAuthorities(
+          input,
+          policyContext,
+          classification,
+          policy,
+          specialization,
+          approval,
+        );
+        return Object.freeze({
+          request,
+          classification,
+          policy,
+          specialization: safeSpecialization(specialization),
+          approval,
+          candidates: null,
+          aidos: Object.freeze({
+            projectRef: input.aidosTargetRef,
+            availabilityRevision: availability.revision,
+            registrationRevision: null,
+            eligibilityRevision: null,
+            checkedAt: availability.observedAt,
+            freshUntil: availability.freshUntil,
+            evidenceRefs: Object.freeze([availability.evidenceRef]),
+          }),
+          developmentDelegationState: "AIDOS_UNAVAILABLE",
+        });
+      }
       const registration =
         await this.dependencies.aidos.readProjectOnboardingState(aidosQuery);
       requireAidosSnapshotCurrent(
@@ -533,8 +579,77 @@ export class RoutingValidationService {
       );
       if (registration.state === "UNKNOWN")
         throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
-      if (registration.state === "PROJECT_NOT_ONBOARDED")
-        throw new RoutingContractError("WAITING_AIDOS_ONBOARDING");
+      if (registration.state === "PROJECT_NOT_ONBOARDED") {
+        const [currentAvailability, currentRegistration] = await Promise.all([
+          this.dependencies.aidos.readAidosAvailability({
+            environment: input.context.environment,
+            targetRef: input.aidosTargetRef,
+            organizationId: input.context.organizationId,
+            projectId: input.context.projectId,
+            scopeRef: input.scopeRef,
+            correlationId: classification.handoff.correlationId,
+          }),
+          this.dependencies.aidos.readProjectOnboardingState(aidosQuery),
+        ]);
+        requireAidosSnapshotCurrent(
+          currentAvailability,
+          input.aidosTargetRef,
+          AIDOS_AVAILABILITY_SOURCE,
+          this.now(),
+        );
+        requireAidosSnapshotCurrent(
+          currentRegistration,
+          input.aidosTargetRef,
+          AIDOS_PROJECT_REGISTRATION_SOURCE,
+          this.now(),
+        );
+        if (
+          currentAvailability.state !== "AVAILABLE" ||
+          currentAvailability.revision !== availability.revision ||
+          currentRegistration.state !== "PROJECT_NOT_ONBOARDED" ||
+          currentRegistration.revision !== registration.revision
+        )
+          throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+        await this.revalidateCommonAuthorities(
+          input,
+          policyContext,
+          classification,
+          policy,
+          specialization,
+          approval,
+        );
+        return Object.freeze({
+          request,
+          classification,
+          policy,
+          specialization: safeSpecialization(specialization),
+          approval,
+          candidates: null,
+          aidos: Object.freeze({
+            projectRef: input.aidosTargetRef,
+            availabilityRevision: availability.revision,
+            registrationRevision: registration.revision,
+            eligibilityRevision: null,
+            checkedAt: new Date(
+              Math.max(
+                Date.parse(availability.observedAt),
+                Date.parse(registration.observedAt),
+              ),
+            ).toISOString(),
+            freshUntil: new Date(
+              Math.min(
+                Date.parse(availability.freshUntil),
+                Date.parse(registration.freshUntil),
+              ),
+            ).toISOString(),
+            evidenceRefs: Object.freeze([
+              availability.evidenceRef,
+              registration.evidenceRef,
+            ]),
+          }),
+          developmentDelegationState: "WAITING_AIDOS_ONBOARDING",
+        });
+      }
       if (registration.state !== "PROJECT_ONBOARDED")
         throw new RoutingContractError("AIDOS_DELEGATION_INELIGIBLE");
       const eligibility =
