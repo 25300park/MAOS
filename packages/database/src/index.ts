@@ -65,6 +65,8 @@ export type {
 export * from "./routing-decision-repository.js";
 export * from "./routing-policy-repository.js";
 export * from "./routing-policy-service.js";
+export * from "./candidate-resolution-service.js";
+export * from "./routing-validation-service.js";
 export * from "./database-role-contract.js";
 export * from "./database-role-acl.js";
 export * from "./postgres.js";

@@ -29,6 +29,11 @@ import {
 } from "./routing-contracts.js";
 import type { MigrationDatabase } from "./types.js";
 
+export function canonicalOrdinalCompare(left: string, right: string) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 export const AIDOS_AUTHORITY_SOURCE =
   "AIDOS_EXTERNAL_ORCHESTRATOR_INTEGRATION_CONTRACT_V1_1" as const;
 export const AIDOS_PROJECT_REGISTRATION_SOURCE =
@@ -282,6 +287,8 @@ export interface HumanApprovalSnapshot extends AuthorityExpiryResult {
     "APPROVED" | "REJECTED" | "MISSING" | "EXPIRED" | "REVOKED" | "STALE";
   readonly approvalRef: string | null;
   readonly authorityRuleRef: string;
+  readonly approvalPolicyRef: string;
+  readonly approvalPolicyVersion: string;
   readonly targetType: string;
   readonly targetId: string;
   readonly targetVersion: string;
@@ -648,7 +655,7 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
     }
     const include = (id: string) => included.size === 0 || included.has(id);
     const byId = <T extends { readonly id: string }>(left: T, right: T) =>
-      left.id.localeCompare(right.id);
+      canonicalOrdinalCompare(left.id, right.id);
     const mapped = {
       providers: providers
         .filter((x) => include(x.id))
@@ -751,7 +758,7 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
     const canonical = JSON.stringify(
       Object.values(mapped)
         .flat()
-        .sort((a, b) => a.id.localeCompare(b.id)),
+        .sort((a, b) => canonicalOrdinalCompare(a.id, b.id)),
     );
     const hash = createHash("sha256").update(canonical).digest("hex");
     return {
@@ -771,8 +778,21 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
     revision: string,
     resourceRefs: string[],
   ): Promise<AuthorityFreshnessResult> {
-    const current = await this.readSnapshot({ resourceRefs });
+    const current = await this.readSnapshot({ resourceRefs: [] });
     if (current.snapshotRef !== snapshotRef || current.revision !== revision)
+      throw new RoutingContractError("REGISTRY_CONFLICT");
+    const currentResourceRefs = new Set([
+      ...current.providers.map(({ id }) => id),
+      ...current.models.map(({ id }) => id),
+      ...current.runtimeAdapters.map(({ id }) => id),
+      ...current.capabilities.map(({ id }) => id),
+      ...current.modelHostBindings.map(({ id }) => id),
+      ...current.modelCapabilities.map(({ id }) => id),
+      ...current.roleCompatibilities.map(({ id }) => id),
+    ]);
+    if (
+      resourceRefs.some((resourceRef) => !currentResourceRefs.has(resourceRef))
+    )
       throw new RoutingContractError("REGISTRY_CONFLICT");
     return {
       current: true,
@@ -880,6 +900,8 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
       state: "APPROVED",
       approvalRef: result.approvalId,
       authorityRuleRef,
+      approvalPolicyRef: request.approvalPolicyRef,
+      approvalPolicyVersion: request.approvalPolicyVersion,
       targetType: request.targetType,
       targetId: request.targetId,
       targetVersion: request.targetVersion,
