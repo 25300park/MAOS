@@ -25,6 +25,44 @@ export * from "./work-request-intake-service.js";
 export * from "./request-classification-contracts.js";
 export * from "./request-classification-repository.js";
 export * from "./request-classification-runtime.js";
+export * from "./routing-contracts.js";
+export {
+  AIDOS_AUTHORITY_SOURCE,
+  AIDOS_AVAILABILITY_SOURCE,
+  AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+  AIDOS_PROJECT_REGISTRATION_SOURCE,
+  composeRoutingAuthorityReadPorts,
+} from "./routing-authority-read-ports.js";
+export type {
+  AidosAuthorityReadPort,
+  AidosAvailabilityQuery,
+  AidosAvailabilitySnapshot,
+  AidosDelegationEligibilityQuery,
+  AidosDelegationEligibilitySnapshot,
+  AidosProjectOnboardingQuery,
+  AidosProjectOnboardingSnapshot,
+  AidosProjectionReference,
+  AidosRevalidationQuery,
+  ApprovalRequirementQuery,
+  AuthorityFreshnessResult,
+  ClassificationAuthorityReadPort,
+  ClassificationAuthoritySnapshot,
+  ExactRequestContext,
+  HumanApprovalAuthorityReadPort,
+  HumanApprovalSnapshot,
+  RegistryAuthorityReadPort,
+  RegistryAuthoritySnapshot,
+  RegistryCapabilitySnapshot,
+  RegistryModelCapabilitySnapshot,
+  RegistryModelHostBindingSnapshot,
+  RegistryModelSnapshot,
+  RegistryProviderSnapshot,
+  RegistryRoleCompatibilitySnapshot,
+  RegistryRuntimeAdapterSnapshot,
+  RegistrySnapshotQuery,
+  RegistryTransactionSnapshot,
+} from "./routing-authority-read-ports.js";
+export * from "./routing-decision-repository.js";
 export * from "./database-role-contract.js";
 export * from "./database-role-acl.js";
 export * from "./postgres.js";
