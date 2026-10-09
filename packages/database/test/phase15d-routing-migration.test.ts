@@ -43,9 +43,9 @@ async function migratedDatabase(t: test.TestContext): Promise<PGlite> {
   return db;
 }
 
-async function seedRequestAndAudit(
-  db: { exec(sql: string): Promise<unknown> },
-): Promise<void> {
+async function seedRequestAndAudit(db: {
+  exec(sql: string): Promise<unknown>;
+}): Promise<void> {
   await db.exec(`
     INSERT INTO core.organizations (id, name, slug)
     VALUES ('${ids.organization}', 'Phase15D Organization', 'phase15d-organization');
@@ -142,21 +142,28 @@ async function insertDeniedDecision(
       routing_decision_id, routing_decision_stream_id, request_id,
       routing_purpose, routing_version, supersedes_routing_decision_id,
       classification_version_id, canonical_domain, role_class, routing_mode,
+      classification_version, classification_state,
+      classification_currentness_state, classification_currentness_proof,
+      classification_policy_resolution_ref,
+      classification_policy_resolution_version,
       routing_policy_version_id, registry_snapshot_ref,
       registry_snapshot_revision, registry_observed_at, registry_fresh_until,
       priority, human_approval_state, development_delegation_state,
       decision_state, decision_reason_codes, staleness_state,
-      classification_checked_at, classification_fresh_until,
+      classification_checked_at,
       policy_checked_at, policy_fresh_until, idempotency_key,
       canonical_intent_fingerprint, correlation_id, audit_ref
     ) VALUES (
       $1, $2, $3, 'PRIMARY_EXECUTION', $4, $5, $6,
-      'OPERATIONS', 'EXECUTOR', $7, $8, 'registry:test', 'revision:test',
+      'OPERATIONS', 'EXECUTOR', $7, 1, 'VALIDATED', 'CURRENT',
+      'sha256:' || repeat('2', 64),
+      '00000000-0000-4000-8000-000000000005', '1',
+      $8, 'registry:test', 'revision:test',
       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour',
       'NORMAL', 'NOT_REQUIRED', 'NOT_APPLICABLE', 'DENIED',
       ARRAY['POLICY_DENIED'], 'CURRENT',
-      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour',
-      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour',
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP + INTERVAL '1 hour',
       $9, 'sha256:' || repeat('3', 64), 'phase15d-correlation', $10
     )`,
     [
@@ -183,23 +190,46 @@ test("migration 0032 creates the Phase15D routing schema foundation", async (t) 
 
   const db = await migratedDatabase(t);
 
-  const result = await db.query<{ table_name: string }>(`
+  const result = await db.query<{ table_name: string }>(
+    `
     SELECT table_name
     FROM information_schema.tables
     WHERE table_schema = 'governance'
       AND table_name = ANY($1::text[])
     ORDER BY table_name
-  `, [expectedTables]);
+  `,
+    [expectedTables],
+  );
 
   assert.deepEqual(
     result.rows.map((row) => row.table_name),
     [...expectedTables].sort(),
   );
+
+  const columns = await db.query<{ column_name: string }>(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'governance'
+      AND table_name = 'request_routing_decision_versions'
+  `);
+  const names = new Set(columns.rows.map((row) => row.column_name));
+  assert.equal(names.has("classification_fresh_until"), false);
+  for (const name of [
+    "classification_version",
+    "classification_state",
+    "classification_currentness_state",
+    "classification_currentness_proof",
+    "classification_policy_resolution_ref",
+    "classification_policy_resolution_version",
+  ]) {
+    assert.equal(names.has(name), true, name);
+  }
 });
 
 test("migration 0032 exposes exactly the approved eight composite foreign keys", async (t) => {
   const db = await migratedDatabase(t);
-  const result = await db.query<{ conname: string; definition: string }>(`
+  const result = await db.query<{ conname: string; definition: string }>(
+    `
     SELECT c.conname, pg_get_constraintdef(c.oid) AS definition
     FROM pg_constraint c
     JOIN pg_class r ON r.oid = c.conrelid
@@ -209,7 +239,9 @@ test("migration 0032 exposes exactly the approved eight composite foreign keys",
       AND c.contype = 'f'
       AND array_length(c.conkey, 1) > 1
     ORDER BY c.conname
-  `, [expectedTables]);
+  `,
+    [expectedTables],
+  );
 
   const expectedNames = [
     "ai_routing_policy_activation_events_policy_fk",
@@ -221,7 +253,10 @@ test("migration 0032 exposes exactly the approved eight composite foreign keys",
     "request_routing_decision_versions_predecessor_fk",
     "request_routing_decision_versions_stream_fk",
   ];
-  assert.deepEqual(result.rows.map((row) => row.conname), expectedNames);
+  assert.deepEqual(
+    result.rows.map((row) => row.conname),
+    expectedNames,
+  );
   for (const row of result.rows) {
     assert.match(row.definition, /FOREIGN KEY/);
     assert.match(row.definition, /REFERENCES/);
@@ -230,7 +265,8 @@ test("migration 0032 exposes exactly the approved eight composite foreign keys",
 
 test("migration 0032 freezes role, purpose, mode, lifecycle, staleness, approval, and delegation states", async (t) => {
   const db = await migratedDatabase(t);
-  const checks = await db.query<{ definition: string }>(`
+  const checks = await db.query<{ definition: string }>(
+    `
     SELECT pg_get_constraintdef(c.oid) AS definition
     FROM pg_constraint c
     JOIN pg_class r ON r.oid = c.conrelid
@@ -238,18 +274,45 @@ test("migration 0032 freezes role, purpose, mode, lifecycle, staleness, approval
     WHERE n.nspname = 'governance'
       AND r.relname = ANY($1::text[])
       AND c.contype = 'c'
-  `, [expectedTables]);
+  `,
+    [expectedTables],
+  );
   const definitions = checks.rows.map((row) => row.definition).join("\n");
 
   for (const value of [
-    "PLANNER", "EXECUTOR", "RESEARCHER", "ANALYST", "WRITER", "REVIEWER",
-    "PRIMARY_EXECUTION", "FALLBACK", "INDEPENDENT_REVIEW", "ADVERSARIAL_REVIEW",
-    "DRAFT", "ACTIVE", "SUPERSEDED", "RETIRED",
-    "CURRENT", "STALE_CLASSIFICATION", "STALE_POLICY", "STALE_REGISTRY",
-    "STALE_APPROVAL", "STALE_AIDOS", "CONFLICTING",
-    "NOT_REQUIRED", "REQUIRED_MISSING", "APPROVED", "REJECTED", "EXPIRED",
-    "REVOKED", "STALE", "CONSUMED", "NOT_APPLICABLE", "READY_TO_DELEGATE",
-    "AIDOS_UNAVAILABLE", "WAITING_AIDOS_ONBOARDING",
+    "PLANNER",
+    "EXECUTOR",
+    "RESEARCHER",
+    "ANALYST",
+    "WRITER",
+    "REVIEWER",
+    "PRIMARY_EXECUTION",
+    "FALLBACK",
+    "INDEPENDENT_REVIEW",
+    "ADVERSARIAL_REVIEW",
+    "DRAFT",
+    "ACTIVE",
+    "SUPERSEDED",
+    "RETIRED",
+    "CURRENT",
+    "STALE_CLASSIFICATION",
+    "STALE_POLICY",
+    "STALE_REGISTRY",
+    "STALE_APPROVAL",
+    "STALE_AIDOS",
+    "CONFLICTING",
+    "NOT_REQUIRED",
+    "REQUIRED_MISSING",
+    "APPROVED",
+    "REJECTED",
+    "EXPIRED",
+    "REVOKED",
+    "STALE",
+    "CONSUMED",
+    "NOT_APPLICABLE",
+    "READY_TO_DELEGATE",
+    "AIDOS_UNAVAILABLE",
+    "WAITING_AIDOS_ONBOARDING",
   ]) {
     assert.match(definitions, new RegExp(`'${value}'`));
   }
@@ -265,13 +328,16 @@ test("migration 0032 creates no authority rows and revokes PUBLIC table privileg
     assert.equal(count.rows[0]?.count, "0");
   }
 
-  const publicGrants = await db.query<{ count: string }>(`
+  const publicGrants = await db.query<{ count: string }>(
+    `
     SELECT count(*)::text AS count
     FROM information_schema.table_privileges
     WHERE table_schema = 'governance'
       AND table_name = ANY($1::text[])
       AND grantee = 'PUBLIC'
-  `, [expectedTables]);
+  `,
+    [expectedTables],
+  );
   assert.equal(publicGrants.rows[0]?.count, "0");
 });
 
@@ -451,7 +517,10 @@ test(
       try {
         const first = await applyMigrations(firstDatabase, migrations);
         assert.equal(first.applied.length, 32);
-        assert.equal(first.applied.at(-1), "0032_phase15d_multi_ai_role_model_routing");
+        assert.equal(
+          first.applied.at(-1),
+          "0032_phase15d_multi_ai_role_model_routing",
+        );
 
         const replay = await applyMigrations(firstDatabase, migrations);
         assert.deepEqual(replay, {
@@ -467,10 +536,13 @@ test(
           FROM core.schema_migrations
           WHERE id = '0032_phase15d_multi_ai_role_model_routing'
         `);
-        assert.deepEqual(registry.rows, [{
-          checksum: "a41591988e1f90606d23c16ac0cc77743ad5eb2811febe36d2467151c49e68cb",
-          id: "0032_phase15d_multi_ai_role_model_routing",
-        }]);
+        assert.deepEqual(registry.rows, [
+          {
+            checksum:
+              "ec3b2b8217c89158c2003e717969e28099717d2e47162b7ae19031b5ad004b4a",
+            id: "0032_phase15d_multi_ai_role_model_routing",
+          },
+        ]);
 
         await seedRequestAndAudit(firstDatabase);
         const inserts = await Promise.allSettled([
@@ -489,8 +561,14 @@ test(
             'PRIMARY_EXECUTION', 'SYSTEM', '${ids.actor}'
           )`),
         ]);
-        assert.equal(inserts.filter(({ status }) => status === "fulfilled").length, 1);
-        assert.equal(inserts.filter(({ status }) => status === "rejected").length, 1);
+        assert.equal(
+          inserts.filter(({ status }) => status === "fulfilled").length,
+          1,
+        );
+        assert.equal(
+          inserts.filter(({ status }) => status === "rejected").length,
+          1,
+        );
 
         const streams = await firstDatabase.query<{ count: string }>(`
           SELECT count(*)::text AS count

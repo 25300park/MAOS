@@ -186,8 +186,8 @@ export const RESET_MIGRATION_MANIFEST = Object.freeze(
     ],
     [
       "0032_phase15d_multi_ai_role_model_routing",
-      "a41591988e1f90606d23c16ac0cc77743ad5eb2811febe36d2467151c49e68cb",
-      "4ec5b83b298d3277dbc43d1691ae1de99c06bdb64b10dd57fd0ae2afa1b8a7b5",
+      "ec3b2b8217c89158c2003e717969e28099717d2e47162b7ae19031b5ad004b4a",
+      "3d466b868f6f1d0180d4706b7dfea63f6ef095b92f3b658c738057fe17ba575b",
     ],
   ].map(([id, canonicalChecksum, legacyCrlfChecksum]) => ({
     canonicalChecksum: canonicalChecksum ?? "",

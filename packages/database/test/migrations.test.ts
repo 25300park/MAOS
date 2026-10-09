@@ -71,7 +71,7 @@ const canonicalChecksums = Object.freeze({
   "0031_phase15c_classification_domain_routing":
     "bf20bb6aed84323ed4b37eb0ec19e488d8ffc99f0d88c957e30dd32f23258ee1",
   "0032_phase15d_multi_ai_role_model_routing":
-    "a41591988e1f90606d23c16ac0cc77743ad5eb2811febe36d2467151c49e68cb",
+    "ec3b2b8217c89158c2003e717969e28099717d2e47162b7ae19031b5ad004b4a",
 });
 
 async function temporaryMigrations(t: test.TestContext): Promise<string> {

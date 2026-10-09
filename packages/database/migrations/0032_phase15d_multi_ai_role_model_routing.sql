@@ -133,6 +133,14 @@ CREATE TABLE governance.request_routing_decision_versions (
   routing_version bigint NOT NULL CHECK (routing_version > 0),
   supersedes_routing_decision_id uuid,
   classification_version_id uuid NOT NULL,
+  classification_version bigint NOT NULL CHECK (classification_version > 0),
+  classification_state text NOT NULL CHECK (classification_state = 'VALIDATED'),
+  classification_currentness_state text NOT NULL CHECK (classification_currentness_state = 'CURRENT'),
+  classification_currentness_proof text NOT NULL
+    CHECK (classification_currentness_proof ~ '^sha256:[a-f0-9]{64}$'),
+  classification_policy_resolution_ref uuid NOT NULL,
+  classification_policy_resolution_version text NOT NULL
+    CHECK (length(trim(classification_policy_resolution_version)) > 0),
   canonical_domain text NOT NULL
     CHECK (canonical_domain IN ('BUSINESS','OPERATIONS','RESEARCH','ANALYTICS','WRITING','DEVELOPMENT','MEMORY')),
   role_class text NOT NULL
@@ -180,7 +188,6 @@ CREATE TABLE governance.request_routing_decision_versions (
   staleness_state text NOT NULL
     CHECK (staleness_state IN ('CURRENT','STALE_CLASSIFICATION','STALE_POLICY','STALE_REGISTRY','STALE_APPROVAL','STALE_AIDOS','CONFLICTING')),
   classification_checked_at timestamptz NOT NULL,
-  classification_fresh_until timestamptz NOT NULL,
   policy_checked_at timestamptz NOT NULL,
   policy_fresh_until timestamptz NOT NULL,
   idempotency_key text NOT NULL CHECK (length(trim(idempotency_key)) > 0),
@@ -257,7 +264,6 @@ CREATE TABLE governance.request_routing_decision_versions (
       AND aidos_fresh_until IS NULL)
   ),
   CHECK (registry_fresh_until > registry_observed_at),
-  CHECK (classification_fresh_until > classification_checked_at),
   CHECK (policy_fresh_until > policy_checked_at),
   CHECK (aidos_fresh_until IS NULL OR aidos_fresh_until > aidos_checked_at)
 );
@@ -317,7 +323,7 @@ CREATE INDEX request_routing_decision_versions_approval_idx
   ON governance.request_routing_decision_versions (human_approval_ref);
 CREATE INDEX request_routing_decision_versions_state_idx
   ON governance.request_routing_decision_versions
-    (decision_state, staleness_state, registry_fresh_until, classification_fresh_until, policy_fresh_until);
+    (decision_state, staleness_state, classification_currentness_state, registry_fresh_until, policy_fresh_until);
 CREATE INDEX request_routing_candidate_snapshots_decision_rank_idx
   ON governance.request_routing_candidate_snapshots (routing_decision_id, deterministic_rank);
 CREATE INDEX request_routing_candidate_snapshots_binding_idx
