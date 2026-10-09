@@ -10,6 +10,7 @@ import {
   type RoutingCandidateSnapshot,
   type RoutingDecisionRecord,
   type RoutingDecisionRepository,
+  type RoutingDecisionAuditInput,
   type RoutingPurpose,
 } from "./routing-contracts.js";
 import type { MigrationDatabase } from "./types.js";
@@ -198,6 +199,42 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
     return result.rows.map(mapCandidate);
   }
 
+  async findHumanOverrideAudit(auditRef: string) {
+    const result = await this.database.query<{
+      actor_id: string;
+      action: string;
+      metadata: unknown;
+    }>("SELECT actor_id,action,metadata FROM audit.audit_records WHERE id=$1", [
+      auditRef,
+    ]);
+    const row = result.rows[0];
+    if (!row || row.action !== "ROUTING.OVERRIDE_CREATED") return undefined;
+    const metadata = row.metadata as
+      AppendRoutingDecisionInput["auditMetadata"] | undefined;
+    if (!metadata?.authority) return undefined;
+    return { actorId: row.actor_id, metadata };
+  }
+
+  async recordRoutingAudit(input: RoutingDecisionAuditInput) {
+    await new PostgresAuditRecordRepository(this.database).record({
+      action: input.action,
+      actorId: input.actorId,
+      actorType: input.actorType,
+      targetType: "ROUTING_DECISION",
+      targetId: input.targetDecisionId,
+      result: input.result,
+      requestId: input.requestId,
+      projectId: input.projectId,
+      correlationId: input.correlationId,
+      traceId: input.traceId,
+      spanId: input.spanId,
+      evidenceRefs: input.evidenceRefs,
+      metadata: input.metadata,
+      idempotencyKey: input.idempotencyKey,
+      deterministicIdentitySeed: `${input.action}:${input.requestId}:${input.idempotencyKey}`,
+    });
+  }
+
   async appendDecision(
     input: AppendRoutingDecisionInput,
   ): Promise<RoutingAppendResult> {
@@ -274,13 +311,14 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
       if ((head?.routingDecisionId ?? null) !== input.expectedPredecessorId)
         throw new RoutingContractError("ROUTING_STREAM_CONFLICT");
       const version = (head?.routingVersion ?? 0) + 1;
+      const auditAction = input.auditAction ?? "ROUTING.DECISION_CREATED";
       const auditRef = deterministicAuditUuid(
-        `ROUTING.DECISION_CREATED:${input.requestId}:${input.idempotencyKey}`,
+        `${auditAction}:${input.requestId}:${input.idempotencyKey}`,
       );
       await new PostgresAuditRecordRepository(
         this.database,
       ).recordInTransaction({
-        action: "ROUTING.DECISION_CREATED",
+        action: auditAction,
         actorId: input.actorId,
         actorType: input.actorType,
         targetType: "ROUTING_DECISION",
@@ -296,9 +334,10 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
           purpose: input.routingPurpose,
           version,
           state: input.decisionState,
+          ...(input.auditMetadata ?? {}),
         },
         idempotencyKey: input.idempotencyKey,
-        deterministicIdentitySeed: `ROUTING.DECISION_CREATED:${input.requestId}:${input.idempotencyKey}`,
+        deterministicIdentitySeed: `${auditAction}:${input.requestId}:${input.idempotencyKey}`,
       });
       await this.database.query(
         `INSERT INTO governance.request_routing_decision_versions(

@@ -9,6 +9,7 @@ import {
   loadMigrations,
   openPostgresDatabase,
   PostgresRoutingDecisionRepository,
+  type AppendRoutingDecisionInput,
 } from "../src/index.js";
 import { withDisposablePostgres } from "../../../scripts/testing/disposable-postgres.js";
 
@@ -109,6 +110,22 @@ const appendInput = {
   candidates: [] as const,
 };
 
+const overrideAuthority = (targetDecisionId: string) => ({
+  authorityId: "authority:routing-override",
+  permission: "ROUTING_DECISION:OVERRIDE" as const,
+  state: "ACTIVE" as const,
+  actorId: id("5"),
+  organizationId: id("1"),
+  projectId: id("3"),
+  scopeRef: "scope",
+  environment: "STAGING",
+  targetRequestId: id("6"),
+  targetRoutingPurpose: "PRIMARY_EXECUTION" as const,
+  targetDecisionId,
+  checkedAt: "2026-10-08T00:00:00.000Z",
+  freshUntil: "2026-10-08T01:00:00.000Z",
+});
+
 test("persists immutable stream-local versions with exact replay", async (t) => {
   const { db, repository } = await fixture(t);
   const created = await repository.appendDecision(appendInput);
@@ -136,6 +153,99 @@ test("persists immutable stream-local versions with exact replay", async (t) => 
     repository.appendDecision({ ...appendInput, canonicalDomain: "WRITING" }),
     /ROUTING_IDEMPOTENCY_CONFLICT/,
   );
+});
+
+test("persists Human override Audit atomically and rolls back on Audit failure", async (t) => {
+  const { db, repository } = await fixture(t);
+  await repository.appendDecision(appendInput);
+  const override = {
+    ...appendInput,
+    routingDecisionId: id("22"),
+    expectedPredecessorId: appendInput.routingDecisionId,
+    idempotencyKey: "override-1",
+    canonicalIntentFingerprint: sha("9"),
+    actorType: "HUMAN" as const,
+    auditAction: "ROUTING.OVERRIDE_CREATED" as const,
+    auditMetadata: {
+      authority: overrideAuthority(appendInput.routingDecisionId),
+      overrideTargetDecisionId: appendInput.routingDecisionId,
+      overrideIntentType: "REEVALUATE_CANONICAL",
+      reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+      reasonText: "Re-evaluate under current canonical authority.",
+    },
+  } satisfies AppendRoutingDecisionInput;
+  const result = await repository.appendDecision(override);
+  assert.equal(result.outcome, "CREATED");
+  const audit = await db.query<{
+    action: string;
+    metadata: Record<string, unknown>;
+  }>("SELECT action,metadata FROM audit.audit_records WHERE id=$1", [
+    result.auditRef,
+  ]);
+  assert.equal(audit.rows[0]?.action, "ROUTING.OVERRIDE_CREATED");
+  assert.equal(
+    (audit.rows[0]?.metadata.authority as { authorityId?: string })
+      ?.authorityId,
+    "authority:routing-override",
+  );
+  assert.equal(
+    (await repository.findHumanOverrideAudit(result.auditRef))?.metadata
+      .authority.authorityId,
+    "authority:routing-override",
+  );
+  await repository.recordRoutingAudit({
+    action: "ROUTING.OVERRIDE_REJECTED",
+    actorId: id("5"),
+    actorType: "HUMAN",
+    requestId: id("6"),
+    projectId: id("3"),
+    targetDecisionId: result.decision.routingDecisionId,
+    result: "DENIED",
+    evidenceRefs: ["evidence:rejection"],
+    correlationId: "corr-rejection",
+    traceId: "trace-rejection",
+    spanId: "span-rejection",
+    idempotencyKey: "override-rejected",
+    metadata: {
+      routingPurpose: "PRIMARY_EXECUTION",
+      reasonCode: "HUMAN_OVERRIDE_POLICY_VIOLATION",
+    },
+  });
+  const rejectionAudit = await db.query<{ count: number }>(
+    "SELECT count(*)::int AS count FROM audit.audit_records WHERE action='ROUTING.OVERRIDE_REJECTED'",
+  );
+  assert.equal(rejectionAudit.rows[0]?.count, 1);
+
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION audit.reject_phase15d_override_for_test()
+    RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.action='ROUTING.OVERRIDE_CREATED' THEN RAISE EXCEPTION 'bounded test rejection'; END IF;
+      RETURN NEW;
+    END $$;
+    CREATE TRIGGER reject_phase15d_override_for_test
+      BEFORE INSERT ON audit.audit_records
+      FOR EACH ROW EXECUTE FUNCTION audit.reject_phase15d_override_for_test();
+  `);
+  await assert.rejects(
+    repository.appendDecision({
+      ...override,
+      routingDecisionId: id("23"),
+      expectedPredecessorId: result.decision.routingDecisionId,
+      idempotencyKey: "override-rollback",
+      canonicalIntentFingerprint: sha("8"),
+    }),
+    /bounded test rejection/,
+  );
+  assert.equal(
+    (
+      await repository.listHistory(
+        appendInput.requestId,
+        appendInput.routingPurpose,
+      )
+    ).length,
+    2,
+  );
+  assert.equal((await repository.listCandidates(id("23"))).length, 0);
 });
 
 test("keeps purpose streams independent and confines fallback to primary", async (t) => {
@@ -248,6 +358,15 @@ test(
             idempotencyKey: "route-successor-a",
             canonicalIntentFingerprint: sha("2"),
             contextRefs: ["successor:a"],
+            actorType: "HUMAN",
+            auditAction: "ROUTING.OVERRIDE_CREATED",
+            auditMetadata: {
+              authority: overrideAuthority(appendInput.routingDecisionId),
+              overrideTargetDecisionId: appendInput.routingDecisionId,
+              overrideIntentType: "REEVALUATE_CANONICAL",
+              reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+              reasonText: "Concurrent override A.",
+            },
           }),
           secondRepository.appendDecision({
             ...appendInput,
@@ -256,6 +375,15 @@ test(
             idempotencyKey: "route-successor-b",
             canonicalIntentFingerprint: sha("3"),
             contextRefs: ["successor:b"],
+            actorType: "HUMAN",
+            auditAction: "ROUTING.OVERRIDE_CREATED",
+            auditMetadata: {
+              authority: overrideAuthority(appendInput.routingDecisionId),
+              overrideTargetDecisionId: appendInput.routingDecisionId,
+              overrideIntentType: "REEVALUATE_CANONICAL",
+              reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+              reasonText: "Concurrent override B.",
+            },
           }),
         ]);
         assert.equal(
@@ -275,17 +403,20 @@ test(
         assert.equal(head?.routingVersion, 2);
         const counts = await first.query<{
           decisions: string;
-          audits: string;
+          decision_audits: string;
+          override_audits: string;
           version_two_heads: string;
         }>(`
         SELECT
           (SELECT count(*)::text FROM governance.request_routing_decision_versions) AS decisions,
-          (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED') AS audits,
+          (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED') AS decision_audits,
+          (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.OVERRIDE_CREATED') AS override_audits,
           (SELECT count(*)::text FROM governance.request_routing_decision_versions WHERE routing_version=2) AS version_two_heads
       `);
         assert.deepEqual(counts.rows[0], {
           decisions: "2",
-          audits: "2",
+          decision_audits: "1",
+          override_audits: "1",
           version_two_heads: "1",
         });
       } finally {

@@ -7,6 +7,8 @@ import {
   type AppendRoutingDecisionInput,
   type CreatePersistedRoutingDecisionInput,
   type CreateRoutingDecisionInput,
+  type HumanRoutingOverrideAuthority,
+  type HumanRoutingOverrideRequest,
   type RoutingAppendResult,
   type RoutingCandidateSnapshot,
   type RoutingDecisionRecord,
@@ -75,6 +77,51 @@ function createInput(
     causationRefs: [],
     traceId: "trace",
     spanId: "span",
+    ...overrides,
+  };
+}
+
+function overrideAuthority(
+  overrides: Partial<HumanRoutingOverrideAuthority> = {},
+): HumanRoutingOverrideAuthority {
+  return {
+    authorityId: "authority:routing-override",
+    permission: "ROUTING_DECISION:OVERRIDE",
+    state: "ACTIVE",
+    actorId: id("5"),
+    organizationId: id("3"),
+    projectId: id("4"),
+    scopeRef: "scope",
+    environment: "STAGING",
+    targetRequestId: id("1"),
+    targetRoutingPurpose: "PRIMARY_EXECUTION",
+    targetDecisionId: id("90"),
+    checkedAt: now,
+    freshUntil: future,
+    ...overrides,
+  };
+}
+
+function overrideInput(
+  predecessorId: string,
+  overrides: Partial<HumanRoutingOverrideRequest> = {},
+): HumanRoutingOverrideRequest {
+  return {
+    ...createInput({
+      expectedCurrentDecisionId: predecessorId,
+      idempotencyKey: "override-once",
+      actorType: "HUMAN",
+    }),
+    actorType: "HUMAN",
+    expectedCurrentDecisionId: predecessorId,
+    authority: overrideAuthority({ targetDecisionId: predecessorId }),
+    overrideIntent: {
+      type: "SELECT_ELIGIBLE_CANDIDATE",
+      modelHostBindingId: id("23"),
+    },
+    reasonCode: "HUMAN_SELECTED_ELIGIBLE_RESOURCE",
+    reasonText: "Human selected the current policy-eligible candidate.",
+    evidenceRefs: ["evidence:human-override"],
     ...overrides,
   };
 }
@@ -285,8 +332,15 @@ function developmentValidated(
 
 class MemoryDecisionRepository implements RoutingDecisionRepository {
   readonly appends: AppendRoutingDecisionInput[] = [];
+  readonly audits: Parameters<
+    RoutingDecisionRepository["recordRoutingAudit"]
+  >[0][] = [];
   private readonly records = new Map<string, RoutingAppendResult>();
   private readonly heads = new Map<string, RoutingDecisionRecord>();
+  private readonly overrideAuthorities = new Map<
+    string,
+    AppendRoutingDecisionInput["auditMetadata"]
+  >();
 
   async findOrCreateStreamIdentity(input: {
     requestId: string;
@@ -316,6 +370,20 @@ class MemoryDecisionRepository implements RoutingDecisionRepository {
   async listCandidates(decisionId: string) {
     return this.records.get(decisionId)?.candidates ?? [];
   }
+  async findHumanOverrideAudit(auditRef: string) {
+    const metadata = this.overrideAuthorities.get(auditRef);
+    return metadata
+      ? { actorId: metadata.authority.actorId, metadata }
+      : undefined;
+  }
+  successfulOverrideAuditCount() {
+    return this.overrideAuthorities.size;
+  }
+  async recordRoutingAudit(
+    input: Parameters<RoutingDecisionRepository["recordRoutingAudit"]>[0],
+  ) {
+    this.audits.push(input);
+  }
   async appendDecision(input: AppendRoutingDecisionInput) {
     this.appends.push(input);
     const existing = [...this.records.values()].find(
@@ -336,11 +404,12 @@ class MemoryDecisionRepository implements RoutingDecisionRepository {
     const head = this.heads.get(headKey);
     if ((head?.routingDecisionId ?? null) !== input.expectedPredecessorId)
       throw new RoutingContractError("ROUTING_STREAM_CONFLICT");
+    const auditRef = `${input.routingDecisionId}:audit`;
     const decision: RoutingDecisionRecord = {
       ...input,
       routingVersion: (head?.routingVersion ?? 0) + 1,
       supersedesRoutingDecisionId: input.expectedPredecessorId,
-      auditRef: id("90"),
+      auditRef,
       createdAt: now,
     };
     const candidates: RoutingCandidateSnapshot[] = input.candidates.map(
@@ -358,6 +427,8 @@ class MemoryDecisionRepository implements RoutingDecisionRepository {
     };
     this.records.set(input.routingDecisionId, result);
     this.heads.set(headKey, decision);
+    if (input.auditMetadata)
+      this.overrideAuthorities.set(auditRef, input.auditMetadata);
     return result;
   }
 }
@@ -391,6 +462,10 @@ function service(
 test("creates one deterministic stream decision with safe candidate lineage", async () => {
   const { decisionService, repository, validationCalls } = service();
   const result = await decisionService.createDecision(createInput());
+  assert.equal(
+    result.decision.canonicalIntentFingerprint,
+    "sha256:2db8c808b787a828ae82519ad6fdbf7d2eeef9b5c7a6144cc4c361c1b10538b4",
+  );
 
   assert.equal(result.outcome, "CREATED");
   assert.equal(result.decision.routingVersion, 1);
@@ -860,10 +935,7 @@ test("AIDOS exact replay includes authority Evidence identity", async () => {
 
 test("AIDOS projection-only replay drift fails closed", async (t) => {
   const cases: ReadonlyArray<
-    readonly [
-      string,
-      Partial<NonNullable<ValidatedRoutingContext["aidos"]>>,
-    ]
+    readonly [string, Partial<NonNullable<ValidatedRoutingContext["aidos"]>>]
   > = [
     ["availability", { availabilityRevision: "availability-r2" }],
     ["registration", { registrationRevision: "registration-r2" }],
@@ -951,4 +1023,671 @@ test("revalidates the current stream head and emits only non-executing output", 
     "executionToken",
   ])
     assert.equal(prohibited in output, false);
+});
+
+test("appends an authorized Human override as an immutable stream-local successor", async () => {
+  const base = validated();
+  const secondCandidate = {
+    ...base.candidates!.eligibleCandidates[0]!,
+    deterministicRank: 2,
+    providerId: id("30"),
+    modelId: id("31"),
+    runtimeAdapterId: id("32"),
+    modelHostBindingId: id("33"),
+    lineage: {
+      ...base.candidates!.eligibleCandidates[0]!.lineage,
+      provider: { id: id("30"), version: 1 },
+      model: { id: id("31"), version: 1 },
+      runtimeAdapter: { id: id("32"), version: 1 },
+      modelHostBinding: { id: id("33"), version: 1 },
+    },
+  };
+  const state = validated({
+    candidates: {
+      ...base.candidates!,
+      registryResourceRefs: [
+        ...base.candidates!.registryResourceRefs,
+        id("30"),
+        id("31"),
+        id("32"),
+        id("33"),
+      ],
+      eligibleCandidates: [
+        base.candidates!.eligibleCandidates[0]!,
+        secondCandidate,
+      ],
+    },
+  });
+  const { decisionService, repository } = service([state, state, state, state]);
+  const original = await decisionService.createDecision(createInput());
+  const originalSnapshot = structuredClone(original.decision);
+  const result = await decisionService.applyHumanOverride(
+    overrideInput(original.decision.routingDecisionId, {
+      overrideIntent: {
+        type: "SELECT_ELIGIBLE_CANDIDATE",
+        modelHostBindingId: id("33"),
+      },
+    }),
+  );
+
+  assert.equal(result.outcome, "CREATED");
+  assert.equal(result.decision.routingVersion, 2);
+  assert.equal(
+    result.decision.supersedesRoutingDecisionId,
+    original.decision.routingDecisionId,
+  );
+  assert.equal(
+    result.decision.routingDecisionStreamId,
+    original.decision.routingDecisionStreamId,
+  );
+  assert.deepEqual(original.decision, originalSnapshot);
+  assert.equal(
+    repository.appends.at(-1)?.auditAction,
+    "ROUTING.OVERRIDE_CREATED",
+  );
+  assert.deepEqual(repository.appends.at(-1)?.auditMetadata, {
+    authority: overrideAuthority({
+      targetDecisionId: original.decision.routingDecisionId,
+    }),
+    overrideTargetDecisionId: original.decision.routingDecisionId,
+    overrideIntentType: "SELECT_ELIGIBLE_CANDIDATE",
+    reasonCode: "HUMAN_SELECTED_ELIGIBLE_RESOURCE",
+    reasonText: "Human selected the current policy-eligible candidate.",
+  });
+  assert.deepEqual(result.decision.decisionReasonCodes, [
+    "HUMAN_OVERRIDE",
+    "HUMAN_SELECTED_ELIGIBLE_RESOURCE",
+  ]);
+  assert.equal(original.decision.selectedModelHostBindingRef, id("23"));
+  assert.equal(result.decision.selectedModelHostBindingRef, id("33"));
+  assert.equal(result.candidates.length, 2);
+  for (const prohibited of ["runId", "jobId", "toolCallId", "executionToken"])
+    assert.equal(prohibited in result, false);
+});
+
+test("rejects unauthorized, stale, revoked, and wrongly scoped Human authority", async (t) => {
+  const cases: ReadonlyArray<
+    readonly [
+      string,
+      Partial<HumanRoutingOverrideRequest>,
+      Partial<HumanRoutingOverrideAuthority> | null,
+      string,
+    ]
+  > = [
+    [
+      "non-Human actor",
+      { actorType: "SYSTEM" as "HUMAN" },
+      null,
+      "HUMAN_APPROVAL_INVALID",
+    ],
+    [
+      "wrong permission",
+      {},
+      { permission: "ROUTING_DECISION:READ" as "ROUTING_DECISION:OVERRIDE" },
+      "HUMAN_APPROVAL_INVALID",
+    ],
+    ["revoked", {}, { state: "REVOKED" }, "HUMAN_APPROVAL_REVOKED"],
+    ["expired", {}, { state: "EXPIRED" }, "HUMAN_APPROVAL_STALE"],
+    ["stale", {}, { state: "STALE" }, "HUMAN_APPROVAL_STALE"],
+    [
+      "wrong organization",
+      {},
+      { organizationId: id("99") },
+      "HUMAN_APPROVAL_INVALID",
+    ],
+    ["wrong project", {}, { projectId: id("99") }, "HUMAN_APPROVAL_INVALID"],
+    ["wrong scope", {}, { scopeRef: "other" }, "HUMAN_APPROVAL_INVALID"],
+    [
+      "wrong target",
+      {},
+      { targetRequestId: id("99") },
+      "HUMAN_APPROVAL_INVALID",
+    ],
+  ];
+  for (const [name, changes, authorityChanges, code] of cases) {
+    await t.test(name, async () => {
+      const state = validated();
+      const { decisionService } = service([state, state, state, state]);
+      const original = await decisionService.createDecision(createInput());
+      const base = overrideInput(original.decision.routingDecisionId);
+      await assert.rejects(
+        decisionService.applyHumanOverride({
+          ...base,
+          ...changes,
+          authority: authorityChanges
+            ? { ...base.authority, ...authorityChanges }
+            : base.authority,
+        }),
+        (error: unknown) =>
+          error instanceof RoutingContractError && error.code === code,
+      );
+    });
+  }
+});
+
+test("requires exact current head, bounded reason, and non-empty Evidence", async () => {
+  const state = validated();
+  const { decisionService } = service([
+    state,
+    state,
+    state,
+    state,
+    state,
+    state,
+  ]);
+  const original = await decisionService.createDecision(createInput());
+  const base = overrideInput(original.decision.routingDecisionId);
+  await assert.rejects(
+    decisionService.applyHumanOverride({ ...base, reasonText: "" }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({ ...base, evidenceRefs: [] }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...base,
+      overrideIntent: { type: "UNKNOWN" } as never,
+    }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...base,
+      authority: { ...base.authority, credential: "must-not-persist" } as never,
+    }),
+    /HUMAN_APPROVAL_INVALID/,
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...base,
+      overrideIntent: {
+        ...base.overrideIntent,
+        arbitraryMutation: true,
+      } as never,
+    }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...base,
+      expectedCurrentDecisionId: id("98"),
+      authority: overrideAuthority({ targetDecisionId: id("98") }),
+      idempotencyKey: "stale-override",
+    }),
+    /ROUTING_DECISION_STALE/,
+  );
+});
+
+test("persists bounded rejection Audit and redacts secret-shaped reason text", async () => {
+  const state = validated();
+  const { decisionService, repository } = service(
+    Array.from({ length: 8 }, () => state),
+  );
+  const original = await decisionService.createDecision(createInput());
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...overrideInput(original.decision.routingDecisionId),
+      overrideIntent: { type: "UNKNOWN" } as never,
+    }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+  assert.equal(repository.audits[0]?.action, "ROUTING.OVERRIDE_REJECTED");
+  assert.deepEqual(repository.audits[0]?.metadata, {
+    routingPurpose: "PRIMARY_EXECUTION",
+    reasonCode: "HUMAN_OVERRIDE_POLICY_VIOLATION",
+  });
+
+  const accepted = await decisionService.applyHumanOverride({
+    ...overrideInput(original.decision.routingDecisionId, {
+      idempotencyKey: "redacted-reason",
+    }),
+    reasonText:
+      'Investigate token=HOSTILE_SECRET_VALUE and {"password":"JSON SECRET WITH SPACES"} before selecting.',
+  });
+  const auditMetadata = repository.appends.find(
+    ({ routingDecisionId }) =>
+      routingDecisionId === accepted.decision.routingDecisionId,
+  )?.auditMetadata;
+  assert.equal(
+    auditMetadata?.reasonText,
+    "Investigate token=[REDACTED] and {password=[REDACTED]} before selecting.",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(auditMetadata),
+    /HOSTILE_SECRET_VALUE|JSON SECRET WITH SPACES/u,
+  );
+});
+
+test("revalidates persisted Human override authority before handoff", async () => {
+  const state = validated();
+  const { decisionService } = service(Array.from({ length: 12 }, () => state));
+  const original = await decisionService.createDecision(createInput());
+  const override = overrideInput(original.decision.routingDecisionId);
+  const created = await decisionService.applyHumanOverride(override);
+
+  await assert.rejects(
+    decisionService.validateForHandoff(
+      created.decision.routingDecisionId,
+      validationInput(),
+    ),
+    /HUMAN_APPROVAL_STALE/,
+  );
+  const output = await decisionService.validateForHandoff(
+    created.decision.routingDecisionId,
+    validationInput(),
+    override.authority,
+  );
+  assert.equal(output.routingDecisionId, created.decision.routingDecisionId);
+  await assert.rejects(
+    decisionService.validateForHandoff(
+      created.decision.routingDecisionId,
+      validationInput(),
+      { ...override.authority, state: "REVOKED" },
+    ),
+    /HUMAN_APPROVAL_REVOKED/,
+  );
+  await assert.rejects(
+    decisionService.validateForHandoff(
+      created.decision.routingDecisionId,
+      validationInput(),
+      { ...override.authority, authorityId: "authority:changed" },
+    ),
+    /HUMAN_APPROVAL_INVALID/,
+  );
+});
+
+test("rejects cross-purpose targets and preserves the other purpose head", async () => {
+  const state = validated();
+  const reviewState = validated({
+    policy: {
+      ...state.policy,
+      routingPurpose: "INDEPENDENT_REVIEW",
+      roleClass: "REVIEWER",
+    },
+  });
+  const { decisionService, repository } = service([
+    state,
+    state,
+    reviewState,
+    reviewState,
+    state,
+    state,
+  ]);
+  const primary = await decisionService.createDecision(createInput());
+  const review = await decisionService.createDecision(
+    createInput({
+      routingPurpose: "INDEPENDENT_REVIEW",
+      routingMode: "INDEPENDENT_REVIEW",
+      roleClass: "REVIEWER",
+      idempotencyKey: "review-stream",
+    }),
+  );
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...overrideInput(primary.decision.routingDecisionId),
+      expectedCurrentDecisionId: review.decision.routingDecisionId,
+      authority: overrideAuthority({
+        targetDecisionId: review.decision.routingDecisionId,
+      }),
+      idempotencyKey: "cross-purpose-override",
+    }),
+    /ROUTING_CROSS_STREAM_SUPERSESSION_DENIED/,
+  );
+  assert.equal(
+    (await repository.findCurrent(id("1"), "INDEPENDENT_REVIEW"))
+      ?.routingDecisionId,
+    review.decision.routingDecisionId,
+  );
+});
+
+test("revalidates Classification, policy, Registry, Approval, and AIDOS before override", async (t) => {
+  const initial = validated();
+  const commonCases: ReadonlyArray<readonly [string, ValidatedRoutingContext]> =
+    [
+      [
+        "Classification",
+        validated({
+          classification: {
+            ...initial.classification,
+            currentnessProof: sha("z"),
+          },
+        }),
+      ],
+      [
+        "policy",
+        validated({
+          policy: { ...initial.policy, contentFingerprint: sha("z") },
+        }),
+      ],
+      [
+        "Registry",
+        validated({
+          candidates: {
+            ...initial.candidates!,
+            registrySnapshotRevision: "registry-r2",
+          },
+        }),
+      ],
+    ];
+  for (const [name, changed] of commonCases) {
+    await t.test(name, async () => {
+      const { decisionService, repository } = service([
+        initial,
+        initial,
+        initial,
+        changed,
+      ]);
+      const original = await decisionService.createDecision(createInput());
+      await assert.rejects(
+        decisionService.applyHumanOverride(
+          overrideInput(original.decision.routingDecisionId),
+        ),
+        /ROUTING_DECISION_STALE/,
+      );
+      assert.equal(repository.appends.length, 1);
+    });
+  }
+
+  const approval = {
+    current: true,
+    authority: "HUMAN_APPROVAL_AUTHORITY",
+    identity: id("40"),
+    revision: "approval-r1",
+    checkedAt: now,
+    freshUntil: future,
+    freshnessModel: "AUTHORITY_EXPIRY" as const,
+    state: "APPROVED" as const,
+    approvalRef: id("40"),
+    authorityRuleRef: "HUMAN_APPROVAL_AUTHORITY",
+    approvalPolicyRef: "approval-policy",
+    approvalPolicyVersion: "1",
+    targetType: "ROUTING_DECISION",
+    targetId: id("1"),
+    targetVersion: "1",
+    targetHash: sha("e"),
+    approvalStatus: "APPROVED",
+    approvalValidity: "VALID",
+    issuedAt: now,
+    expiresAt: future,
+    reasonCode: "APPROVED",
+  };
+  await t.test("Approval", async () => {
+    const approved = validated({ approval });
+    const changedApproval = validated({
+      approval: { ...approval, revision: "approval-r2" },
+    });
+    const { decisionService, repository } = service([
+      approved,
+      approved,
+      approved,
+      changedApproval,
+    ]);
+    const original = await decisionService.createDecision(createInput());
+    await assert.rejects(
+      decisionService.applyHumanOverride(
+        overrideInput(original.decision.routingDecisionId),
+      ),
+      /ROUTING_DECISION_STALE/,
+    );
+    assert.equal(repository.appends.length, 1);
+  });
+
+  await t.test("AIDOS", async () => {
+    const development = developmentValidated();
+    const changedAidos = developmentValidated({
+      eligibilityRevision: "eligibility-r2",
+    });
+    const { decisionService, repository } = service([
+      development,
+      development,
+      development,
+      changedAidos,
+    ]);
+    const original = await decisionService.createDecision(
+      createInput({ aidosTargetRef: "aidos:project" }),
+    );
+    await assert.rejects(
+      decisionService.applyHumanOverride(
+        overrideInput(original.decision.routingDecisionId, {
+          aidosTargetRef: "aidos:project",
+          overrideIntent: { type: "REEVALUATE_CANONICAL" },
+          reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+        }),
+      ),
+      /ROUTING_DECISION_STALE/,
+    );
+    assert.equal(repository.appends.length, 1);
+  });
+});
+
+test("allows only current policy-eligible candidates and never native Development selection", async () => {
+  const state = validated();
+  const { decisionService } = service([state, state, state, state]);
+  const original = await decisionService.createDecision(createInput());
+  await assert.rejects(
+    decisionService.applyHumanOverride({
+      ...overrideInput(original.decision.routingDecisionId),
+      overrideIntent: {
+        type: "SELECT_ELIGIBLE_CANDIDATE",
+        modelHostBindingId: id("99"),
+      },
+    }),
+    /HUMAN_OVERRIDE_POLICY_VIOLATION/,
+  );
+
+  const development = developmentValidated();
+  const developmentService = service([
+    development,
+    development,
+    development,
+    development,
+  ]).decisionService;
+  const developmentOriginal = await developmentService.createDecision(
+    createInput({
+      aidosTargetRef: "aidos:project",
+      idempotencyKey: "development-base",
+    }),
+  );
+  await assert.rejects(
+    developmentService.applyHumanOverride({
+      ...overrideInput(developmentOriginal.decision.routingDecisionId, {
+        aidosTargetRef: "aidos:project",
+        idempotencyKey: "development-override",
+      }),
+      overrideIntent: {
+        type: "SELECT_ELIGIBLE_CANDIDATE",
+        modelHostBindingId: id("23"),
+      },
+    }),
+    /DEVELOPMENT_NATIVE_EXECUTION_PROHIBITED/,
+  );
+});
+
+test("Human override exact replay is reused and all material replay drift conflicts", async (t) => {
+  const state = validated();
+  const contexts = Array.from({ length: 20 }, () => state);
+  const { decisionService, repository } = service(contexts);
+  const original = await decisionService.createDecision(createInput());
+  const input = overrideInput(original.decision.routingDecisionId);
+  const first = await decisionService.applyHumanOverride(input);
+  assert.equal(
+    (await decisionService.applyHumanOverride(input)).outcome,
+    "REUSED",
+  );
+  const conflicts: ReadonlyArray<
+    readonly [string, Partial<HumanRoutingOverrideRequest>]
+  > = [
+    ["reason", { reasonText: "Different reason." }],
+    ["Evidence", { evidenceRefs: ["evidence:different"] }],
+    [
+      "authority",
+      {
+        authority: overrideAuthority({
+          authorityId: "authority:different",
+          targetDecisionId: original.decision.routingDecisionId,
+        }),
+      },
+    ],
+  ];
+  for (const [name, change] of conflicts) {
+    await t.test(name, async () => {
+      await assert.rejects(
+        decisionService.applyHumanOverride({ ...input, ...change }),
+        /ROUTING_IDEMPOTENCY_CONFLICT/,
+      );
+    });
+  }
+  assert.equal(
+    repository.appends.filter(
+      (value) => value.routingDecisionId === first.decision.routingDecisionId,
+    ).length,
+    5,
+  );
+  assert.equal(
+    (await repository.listHistory(id("1"), "PRIMARY_EXECUTION")).length,
+    2,
+  );
+});
+
+test("Human override replay fails closed on AIDOS Evidence and projection-only drift", async (t) => {
+  const canonical = developmentValidated();
+  const driftCases: ReadonlyArray<readonly [string, ValidatedRoutingContext]> =
+    [
+      [
+        "Evidence",
+        developmentValidated({
+          evidenceRefs: [
+            "evidence:aidos:availability",
+            "evidence:aidos:registration:changed",
+            "evidence:aidos:eligibility",
+          ],
+        }),
+      ],
+      [
+        "registration",
+        developmentValidated({ registrationRevision: "registration-r2" }),
+      ],
+      [
+        "availability",
+        developmentValidated({ availabilityRevision: "availability-r2" }),
+      ],
+      [
+        "eligibility",
+        developmentValidated({ eligibilityRevision: "eligibility-r2" }),
+      ],
+    ];
+  const contexts = [
+    ...Array.from({ length: 6 }, () => canonical),
+    ...driftCases.flatMap(([, context]) => [context, context]),
+  ];
+  const { decisionService, repository } = service(contexts);
+  const original = await decisionService.createDecision(
+    createInput({
+      aidosTargetRef: "aidos:project",
+      idempotencyKey: "development-override-base",
+    }),
+  );
+  const input = overrideInput(original.decision.routingDecisionId, {
+    aidosTargetRef: "aidos:project",
+    idempotencyKey: "development-override-replay",
+    overrideIntent: { type: "REEVALUATE_CANONICAL" },
+    reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+  });
+  const created = await decisionService.applyHumanOverride(input);
+  const replay = await decisionService.applyHumanOverride(input);
+  assert.equal(replay.outcome, "REUSED");
+  assert.equal(
+    replay.decision.routingDecisionId,
+    created.decision.routingDecisionId,
+  );
+  assert.equal(replay.auditRef, created.auditRef);
+
+  const historyBefore = await repository.listHistory(
+    input.requestId,
+    input.routingPurpose,
+  );
+  const snapshotCountBefore = (
+    await Promise.all(
+      historyBefore.map(({ routingDecisionId }) =>
+        repository.listCandidates(routingDecisionId),
+      ),
+    )
+  ).flat().length;
+  assert.equal(historyBefore.length, 2);
+  assert.equal(snapshotCountBefore, 0);
+  assert.equal(repository.successfulOverrideAuditCount(), 1);
+
+  for (const [name] of driftCases) {
+    await t.test(name, async () => {
+      await assert.rejects(
+        decisionService.applyHumanOverride(input),
+        (error: unknown) =>
+          error instanceof RoutingContractError &&
+          error.code === "ROUTING_IDEMPOTENCY_CONFLICT",
+      );
+      const history = await repository.listHistory(
+        input.requestId,
+        input.routingPurpose,
+      );
+      const snapshotCount = (
+        await Promise.all(
+          history.map(({ routingDecisionId }) =>
+            repository.listCandidates(routingDecisionId),
+          ),
+        )
+      ).flat().length;
+      assert.equal(history.length, 2);
+      assert.equal(snapshotCount, snapshotCountBefore);
+      assert.equal(
+        (await repository.findCurrent(input.requestId, input.routingPurpose))
+          ?.routingDecisionId,
+        created.decision.routingDecisionId,
+      );
+      assert.equal(repository.successfulOverrideAuditCount(), 1);
+    });
+  }
+  assert.equal(repository.audits.length, driftCases.length);
+  assert.equal(
+    repository.audits.every(
+      ({ action, metadata }) =>
+        action === "ROUTING.OVERRIDE_REJECTED" &&
+        metadata.reasonCode === "ROUTING_IDEMPOTENCY_CONFLICT",
+    ),
+    true,
+  );
+  for (const prohibited of ["runId", "jobId", "toolCallId", "executionToken"])
+    assert.equal(prohibited in created, false);
+});
+
+test("concurrent distinct Human overrides against one head produce one successor", async () => {
+  const state = validated();
+  const { decisionService, repository } = service(
+    Array.from({ length: 8 }, () => state),
+  );
+  const original = await decisionService.createDecision(createInput());
+  const [left, right] = await Promise.allSettled([
+    decisionService.applyHumanOverride(
+      overrideInput(original.decision.routingDecisionId),
+    ),
+    decisionService.applyHumanOverride(
+      overrideInput(original.decision.routingDecisionId, {
+        idempotencyKey: "override-two",
+        reasonText: "A distinct current Human override.",
+      }),
+    ),
+  ]);
+  assert.equal(
+    [left, right].filter(({ status }) => status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    [left, right].filter(({ status }) => status === "rejected").length,
+    1,
+  );
+  assert.equal(
+    (await repository.listHistory(id("1"), "PRIMARY_EXECUTION")).length,
+    2,
+  );
 });

@@ -262,6 +262,56 @@ export interface AppendRoutingDecisionInput extends Omit<
   readonly spanId: string;
   readonly projectId: string;
   readonly candidates: readonly RoutingCandidateSnapshotInput[];
+  readonly auditAction?:
+    "ROUTING.DECISION_CREATED" | "ROUTING.OVERRIDE_CREATED";
+  readonly auditMetadata?: Readonly<{
+    authority: RoutingHumanOverrideAuthorityBinding;
+    overrideTargetDecisionId: string;
+    overrideIntentType: "SELECT_ELIGIBLE_CANDIDATE" | "REEVALUATE_CANONICAL";
+    reasonCode:
+      "HUMAN_SELECTED_ELIGIBLE_RESOURCE" | "HUMAN_REQUESTED_REEVALUATION";
+    reasonText: string;
+  }>;
+}
+
+export interface RoutingHumanOverrideAuthorityBinding {
+  readonly authorityId: string;
+  readonly permission: "ROUTING_DECISION:OVERRIDE";
+  readonly state: "ACTIVE" | "REVOKED" | "EXPIRED" | "STALE";
+  readonly actorId: string;
+  readonly organizationId: string;
+  readonly projectId: string;
+  readonly scopeRef: string;
+  readonly environment: string;
+  readonly targetRequestId: string;
+  readonly targetRoutingPurpose: RoutingPurpose;
+  readonly targetDecisionId: string;
+  readonly checkedAt: string;
+  readonly freshUntil: string;
+}
+
+export interface RoutingHumanOverrideAuditBinding {
+  readonly actorId: string;
+  readonly metadata: NonNullable<AppendRoutingDecisionInput["auditMetadata"]>;
+}
+
+export interface RoutingDecisionAuditInput {
+  readonly action: "ROUTING.OVERRIDE_REJECTED" | "ROUTING.DECISION_STALE";
+  readonly actorId: string;
+  readonly actorType: "HUMAN" | "AGENT" | "SYSTEM";
+  readonly requestId: string;
+  readonly projectId: string;
+  readonly targetDecisionId: string;
+  readonly result: "DENIED";
+  readonly evidenceRefs: readonly string[];
+  readonly correlationId: string;
+  readonly traceId: string;
+  readonly spanId: string;
+  readonly idempotencyKey: string;
+  readonly metadata: Readonly<{
+    routingPurpose: RoutingPurpose;
+    reasonCode: RoutingErrorCode;
+  }>;
 }
 
 export interface RoutingAppendResult {
@@ -294,6 +344,10 @@ export interface RoutingDecisionRepository {
   listCandidates(
     decisionId: string,
   ): Promise<readonly RoutingCandidateSnapshot[]>;
+  findHumanOverrideAudit(
+    auditRef: string,
+  ): Promise<RoutingHumanOverrideAuditBinding | undefined>;
+  recordRoutingAudit(input: RoutingDecisionAuditInput): Promise<void>;
   appendDecision(
     input: AppendRoutingDecisionInput,
   ): Promise<RoutingAppendResult>;

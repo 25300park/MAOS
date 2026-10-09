@@ -20,6 +20,7 @@ import {
   type RoutingDecisionOutputV1,
   type RoutingDecisionRepository,
   type RoutingFreshnessReference,
+  type RoutingHumanOverrideAuthorityBinding,
   type RoutingMode,
 } from "./routing-contracts.js";
 import type {
@@ -28,6 +29,35 @@ import type {
   ValidatedRoutingContext,
 } from "./routing-validation-service.js";
 import type { GovernedActorType } from "./work-request-contracts.js";
+
+export const HUMAN_ROUTING_OVERRIDE_REASON_CODES = [
+  "HUMAN_SELECTED_ELIGIBLE_RESOURCE",
+  "HUMAN_REQUESTED_REEVALUATION",
+] as const;
+export type HumanRoutingOverrideReasonCode =
+  (typeof HUMAN_ROUTING_OVERRIDE_REASON_CODES)[number];
+
+export type HumanRoutingOverrideAuthority =
+  RoutingHumanOverrideAuthorityBinding;
+
+export type HumanRoutingOverrideIntent =
+  | Readonly<{
+      type: "SELECT_ELIGIBLE_CANDIDATE";
+      modelHostBindingId: string;
+    }>
+  | Readonly<{ type: "REEVALUATE_CANONICAL" }>;
+
+export interface HumanRoutingOverrideRequest extends Omit<
+  CreatePersistedRoutingDecisionInput,
+  "actorType" | "expectedCurrentDecisionId"
+> {
+  readonly actorType: "HUMAN";
+  readonly expectedCurrentDecisionId: string;
+  readonly authority: HumanRoutingOverrideAuthority;
+  readonly overrideIntent: HumanRoutingOverrideIntent;
+  readonly reasonCode: HumanRoutingOverrideReasonCode;
+  readonly reasonText: string;
+}
 
 export interface CreatePersistedRoutingDecisionInput extends CreateRoutingDecisionInput {
   readonly expectedCurrentDecisionId: string | null;
@@ -244,17 +274,32 @@ function preferredCapabilities(context: ValidatedRoutingContext) {
 }
 
 function routingDecisionIdentity(
-  input: Pick<CreatePersistedRoutingDecisionInput, "requestId" | "idempotencyKey">,
+  input: Pick<
+    CreatePersistedRoutingDecisionInput,
+    "requestId" | "idempotencyKey"
+  >,
 ) {
   return deterministicAuditUuid(
     `PHASE15D.ROUTING_DECISION:${input.requestId}:${input.idempotencyKey}`,
   );
 }
 
+interface AppendDecisionOptions {
+  readonly selectedModelHostBindingId?: string;
+  readonly decisionReasonCodes?: readonly string[];
+  readonly override?: Readonly<{
+    authority: HumanRoutingOverrideAuthority;
+    intent: HumanRoutingOverrideIntent;
+    reasonCode: HumanRoutingOverrideReasonCode;
+    reasonText: string;
+  }>;
+}
+
 function createAppendInput(
   input: CreatePersistedRoutingDecisionInput,
   context: ValidatedRoutingContext,
   now: string,
+  options: AppendDecisionOptions = {},
 ): AppendRoutingDecisionInput {
   requireDeterministicCandidates(context);
   const streamId = deterministicAuditUuid(
@@ -272,9 +317,16 @@ function createAppendInput(
         );
   const selected = development
     ? null
-    : context.candidates!.eligibleCandidates.find(
-        ({ deterministicRank }) => deterministicRank === 1,
-      )!;
+    : options.selectedModelHostBindingId
+      ? context.candidates!.eligibleCandidates.find(
+          ({ modelHostBindingId }) =>
+            modelHostBindingId === options.selectedModelHostBindingId,
+        )
+      : context.candidates!.eligibleCandidates.find(
+          ({ deterministicRank }) => deterministicRank === 1,
+        );
+  if (!development && !selected)
+    throw new RoutingContractError("HUMAN_OVERRIDE_POLICY_VIOLATION");
   const registryObservedAt = development
     ? context.aidos!.checkedAt
     : context.candidates!.registryObservedAt!;
@@ -324,6 +376,7 @@ function createAppendInput(
     },
     authority: authorityIdentity(context),
     candidates,
+    ...(options.override ? { override: options.override } : {}),
   };
   return {
     routingDecisionId: decisionId,
@@ -395,13 +448,15 @@ function createAppendInput(
       development && context.developmentDelegationState !== "READY_TO_DELEGATE"
         ? "WAITING"
         : "SELECTED",
-    decisionReasonCodes: development
-      ? [
-          context.developmentDelegationState === "READY_TO_DELEGATE"
-            ? "DELEGATE_TO_AIDOS"
-            : context.developmentDelegationState,
-        ]
-      : ["SELECTED_BY_CANONICAL_POLICY"],
+    decisionReasonCodes:
+      options.decisionReasonCodes ??
+      (development
+        ? [
+            context.developmentDelegationState === "READY_TO_DELEGATE"
+              ? "DELEGATE_TO_AIDOS"
+              : context.developmentDelegationState,
+          ]
+        : ["SELECTED_BY_CANONICAL_POLICY"]),
     stalenessState: "CURRENT",
     classificationCheckedAt: context.classification.checkedAt,
     policyCheckedAt: now,
@@ -416,7 +471,156 @@ function createAppendInput(
     spanId: input.spanId,
     projectId: context.request.projectId,
     candidates,
+    ...(options.override
+      ? {
+          auditAction: "ROUTING.OVERRIDE_CREATED" as const,
+          auditMetadata: {
+            authority: boundedHumanOverrideAuthority(
+              options.override.authority,
+            ),
+            overrideTargetDecisionId:
+              options.override.authority.targetDecisionId,
+            overrideIntentType: options.override.intent.type,
+            reasonCode: options.override.reasonCode,
+            reasonText: safeAuditReasonText(options.override.reasonText),
+          },
+        }
+      : {}),
   };
+}
+
+function requireNonEmptyBounded(value: string, maximum: number) {
+  return (
+    value.trim().length > 0 &&
+    value.length <= maximum &&
+    !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value)
+  );
+}
+
+function safeAuditReasonText(value: string) {
+  return value
+    .replace(
+      /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/giu,
+      "[REDACTED]",
+    )
+    .replace(
+      /\b(?:postgres(?:ql)?|https?):\/\/[^\s/@:]+:[^\s/@]+@[^\s]+/giu,
+      "[REDACTED]",
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, "Bearer [REDACTED]")
+    .replace(
+      /["']?\b(password|secret|token|api[_-]?key|credential)\b["']?\s*[:=]\s*(["'])(?:\\.|(?!\2)[\s\S])*\2/giu,
+      "$1=[REDACTED]",
+    )
+    .replace(
+      /["']?\b(password|secret|token|api[_-]?key|credential)\b["']?\s*[:=]\s*(?!\[REDACTED\])[^\s,;]+/giu,
+      "$1=[REDACTED]",
+    );
+}
+
+function hasExactKeys(value: object, expected: readonly string[]) {
+  return (
+    Object.keys(value).sort().join("\u0000") ===
+    [...expected].sort().join("\u0000")
+  );
+}
+
+function boundedHumanOverrideAuthority(
+  authority: HumanRoutingOverrideAuthority,
+): HumanRoutingOverrideAuthority {
+  return {
+    authorityId: authority.authorityId,
+    permission: authority.permission,
+    state: authority.state,
+    actorId: authority.actorId,
+    organizationId: authority.organizationId,
+    projectId: authority.projectId,
+    scopeRef: authority.scopeRef,
+    environment: authority.environment,
+    targetRequestId: authority.targetRequestId,
+    targetRoutingPurpose: authority.targetRoutingPurpose,
+    targetDecisionId: authority.targetDecisionId,
+    checkedAt: authority.checkedAt,
+    freshUntil: authority.freshUntil,
+  };
+}
+
+function requireHumanOverrideAuthority(
+  input: HumanRoutingOverrideRequest,
+  now: Date,
+) {
+  const authority = input.authority;
+  if (
+    !hasExactKeys(authority, [
+      "authorityId",
+      "permission",
+      "state",
+      "actorId",
+      "organizationId",
+      "projectId",
+      "scopeRef",
+      "environment",
+      "targetRequestId",
+      "targetRoutingPurpose",
+      "targetDecisionId",
+      "checkedAt",
+      "freshUntil",
+    ]) ||
+    input.actorType !== "HUMAN" ||
+    authority.permission !== "ROUTING_DECISION:OVERRIDE" ||
+    !requireNonEmptyBounded(authority.authorityId, 256) ||
+    authority.actorId !== input.actorId ||
+    authority.organizationId !== input.context.organizationId ||
+    authority.projectId !== input.context.projectId ||
+    authority.scopeRef !== input.scopeRef ||
+    authority.environment !== input.context.environment ||
+    authority.targetRequestId !== input.requestId ||
+    authority.targetRoutingPurpose !== input.routingPurpose ||
+    authority.targetDecisionId !== input.expectedCurrentDecisionId
+  )
+    throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
+  if (authority.state === "REVOKED")
+    throw new RoutingContractError("HUMAN_APPROVAL_REVOKED");
+  const checkedAt = Date.parse(authority.checkedAt);
+  const freshUntil = Date.parse(authority.freshUntil);
+  if (
+    authority.state === "EXPIRED" ||
+    authority.state === "STALE" ||
+    !Number.isFinite(checkedAt) ||
+    !Number.isFinite(freshUntil) ||
+    checkedAt > now.getTime() ||
+    freshUntil <= now.getTime()
+  )
+    throw new RoutingContractError("HUMAN_APPROVAL_STALE");
+  if (authority.state !== "ACTIVE")
+    throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
+}
+
+function requireHumanOverrideIntent(input: HumanRoutingOverrideRequest) {
+  if (
+    !HUMAN_ROUTING_OVERRIDE_REASON_CODES.includes(input.reasonCode) ||
+    !requireNonEmptyBounded(input.reasonText, 500) ||
+    input.evidenceRefs.length === 0 ||
+    input.evidenceRefs.some((value) => !requireNonEmptyBounded(value, 512))
+  )
+    throw new RoutingContractError("HUMAN_OVERRIDE_POLICY_VIOLATION");
+  if (
+    (input.overrideIntent.type !== "SELECT_ELIGIBLE_CANDIDATE" &&
+      input.overrideIntent.type !== "REEVALUATE_CANONICAL") ||
+    (input.overrideIntent.type === "SELECT_ELIGIBLE_CANDIDATE" &&
+      !hasExactKeys(input.overrideIntent, ["type", "modelHostBindingId"])) ||
+    (input.overrideIntent.type === "REEVALUATE_CANONICAL" &&
+      !hasExactKeys(input.overrideIntent, ["type"])) ||
+    (input.overrideIntent.type === "SELECT_ELIGIBLE_CANDIDATE" &&
+      (input.reasonCode !== "HUMAN_SELECTED_ELIGIBLE_RESOURCE" ||
+        !requireNonEmptyBounded(
+          input.overrideIntent.modelHostBindingId,
+          256,
+        ))) ||
+    (input.overrideIntent.type === "REEVALUATE_CANONICAL" &&
+      input.reasonCode !== "HUMAN_REQUESTED_REEVALUATION")
+  )
+    throw new RoutingContractError("HUMAN_OVERRIDE_POLICY_VIOLATION");
 }
 
 function freshnessReferences(
@@ -524,9 +728,111 @@ export class RoutingDecisionService {
     return this.createDecision(input);
   }
 
+  async applyHumanOverride(
+    input: HumanRoutingOverrideRequest,
+  ): Promise<RoutingAppendResult> {
+    try {
+      requireHumanOverrideAuthority(input, this.now());
+      requireHumanOverrideIntent(input);
+      const predecessor = await this.dependencies.repository.findById(
+        input.requestId,
+        input.expectedCurrentDecisionId,
+      );
+      if (!predecessor)
+        throw new RoutingContractError("ROUTING_DECISION_STALE");
+      if (
+        predecessor.routingPurpose !== input.routingPurpose ||
+        predecessor.routingDecisionStreamId !==
+          deterministicAuditUuid(
+            `PHASE15D.ROUTING_STREAM:${input.requestId}:${input.routingPurpose}`,
+          )
+      )
+        throw new RoutingContractError(
+          "ROUTING_CROSS_STREAM_SUPERSESSION_DENIED",
+        );
+      const head = await this.dependencies.repository.findCurrent(
+        input.requestId,
+        input.routingPurpose,
+      );
+      const replay = await this.dependencies.repository.findById(
+        input.requestId,
+        routingDecisionIdentity(input),
+      );
+      if (
+        head?.routingDecisionId !== input.expectedCurrentDecisionId &&
+        !replay
+      )
+        throw new RoutingContractError("ROUTING_DECISION_STALE");
+      const initial = await this.dependencies.validation.validate(input);
+      const current = await this.dependencies.validation.validate(input);
+      requireEquivalentAuthority(initial, current);
+      requireHumanOverrideAuthority(input, this.now());
+      if (
+        current.classification.handoff.domainKey === "DEVELOPMENT" &&
+        input.overrideIntent.type === "SELECT_ELIGIBLE_CANDIDATE"
+      )
+        throw new RoutingContractError(
+          "DEVELOPMENT_NATIVE_EXECUTION_PROHIBITED",
+        );
+      return await this.dependencies.repository.appendDecision(
+        createAppendInput(input, current, this.now().toISOString(), {
+          ...(input.overrideIntent.type === "SELECT_ELIGIBLE_CANDIDATE"
+            ? {
+                selectedModelHostBindingId:
+                  input.overrideIntent.modelHostBindingId,
+              }
+            : {}),
+          decisionReasonCodes: ["HUMAN_OVERRIDE", input.reasonCode],
+          override: {
+            authority: input.authority,
+            intent: input.overrideIntent,
+            reasonCode: input.reasonCode,
+            reasonText: input.reasonText,
+          },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof RoutingContractError) {
+        const stale = [
+          "ROUTING_DECISION_STALE",
+          "ROUTING_STREAM_CONFLICT",
+          "CLASSIFICATION_STALE",
+          "ROUTING_POLICY_STALE",
+          "REGISTRY_STALE",
+          "HUMAN_APPROVAL_STALE",
+          "AIDOS_AUTHORITY_STALE",
+        ].includes(error.code);
+        await this.dependencies.repository
+          .recordRoutingAudit({
+            action: stale
+              ? "ROUTING.DECISION_STALE"
+              : "ROUTING.OVERRIDE_REJECTED",
+            actorId: input.actorId,
+            actorType: input.actorType,
+            requestId: input.requestId,
+            projectId: input.context.projectId,
+            targetDecisionId: input.expectedCurrentDecisionId,
+            result: "DENIED",
+            evidenceRefs: input.evidenceRefs,
+            correlationId: input.correlationId,
+            traceId: input.traceId,
+            spanId: input.spanId,
+            idempotencyKey: `${input.idempotencyKey}:${error.code}`,
+            metadata: {
+              routingPurpose: input.routingPurpose,
+              reasonCode: error.code,
+            },
+          })
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
   async validateForHandoff(
     decisionId: string,
     expectedContext: CreateRoutingDecisionInput,
+    currentHumanOverrideAuthority?: HumanRoutingOverrideAuthority,
   ): Promise<RoutingDecisionOutputV1> {
     const current =
       await this.dependencies.validation.validate(expectedContext);
@@ -541,6 +847,63 @@ export class RoutingDecisionService {
     );
     if (!head || head.routingDecisionId !== decisionId)
       throw new RoutingContractError("ROUTING_DECISION_STALE");
+    if (decision.decisionReasonCodes.includes("HUMAN_OVERRIDE")) {
+      const binding = await this.dependencies.repository.findHumanOverrideAudit(
+        decision.auditRef,
+      );
+      if (!binding || !currentHumanOverrideAuthority)
+        throw new RoutingContractError("HUMAN_APPROVAL_STALE");
+      const persisted = binding.metadata.authority;
+      const immutableAuthorityIdentity = (
+        authority: HumanRoutingOverrideAuthority,
+      ) => ({
+        authorityId: authority.authorityId,
+        permission: authority.permission,
+        actorId: authority.actorId,
+        organizationId: authority.organizationId,
+        projectId: authority.projectId,
+        scopeRef: authority.scopeRef,
+        environment: authority.environment,
+        targetRequestId: authority.targetRequestId,
+        targetRoutingPurpose: authority.targetRoutingPurpose,
+        targetDecisionId: authority.targetDecisionId,
+      });
+      if (
+        binding.actorId !== persisted.actorId ||
+        fingerprint(immutableAuthorityIdentity(persisted)) !==
+          fingerprint(
+            immutableAuthorityIdentity(currentHumanOverrideAuthority),
+          ) ||
+        currentHumanOverrideAuthority.targetRequestId !==
+          expectedContext.requestId ||
+        currentHumanOverrideAuthority.targetRoutingPurpose !==
+          expectedContext.routingPurpose
+      )
+        throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
+      requireHumanOverrideAuthority(
+        {
+          ...expectedContext,
+          actorType: "HUMAN",
+          actorId: currentHumanOverrideAuthority.actorId,
+          expectedCurrentDecisionId:
+            currentHumanOverrideAuthority.targetDecisionId,
+          authority: currentHumanOverrideAuthority,
+          overrideIntent: { type: "REEVALUATE_CANONICAL" },
+          reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+          reasonText: "handoff revalidation",
+          idempotencyKey: "handoff-revalidation",
+          evidenceRefs: [decision.auditRef],
+          contextRefs: [],
+          artifactRefs: [],
+          priority: decision.priority,
+          correlationId: decision.correlationId,
+          causationRefs: [],
+          traceId: "handoff-revalidation",
+          spanId: "handoff-revalidation",
+        },
+        this.now(),
+      );
+    }
     if (
       decision.classificationVersionId !== current.classification.identity ||
       decision.classificationCurrentnessProof !==
