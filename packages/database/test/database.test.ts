@@ -52,6 +52,7 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0030_phase15b_r0_durable_assignment_authority",
       "0031_phase15c_classification_domain_routing",
       "0032_phase15d_multi_ai_role_model_routing",
+      "0033_phase15b_registry_freshness_policy",
     ],
     skipped: [],
   });
@@ -114,6 +115,8 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "governance.learning_candidate_decisions",
       "governance.learning_candidates",
       "governance.optimization_evaluations",
+      "governance.registry_freshness_policy_activation_events",
+      "governance.registry_freshness_policy_versions",
       "governance.request_classification_versions",
       "governance.request_routing_candidate_snapshots",
       "governance.request_routing_decision_streams",
@@ -1472,6 +1475,7 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0030_phase15b_r0_durable_assignment_authority",
       "0031_phase15c_classification_domain_routing",
       "0032_phase15d_multi_ai_role_model_routing",
+      "0033_phase15b_registry_freshness_policy",
     ],
   });
 
@@ -1489,11 +1493,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 32);
-  assert.equal(
-    version.latest_id,
-    "0032_phase15d_multi_ai_role_model_routing",
-  );
+  assert.equal(version.applied_count, 33);
+  assert.equal(version.latest_id, "0033_phase15b_registry_freshness_policy");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

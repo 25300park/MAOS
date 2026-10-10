@@ -263,7 +263,7 @@ test("requires an exact staging migration target before opening", async () => {
   }
 });
 
-test("applies migrations 0001 through 0032 and skips all 32 on replay", async (t) => {
+test("applies migrations 0001 through 0033 and skips all 33 on replay", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
   await initializeExistingRegistry(database);
@@ -283,7 +283,7 @@ test("applies migrations 0001 through 0032 and skips all 32 on replay", async (t
     0,
   );
   const firstRecords = first.stdout.map((line) => JSON.parse(line));
-  assert.equal(firstRecords.length, 33);
+  assert.equal(firstRecords.length, 34);
   assert.equal(firstRecords[0].migration_id, "0001_canonical_schemas");
   assert.equal(firstRecords[18].migration_id, "0019_staging_session_ingress");
   assert.equal(
@@ -329,11 +329,15 @@ test("applies migrations 0001 through 0032 and skips all 32 on replay", async (t
     firstRecords[31].migration_id,
     "0032_phase15d_multi_ai_role_model_routing",
   );
-  assert.ok(
-    firstRecords.slice(0, 32).every(({ status }) => status === "APPLIED"),
+  assert.equal(
+    firstRecords[32].migration_id,
+    "0033_phase15b_registry_freshness_policy",
   );
-  assert.deepEqual(firstRecords[32], {
-    applied: 32,
+  assert.ok(
+    firstRecords.slice(0, 33).every(({ status }) => status === "APPLIED"),
+  );
+  assert.deepEqual(firstRecords[33], {
+    applied: 33,
     skipped: 0,
     status: "SUCCEEDED",
   });
@@ -349,11 +353,11 @@ test("applies migrations 0001 through 0032 and skips all 32 on replay", async (t
   );
   const replayRecords = replay.stdout.map((line) => JSON.parse(line));
   assert.ok(
-    replayRecords.slice(0, 32).every(({ status }) => status === "SKIPPED"),
+    replayRecords.slice(0, 33).every(({ status }) => status === "SKIPPED"),
   );
-  assert.deepEqual(replayRecords[32], {
+  assert.deepEqual(replayRecords[33], {
     applied: 0,
-    skipped: 32,
+    skipped: 33,
     status: "SUCCEEDED",
   });
   assert.equal(closeCount, 2);

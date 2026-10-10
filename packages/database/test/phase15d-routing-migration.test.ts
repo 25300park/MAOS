@@ -39,7 +39,13 @@ const ids = {
 async function migratedDatabase(t: test.TestContext): Promise<PGlite> {
   const db = new PGlite();
   t.after(async () => db.close());
-  await applyMigrations(db, await loadMigrations(migrationDirectory));
+  const migrations = await loadMigrations(migrationDirectory);
+  await applyMigrations(
+    db,
+    migrations.filter(
+      ({ id }) => id <= "0032_phase15d_multi_ai_role_model_routing",
+    ),
+  );
   return db;
 }
 
@@ -184,8 +190,10 @@ async function insertDeniedDecision(
 test("migration 0032 creates the Phase15D routing schema foundation", async (t) => {
   const migrations = await loadMigrations(migrationDirectory);
   assert.equal(
-    migrations.at(-1)?.id,
-    "0032_phase15d_multi_ai_role_model_routing",
+    migrations.some(
+      ({ id }) => id === "0032_phase15d_multi_ai_role_model_routing",
+    ),
+    true,
   );
 
   const db = await migratedDatabase(t);
@@ -224,6 +232,47 @@ test("migration 0032 creates the Phase15D routing schema foundation", async (t) 
   ]) {
     assert.equal(names.has(name), true, name);
   }
+});
+
+test("migration 0033 preserves policy-less historical Phase15D routing evidence", async (t) => {
+  const db = await migratedDatabase(t);
+  await seedRequestAndAudit(db);
+  await insertPolicy(db);
+  await seedClassificationAndStream(db);
+  await insertDeniedDecision(db);
+
+  const migrations = await loadMigrations(migrationDirectory);
+  assert.deepEqual(
+    await applyMigrations(
+      db,
+      migrations.filter(
+        ({ id }) => id === "0033_phase15b_registry_freshness_policy",
+      ),
+    ),
+    {
+      applied: ["0033_phase15b_registry_freshness_policy"],
+      skipped: [],
+    },
+  );
+
+  const preserved = await db.query<{
+    registry_freshness_policy_id: string | null;
+    registry_freshness_policy_version: string | null;
+    registry_max_age_ms: string | null;
+  }>(`
+    SELECT registry_freshness_policy_id::text,
+           registry_freshness_policy_version::text,
+           registry_max_age_ms::text
+    FROM governance.request_routing_decision_versions
+    WHERE routing_decision_id='${ids.decision}'
+  `);
+  assert.deepEqual(preserved.rows, [
+    {
+      registry_freshness_policy_id: null,
+      registry_freshness_policy_version: null,
+      registry_max_age_ms: null,
+    },
+  ]);
 });
 
 test("migration 0032 exposes exactly the approved eight composite foreign keys", async (t) => {
@@ -511,7 +560,9 @@ test(
   { timeout: 120_000 },
   async () => {
     await withDisposablePostgres({}, async (context) => {
-      const migrations = await loadMigrations(migrationDirectory);
+      const migrations = (await loadMigrations(migrationDirectory)).filter(
+        ({ id }) => id <= "0032_phase15d_multi_ai_role_model_routing",
+      );
       const firstDatabase = await openPostgresDatabase(context.migrationUrl);
       const secondDatabase = await openPostgresDatabase(context.migrationUrl);
       try {
