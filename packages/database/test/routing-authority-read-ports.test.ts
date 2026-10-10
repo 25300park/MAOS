@@ -713,7 +713,7 @@ test("Registry adapter returns safe distinct resources without credentials", asy
     freshUntil: future,
     freshnessPolicyRef: "registry-freshness-policy",
     freshnessPolicyVersion: "1",
-    freshnessMaxAgeMs: 60_000,
+    freshnessMaxAgeMs: 3_600_000,
     providers: [
       {
         id: "provider",
@@ -868,15 +868,18 @@ test("Registry adapter returns safe distinct resources without credentials", asy
     ],
   } as const;
   let registryReads = 0;
-  const adapter = new Phase15bRegistryAuthorityAdapter({
-    readCanonicalSnapshot: async () => ({
-      ...canonicalObservation,
-      providers:
-        registryReads++ === 0
-          ? canonicalObservation.providers
-          : [...canonicalObservation.providers].reverse(),
-    }),
-  });
+  const adapter = new Phase15bRegistryAuthorityAdapter(
+    {
+      readCanonicalSnapshot: async () => ({
+        ...canonicalObservation,
+        providers:
+          registryReads++ === 0
+            ? canonicalObservation.providers
+            : [...canonicalObservation.providers].reverse(),
+      }),
+    },
+    { now: () => new Date(now) },
+  );
 
   const snapshot = await adapter.readSnapshot({ resourceRefs: [] });
   assert.deepEqual(
@@ -891,7 +894,7 @@ test("Registry adapter returns safe distinct resources without credentials", asy
   assert.equal(snapshot.authoritySource, "PHASE15B_AI_REGISTRY");
   assert.equal(snapshot.transactionSnapshot.xmin, "41");
   assert.equal(snapshot.freshUntil, future);
-  assert.equal(snapshot.freshnessMaxAgeMs, 60_000);
+  assert.equal(snapshot.freshnessMaxAgeMs, 3_600_000);
   assert.equal(snapshot.modelHostBindings[0]!.modelId, "model");
   assert.equal(snapshot.modelHostBindings[0]!.runtimeAdapterId, "host");
   assert.equal(snapshot.modelCapabilities[0]!.capabilityId, "capability");
@@ -901,80 +904,149 @@ test("Registry adapter returns safe distinct resources without credentials", asy
     repeated.providers.map((value) => value.id),
     snapshot.providers.map((value) => value.id),
   );
+  const evidence = {
+    policyRef: snapshot.freshnessPolicyRef,
+    policyVersion: snapshot.freshnessPolicyVersion,
+    maxAgeMs: snapshot.freshnessMaxAgeMs,
+    registryObservedAt: snapshot.observedAt,
+    freshUntil: snapshot.freshUntil,
+    snapshotRef: snapshot.snapshotRef,
+    snapshotRevision: snapshot.revision,
+    snapshotHash: snapshot.snapshotRef.slice(
+      "registry-snapshot:sha256:".length,
+    ),
+  };
   await assert.doesNotReject(
-    adapter.revalidate(snapshot.snapshotRef, snapshot.revision, [
-      "provider",
-      "model",
-      "host",
-      "binding",
-      "capability",
-      "model-capability",
-      "role",
-    ]),
+    adapter.revalidate({
+      ...evidence,
+      resourceRefs: [
+        "provider",
+        "model",
+        "host",
+        "binding",
+        "capability",
+        "model-capability",
+        "role",
+      ],
+    }),
   );
   await assert.rejects(
-    adapter.revalidate(snapshot.snapshotRef, snapshot.revision, [
-      "missing-registry-resource",
-    ]),
+    adapter.revalidate({
+      ...evidence,
+      resourceRefs: ["missing-registry-resource"],
+    }),
     (error) =>
       error instanceof RoutingContractError &&
       error.code === "REGISTRY_CONFLICT",
   );
 
   let unrelatedChangeReads = 0;
-  const unrelatedChange = new Phase15bRegistryAuthorityAdapter({
-    readCanonicalSnapshot: async () => {
-      const changed = unrelatedChangeReads++ > 0;
-      return {
-        ...canonicalObservation,
-        providers: canonicalObservation.providers.map((provider) =>
-          changed && provider.id === "provider-z"
-            ? { ...provider, version: provider.version + 1 }
-            : provider,
-        ),
-      };
+  const unrelatedChange = new Phase15bRegistryAuthorityAdapter(
+    {
+      readCanonicalSnapshot: async () => {
+        const changed = unrelatedChangeReads++ > 0;
+        return {
+          ...canonicalObservation,
+          providers: canonicalObservation.providers.map((provider) =>
+            changed && provider.id === "provider-z"
+              ? { ...provider, version: provider.version + 1 }
+              : provider,
+          ),
+        };
+      },
     },
-  });
+    { now: () => new Date(now) },
+  );
   const beforeUnrelatedChange = await unrelatedChange.readSnapshot({
     resourceRefs: [],
   });
   await assert.rejects(
-    unrelatedChange.revalidate(
-      beforeUnrelatedChange.snapshotRef,
-      beforeUnrelatedChange.revision,
-      ["provider", "model", "host", "binding"],
-    ),
+    unrelatedChange.revalidate({
+      ...evidence,
+      snapshotRef: beforeUnrelatedChange.snapshotRef,
+      snapshotRevision: beforeUnrelatedChange.revision,
+      snapshotHash: beforeUnrelatedChange.snapshotRef.slice(
+        "registry-snapshot:sha256:".length,
+      ),
+      resourceRefs: ["provider", "model", "host", "binding"],
+    }),
     (error) =>
       error instanceof RoutingContractError &&
       error.code === "REGISTRY_CONFLICT",
   );
 
   let candidateChangeReads = 0;
-  const candidateChange = new Phase15bRegistryAuthorityAdapter({
-    readCanonicalSnapshot: async () => {
-      const changed = candidateChangeReads++ > 0;
-      return {
-        ...canonicalObservation,
-        providers: canonicalObservation.providers.map((provider) =>
-          changed && provider.id === "provider"
-            ? { ...provider, version: provider.version + 1 }
-            : provider,
-        ),
-      };
+  const candidateChange = new Phase15bRegistryAuthorityAdapter(
+    {
+      readCanonicalSnapshot: async () => {
+        const changed = candidateChangeReads++ > 0;
+        return {
+          ...canonicalObservation,
+          providers: canonicalObservation.providers.map((provider) =>
+            changed && provider.id === "provider"
+              ? { ...provider, version: provider.version + 1 }
+              : provider,
+          ),
+        };
+      },
     },
-  });
+    { now: () => new Date(now) },
+  );
   const beforeCandidateChange = await candidateChange.readSnapshot({
     resourceRefs: [],
   });
   await assert.rejects(
-    candidateChange.revalidate(
-      beforeCandidateChange.snapshotRef,
-      beforeCandidateChange.revision,
-      ["provider", "model", "host", "binding"],
-    ),
+    candidateChange.revalidate({
+      ...evidence,
+      snapshotRef: beforeCandidateChange.snapshotRef,
+      snapshotRevision: beforeCandidateChange.revision,
+      snapshotHash: beforeCandidateChange.snapshotRef.slice(
+        "registry-snapshot:sha256:".length,
+      ),
+      resourceRefs: ["provider", "model", "host", "binding"],
+    }),
     (error) =>
       error instanceof RoutingContractError &&
       error.code === "REGISTRY_CONFLICT",
+  );
+
+  for (const drift of [
+    { freshnessPolicyRef: "replacement-policy" },
+    { freshnessPolicyVersion: "2" },
+    { freshnessMaxAgeMs: 1_800_000 },
+  ]) {
+    const policyChanged = new Phase15bRegistryAuthorityAdapter(
+      {
+        readCanonicalSnapshot: async () => ({
+          ...canonicalObservation,
+          ...drift,
+          freshUntil:
+            "freshnessMaxAgeMs" in drift
+              ? "2099-10-08T00:30:00.000Z"
+              : canonicalObservation.freshUntil,
+        }),
+      },
+      { now: () => new Date(now) },
+    );
+    await assert.rejects(
+      policyChanged.revalidate({
+        ...evidence,
+        resourceRefs: ["provider", "model", "host", "binding"],
+      }),
+      (error) =>
+        error instanceof RoutingContractError &&
+        error.code === "REGISTRY_CONFLICT",
+    );
+  }
+
+  await assert.rejects(
+    adapter.revalidate({
+      ...evidence,
+      freshUntil: "2099-10-08T00:30:00.000Z",
+      resourceRefs: ["provider", "model", "host", "binding"],
+    }),
+    (error) =>
+      error instanceof RoutingContractError && error.code === "REGISTRY_STALE",
   );
   const bindingClosure = await adapter.readSnapshot({
     resourceRefs: ["binding"],

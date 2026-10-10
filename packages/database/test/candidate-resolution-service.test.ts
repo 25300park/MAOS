@@ -242,14 +242,21 @@ function input(
 function port(snapshot = registrySnapshot()): RegistryAuthorityReadPort {
   return {
     readSnapshot: async () => snapshot,
-    revalidate: async (snapshotRef, revision) => ({
+    revalidate: async (evidence) => ({
       current: true,
       authority: "PHASE15B_AI_REGISTRY",
-      identity: snapshotRef,
-      revision,
+      identity: evidence.snapshotRef,
+      revision: evidence.snapshotRevision,
       checkedAt: now,
-      freshUntil: future,
+      freshUntil: evidence.freshUntil,
       freshnessModel: "AUTHORITY_EXPIRY",
+      policyRef: evidence.policyRef,
+      policyVersion: evidence.policyVersion,
+      maxAgeMs: evidence.maxAgeMs,
+      registryObservedAt: evidence.registryObservedAt,
+      snapshotRef: evidence.snapshotRef,
+      snapshotRevision: evidence.snapshotRevision,
+      snapshotHash: evidence.snapshotHash,
     }),
   };
 }
@@ -261,6 +268,16 @@ test("resolves safe candidates through the Registry authority with deterministic
   ).resolve(input());
 
   assert.equal(result.registrySnapshotRef, registrySnapshot().snapshotRef);
+  assert.deepEqual(result.registryFreshnessAuthority, {
+    policyRef: "registry-freshness-policy",
+    policyVersion: "1",
+    maxAgeMs: 3_600_000,
+    registryObservedAt: now,
+    freshUntil: future,
+    snapshotRef: registrySnapshot().snapshotRef,
+    snapshotRevision: "registry-r1",
+    snapshotHash: "a".repeat(64),
+  });
   assert.deepEqual(
     result.eligibleCandidates.map((candidate) => candidate.modelHostBindingId),
     ["binding-b", "binding-a"],
@@ -420,6 +437,22 @@ test("fails closed for unavailable Registry resources and stale capability autho
     (error) =>
       error instanceof RoutingContractError && error.code === "REGISTRY_STALE",
   );
+
+  for (const freshnessDrift of [
+    { freshUntil: "2026-10-09T00:30:00.000Z" },
+    { freshnessMaxAgeMs: Number.MAX_SAFE_INTEGER },
+    { freshnessPolicyRef: "" },
+  ]) {
+    await assert.rejects(
+      new CandidateResolutionService(
+        port({ ...baseline, ...freshnessDrift }),
+        () => new Date(now),
+      ).resolve(input()),
+      (error) =>
+        error instanceof RoutingContractError &&
+        error.code === "REGISTRY_STALE",
+    );
+  }
 });
 
 test("requires exact routing mode compatibility and never conflates fallback with review", async () => {

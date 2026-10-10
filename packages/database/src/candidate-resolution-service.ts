@@ -1,6 +1,7 @@
 import type {
   RegistryAuthorityReadPort,
   RegistryAuthoritySnapshot,
+  RegistryFreshnessAuthorityEvidence,
   RegistryModelHostBindingSnapshot,
 } from "./routing-authority-read-ports.js";
 import { canonicalOrdinalCompare } from "./routing-authority-read-ports.js";
@@ -20,6 +21,7 @@ import type {
   RoutingPolicySnapshot,
   SpecializationSnapshot,
 } from "./routing-policy-repository.js";
+import { deriveRegistryFreshUntil } from "./registry-freshness-policy-read-port.js";
 
 export interface CandidateResolutionInput {
   readonly policy: RoutingPolicySnapshot;
@@ -104,6 +106,7 @@ export interface CandidateResolutionResult {
   readonly registrySnapshotRevision: string | null;
   readonly registryObservedAt: string | null;
   readonly registryFreshUntil: string | null;
+  readonly registryFreshnessAuthority: RegistryFreshnessAuthorityEvidence | null;
   readonly registryResourceRefs: readonly string[];
   readonly eligibleCandidates: readonly ResolvedRoutingCandidate[];
   readonly excludedCandidates: readonly ExcludedRoutingCandidate[];
@@ -316,12 +319,21 @@ function requireRegistryCurrent(
 ) {
   const observedAt = Date.parse(snapshot.observedAt);
   const freshUntil = Date.parse(snapshot.freshUntil);
+  const derivedFreshUntil = deriveRegistryFreshUntil(
+    snapshot.observedAt,
+    snapshot.freshnessMaxAgeMs,
+  );
   if (
     snapshot.authoritySource !== "PHASE15B_AI_REGISTRY" ||
     !/^registry-snapshot:sha256:[a-f0-9]{64}$/.test(snapshot.snapshotRef) ||
     !snapshot.revision ||
     !Number.isFinite(observedAt) ||
     !Number.isFinite(freshUntil) ||
+    !snapshot.freshnessPolicyRef ||
+    !snapshot.freshnessPolicyVersion ||
+    !Number.isSafeInteger(snapshot.freshnessMaxAgeMs) ||
+    snapshot.freshnessMaxAgeMs <= 0 ||
+    derivedFreshUntil !== snapshot.freshUntil ||
     observedAt > now.getTime() ||
     freshUntil <= now.getTime()
   )
@@ -436,6 +448,7 @@ export class CandidateResolutionService {
         registrySnapshotRevision: null,
         registryObservedAt: null,
         registryFreshUntil: null,
+        registryFreshnessAuthority: null,
         registryResourceRefs: Object.freeze([]),
         eligibleCandidates: Object.freeze([]),
         excludedCandidates: Object.freeze([]),
@@ -745,6 +758,18 @@ export class CandidateResolutionService {
       registrySnapshotRevision: snapshot.revision,
       registryObservedAt: snapshot.observedAt,
       registryFreshUntil: snapshot.freshUntil,
+      registryFreshnessAuthority: Object.freeze({
+        policyRef: snapshot.freshnessPolicyRef,
+        policyVersion: snapshot.freshnessPolicyVersion,
+        maxAgeMs: snapshot.freshnessMaxAgeMs,
+        registryObservedAt: snapshot.observedAt,
+        freshUntil: snapshot.freshUntil,
+        snapshotRef: snapshot.snapshotRef,
+        snapshotRevision: snapshot.revision,
+        snapshotHash: snapshot.snapshotRef.slice(
+          "registry-snapshot:sha256:".length,
+        ),
+      }),
       registryResourceRefs: Object.freeze(
         unique(
           safeEligible.flatMap((candidate) => [

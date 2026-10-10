@@ -328,6 +328,20 @@ test(
           false,
         );
         assert.equal(JSON.stringify(v1).includes("secretref://"), false);
+        const v1Evidence = {
+          policyRef: v1.freshnessPolicyRef,
+          policyVersion: v1.freshnessPolicyVersion,
+          maxAgeMs: v1.freshnessMaxAgeMs,
+          registryObservedAt: v1.observedAt,
+          freshUntil: v1.freshUntil,
+          snapshotRef: v1.snapshotRef,
+          snapshotRevision: v1.revision,
+          snapshotHash: v1.snapshotRef.slice(
+            "registry-snapshot:sha256:".length,
+          ),
+          resourceRefs: [ids.provider, ids.model, ids.host, ids.binding],
+        };
+        await assert.doesNotReject(adapter.revalidate(v1Evidence));
 
         await policies.appendPolicyVersion(governedPolicy(2));
         await policies.activatePolicy({
@@ -353,6 +367,48 @@ test(
         assert.equal(v1.freshnessMaxAgeMs, 60_000);
         assert.equal(v2.freshnessPolicyVersion, "2");
         assert.equal(v2.freshnessMaxAgeMs, 120_000);
+        await assert.rejects(
+          adapter.revalidate(v1Evidence),
+          (error) =>
+            error instanceof RoutingContractError &&
+            error.code === "REGISTRY_CONFLICT",
+        );
+
+        const expiredAdapter = Phase15bRegistryAuthorityAdapter.fromPostgres(
+          observation.wrapped,
+          "STAGING",
+          { now: () => new Date(Date.parse(v2.observedAt) + 600_000) },
+        );
+        await assert.rejects(
+          expiredAdapter.readSnapshot({ resourceRefs: [] }),
+          (error) =>
+            error instanceof RoutingContractError &&
+            error.code === "REGISTRY_STALE",
+        );
+
+        const v2Evidence = {
+          policyRef: v2.freshnessPolicyRef,
+          policyVersion: v2.freshnessPolicyVersion,
+          maxAgeMs: v2.freshnessMaxAgeMs,
+          registryObservedAt: v2.observedAt,
+          freshUntil: v2.freshUntil,
+          snapshotRef: v2.snapshotRef,
+          snapshotRevision: v2.revision,
+          snapshotHash: v2.snapshotRef.slice(
+            "registry-snapshot:sha256:".length,
+          ),
+          resourceRefs: [ids.provider, ids.model, ids.host, ids.binding],
+        };
+        await database.query(
+          `UPDATE ai.model_providers SET version=version + 1 WHERE id=$1`,
+          [ids.provider],
+        );
+        await assert.rejects(
+          adapter.revalidate(v2Evidence),
+          (error) =>
+            error instanceof RoutingContractError &&
+            error.code === "REGISTRY_CONFLICT",
+        );
 
         await database.query(
           `UPDATE ai.model_capability_bindings

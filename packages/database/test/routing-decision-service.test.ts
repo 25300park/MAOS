@@ -226,6 +226,16 @@ function validated(
       registrySnapshotRevision: "registry-r1",
       registryObservedAt: now,
       registryFreshUntil: future,
+      registryFreshnessAuthority: {
+        policyRef: "registry-freshness-policy",
+        policyVersion: "1",
+        maxAgeMs: 3_600_000,
+        registryObservedAt: now,
+        freshUntil: future,
+        snapshotRef: `registry-snapshot:${sha("d")}`,
+        snapshotRevision: "registry-r1",
+        snapshotHash: sha("d"),
+      },
       registryResourceRefs: [
         id("20"),
         id("21"),

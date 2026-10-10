@@ -24,6 +24,7 @@ import {
 
 const now = "2026-10-09T00:00:00.000Z";
 const future = "2026-10-09T01:00:00.000Z";
+const registrySnapshotHash = "a".repeat(64);
 const context: ExactRequestContext = {
   requestId: "request",
   organizationId: "organization",
@@ -127,10 +128,20 @@ function policy(
 }
 
 const candidates: CandidateResolutionResult = {
-  registrySnapshotRef: `registry-snapshot:sha256:${"a".repeat(64)}`,
+  registrySnapshotRef: `registry-snapshot:sha256:${registrySnapshotHash}`,
   registrySnapshotRevision: "registry-r1",
   registryObservedAt: now,
   registryFreshUntil: future,
+  registryFreshnessAuthority: {
+    policyRef: "registry-freshness-policy",
+    policyVersion: "1",
+    maxAgeMs: 3_600_000,
+    registryObservedAt: now,
+    freshUntil: future,
+    snapshotRef: `registry-snapshot:sha256:${registrySnapshotHash}`,
+    snapshotRevision: "registry-r1",
+    snapshotHash: registrySnapshotHash,
+  },
   registryResourceRefs: [
     "provider",
     "model",
@@ -321,14 +332,21 @@ function registry(): RegistryAuthorityReadPort {
     readSnapshot: async () => {
       throw new Error("not used by validation service");
     },
-    revalidate: async (snapshotRef, revision) => ({
+    revalidate: async (input) => ({
       current: true,
       authority: "PHASE15B_REGISTRY",
-      identity: snapshotRef,
-      revision,
+      identity: input.snapshotRef,
+      revision: input.snapshotRevision,
       checkedAt: now,
       freshUntil: future,
       freshnessModel: "AUTHORITY_EXPIRY",
+      policyRef: input.policyRef,
+      policyVersion: input.policyVersion,
+      maxAgeMs: input.maxAgeMs,
+      registryObservedAt: input.registryObservedAt,
+      snapshotRef: input.snapshotRef,
+      snapshotRevision: input.snapshotRevision,
+      snapshotHash: input.snapshotHash,
     }),
   };
 }
@@ -342,6 +360,7 @@ function service(
     approvals?: HumanApprovalAuthorityReadPort;
     aidos?: AidosAuthorityReadPort;
     registry?: RegistryAuthorityReadPort;
+    now?: () => Date;
   } = {},
 ) {
   return new RoutingValidationService({
@@ -352,7 +371,7 @@ function service(
     approvals: overrides.approvals ?? approvals(),
     aidos: overrides.aidos ?? aidos(),
     registry: overrides.registry ?? registry(),
-    now: () => new Date(now),
+    now: overrides.now ?? (() => new Date(now)),
   });
 }
 
@@ -428,11 +447,49 @@ test("invokes every final authority revalidation boundary before success", async
   assert.equal(registryRevalidations, 1);
   assert.deepEqual(registryRevalidationInputs, [
     [
-      candidates.registrySnapshotRef,
-      candidates.registrySnapshotRevision,
-      [...candidates.registryResourceRefs],
+      {
+        ...candidates.registryFreshnessAuthority,
+        resourceRefs: [...candidates.registryResourceRefs],
+      },
     ],
   ]);
+});
+
+test("requires exact governed Registry freshness evidence at final revalidation", async () => {
+  for (const override of [
+    { policyRef: "changed-policy" },
+    { policyVersion: "2" },
+    { maxAgeMs: 1_800_000 },
+    { snapshotHash: "b".repeat(64) },
+    { registryObservedAt: "2026-10-09T00:00:01.000Z" },
+    { freshUntil: "2026-10-09T00:30:00.000Z" },
+  ]) {
+    await assert.rejects(
+      service({
+        registry: {
+          ...registry(),
+          revalidate: async (input) => ({
+            ...(await registry().revalidate(input)),
+            ...override,
+          }),
+        },
+      }).validate(validationInput),
+      (error) =>
+        error instanceof RoutingContractError &&
+        error.code === "REGISTRY_CONFLICT",
+    );
+  }
+});
+
+test("fails closed when the governed Registry snapshot expires before validation", async () => {
+  await assert.rejects(
+    service({
+      registry: registry(),
+      now: () => new Date("2026-10-09T01:00:00.001Z"),
+    }).validate(validationInput),
+    (error) =>
+      error instanceof RoutingContractError && error.code === "REGISTRY_STALE",
+  );
 });
 
 test("fails closed when classification, policy, or Registry changes after resolution", async () => {

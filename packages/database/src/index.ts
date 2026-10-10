@@ -51,6 +51,7 @@ export type {
   HumanApprovalAuthorityReadPort,
   HumanApprovalSnapshot,
   RegistryAuthorityReadPort,
+  RegistryAuthorityRevalidationResult,
   RegistryAuthoritySnapshot,
   RegistryCapabilitySnapshot,
   RegistryModelCapabilitySnapshot,
@@ -60,6 +61,8 @@ export type {
   RegistryRoleCompatibilitySnapshot,
   RegistryRuntimeAdapterSnapshot,
   RegistrySnapshotQuery,
+  RegistryFreshnessAuthorityEvidence,
+  RegistryRevalidationQuery,
   RegistryTransactionSnapshot,
 } from "./routing-authority-read-ports.js";
 export * from "./routing-decision-repository.js";

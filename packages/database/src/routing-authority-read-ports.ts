@@ -205,15 +205,28 @@ export interface RegistryAuthoritySnapshot {
   readonly modelCapabilities: readonly RegistryModelCapabilitySnapshot[];
   readonly roleCompatibilities: readonly RegistryRoleCompatibilitySnapshot[];
 }
+export interface RegistryFreshnessAuthorityEvidence {
+  readonly policyRef: string;
+  readonly policyVersion: string;
+  readonly maxAgeMs: number;
+  readonly registryObservedAt: string;
+  readonly freshUntil: string;
+  readonly snapshotRef: string;
+  readonly snapshotRevision: string;
+  readonly snapshotHash: string;
+}
+export interface RegistryRevalidationQuery extends RegistryFreshnessAuthorityEvidence {
+  readonly resourceRefs: readonly string[];
+}
+export interface RegistryAuthorityRevalidationResult
+  extends AuthorityExpiryResult, RegistryFreshnessAuthorityEvidence {}
 export interface RegistryAuthorityReadPort {
   readSnapshot(
     input: RegistrySnapshotQuery,
   ): Promise<RegistryAuthoritySnapshot>;
   revalidate(
-    snapshotRef: string,
-    revision: string,
-    resourceRefs: string[],
-  ): Promise<AuthorityFreshnessResult>;
+    input: RegistryRevalidationQuery,
+  ): Promise<RegistryAuthorityRevalidationResult>;
 }
 
 class PostgresPhase15bRegistrySnapshotBackend implements RegistryCanonicalSnapshotBackend {
@@ -569,6 +582,7 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
   static fromPostgres(
     database: RuntimeDatabase,
     environment: RegistryFreshnessEnvironment,
+    clock: { now(): Date } = { now: () => new Date() },
   ) {
     return new Phase15bRegistryAuthorityAdapter(
       new PostgresPhase15bRegistrySnapshotBackend(
@@ -577,6 +591,7 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
         createRegistryFreshnessPolicyReadPort(database),
         environment,
       ),
+      clock,
     );
   }
   async readSnapshot(
@@ -787,12 +802,30 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
     };
   }
   async revalidate(
-    snapshotRef: string,
-    revision: string,
-    resourceRefs: string[],
-  ): Promise<AuthorityFreshnessResult> {
+    input: RegistryRevalidationQuery,
+  ): Promise<RegistryAuthorityRevalidationResult> {
     const current = await this.readSnapshot({ resourceRefs: [] });
-    if (current.snapshotRef !== snapshotRef || current.revision !== revision)
+    const expectedFreshUntil = deriveRegistryFreshUntil(
+      input.registryObservedAt,
+      input.maxAgeMs,
+    );
+    const snapshotHash = current.snapshotRef.match(
+      /^registry-snapshot:sha256:([a-f0-9]{64})$/,
+    )?.[1];
+    if (
+      expectedFreshUntil !== input.freshUntil ||
+      Date.parse(input.registryObservedAt) > this.clock.now().getTime() ||
+      Date.parse(input.freshUntil) <= this.clock.now().getTime()
+    )
+      throw new RoutingContractError("REGISTRY_STALE");
+    if (
+      current.snapshotRef !== input.snapshotRef ||
+      current.revision !== input.snapshotRevision ||
+      snapshotHash !== input.snapshotHash ||
+      current.freshnessPolicyRef !== input.policyRef ||
+      current.freshnessPolicyVersion !== input.policyVersion ||
+      current.freshnessMaxAgeMs !== input.maxAgeMs
+    )
       throw new RoutingContractError("REGISTRY_CONFLICT");
     const currentResourceRefs = new Set([
       ...current.providers.map(({ id }) => id),
@@ -804,17 +837,26 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
       ...current.roleCompatibilities.map(({ id }) => id),
     ]);
     if (
-      resourceRefs.some((resourceRef) => !currentResourceRefs.has(resourceRef))
+      input.resourceRefs.some(
+        (resourceRef) => !currentResourceRefs.has(resourceRef),
+      )
     )
       throw new RoutingContractError("REGISTRY_CONFLICT");
     return {
       current: true,
       authority: "PHASE15B_REGISTRY",
-      identity: snapshotRef,
-      revision,
+      identity: input.snapshotRef,
+      revision: input.snapshotRevision,
       checkedAt: current.observedAt,
-      freshUntil: current.freshUntil,
+      freshUntil: input.freshUntil,
       freshnessModel: "AUTHORITY_EXPIRY",
+      policyRef: input.policyRef,
+      policyVersion: input.policyVersion,
+      maxAgeMs: input.maxAgeMs,
+      registryObservedAt: input.registryObservedAt,
+      snapshotRef: input.snapshotRef,
+      snapshotRevision: input.snapshotRevision,
+      snapshotHash: input.snapshotHash,
     };
   }
 }

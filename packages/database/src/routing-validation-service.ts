@@ -33,6 +33,7 @@ import type {
   RoutingPolicySnapshot,
   SpecializationSnapshot,
 } from "./routing-policy-repository.js";
+import { deriveRegistryFreshUntil } from "./registry-freshness-policy-read-port.js";
 import type {
   CanonicalWorkRequestRecord,
   WorkRequestReadPort,
@@ -773,23 +774,51 @@ export class RoutingValidationService {
       }),
     });
     requireCandidateLineage(candidates, classification, policy, specialization);
-    if (!candidates.registrySnapshotRef || !candidates.registrySnapshotRevision)
+    const registryAuthority = candidates.registryFreshnessAuthority;
+    if (
+      !candidates.registrySnapshotRef ||
+      !candidates.registrySnapshotRevision ||
+      !registryAuthority
+    )
       throw new RoutingContractError("REGISTRY_STALE");
-    const registryProof = await this.dependencies.registry.revalidate(
-      candidates.registrySnapshotRef,
-      candidates.registrySnapshotRevision,
-      [...candidates.registryResourceRefs],
+    const expectedFreshUntil = deriveRegistryFreshUntil(
+      registryAuthority.registryObservedAt,
+      registryAuthority.maxAgeMs,
     );
+    if (
+      registryAuthority.snapshotRef !== candidates.registrySnapshotRef ||
+      registryAuthority.snapshotRevision !==
+        candidates.registrySnapshotRevision ||
+      registryAuthority.registryObservedAt !== candidates.registryObservedAt ||
+      registryAuthority.freshUntil !== candidates.registryFreshUntil ||
+      expectedFreshUntil !== registryAuthority.freshUntil ||
+      Date.parse(registryAuthority.registryObservedAt) > this.now().getTime() ||
+      Date.parse(registryAuthority.freshUntil) <= this.now().getTime()
+    )
+      throw new RoutingContractError("REGISTRY_STALE");
+    const registryProof = await this.dependencies.registry.revalidate({
+      ...registryAuthority,
+      resourceRefs: [...candidates.registryResourceRefs],
+    });
     if (
       !registryProof.current ||
       registryProof.authority !== "PHASE15B_REGISTRY" ||
       registryProof.identity !== candidates.registrySnapshotRef ||
       registryProof.revision !== candidates.registrySnapshotRevision ||
       registryProof.freshnessModel !== "AUTHORITY_EXPIRY" ||
+      registryProof.policyRef !== registryAuthority.policyRef ||
+      registryProof.policyVersion !== registryAuthority.policyVersion ||
+      registryProof.maxAgeMs !== registryAuthority.maxAgeMs ||
+      registryProof.registryObservedAt !==
+        registryAuthority.registryObservedAt ||
+      registryProof.snapshotRef !== registryAuthority.snapshotRef ||
+      registryProof.snapshotRevision !== registryAuthority.snapshotRevision ||
+      registryProof.snapshotHash !== registryAuthority.snapshotHash ||
+      registryProof.freshUntil !== registryAuthority.freshUntil ||
       !Number.isFinite(Date.parse(registryProof.freshUntil)) ||
       Date.parse(registryProof.freshUntil) <= this.now().getTime()
     )
-      throw new RoutingContractError("REGISTRY_STALE");
+      throw new RoutingContractError("REGISTRY_CONFLICT");
     await this.revalidateCommonAuthorities(
       input,
       policyContext,
