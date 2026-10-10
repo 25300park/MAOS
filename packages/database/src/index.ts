@@ -72,6 +72,8 @@ export * from "./routing-read-service.js";
 export * from "./database-role-contract.js";
 export * from "./database-role-acl.js";
 export * from "./registry-freshness-policy-acl.js";
+export * from "./registry-freshness-policy-repository.js";
+export * from "./registry-freshness-policy-service.js";
 export * from "./postgres.js";
 export * from "./session-repository.js";
 export * from "./session-audit-repository.js";
