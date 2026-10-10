@@ -23,6 +23,7 @@ function registrySnapshot(): RegistryAuthoritySnapshot {
     transactionSnapshot: { xmin: "10", xmax: "12" },
     freshnessPolicyRef: "registry-freshness-policy",
     freshnessPolicyVersion: "1",
+    freshnessMaxAgeMs: 3_600_000,
     observedAt: now,
     freshUntil: future,
     providers: [

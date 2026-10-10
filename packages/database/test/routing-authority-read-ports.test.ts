@@ -713,6 +713,7 @@ test("Registry adapter returns safe distinct resources without credentials", asy
     freshUntil: future,
     freshnessPolicyRef: "registry-freshness-policy",
     freshnessPolicyVersion: "1",
+    freshnessMaxAgeMs: 60_000,
     providers: [
       {
         id: "provider",
@@ -890,6 +891,7 @@ test("Registry adapter returns safe distinct resources without credentials", asy
   assert.equal(snapshot.authoritySource, "PHASE15B_AI_REGISTRY");
   assert.equal(snapshot.transactionSnapshot.xmin, "41");
   assert.equal(snapshot.freshUntil, future);
+  assert.equal(snapshot.freshnessMaxAgeMs, 60_000);
   assert.equal(snapshot.modelHostBindings[0]!.modelId, "model");
   assert.equal(snapshot.modelHostBindings[0]!.runtimeAdapterId, "host");
   assert.equal(snapshot.modelCapabilities[0]!.capabilityId, "capability");

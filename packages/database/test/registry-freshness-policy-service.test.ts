@@ -172,6 +172,7 @@ test("delegates exact current resolution and preserves fail-closed errors", asyn
     policyRef: id("11"),
     policyVersion: 1,
     maxAgeMs: 60_000,
+    authorityIdentifier: input.authorityIdentifier,
     environment: "STAGING" as const,
     registryScope: "PHASE15B_AI_REGISTRY" as const,
     effectiveState: "ACTIVE" as const,

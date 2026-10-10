@@ -10,6 +10,7 @@ import type {
   AiRegistryRepository,
   AiRegistryRoleCompatibilityRecord,
 } from "./ai-registry-repository.js";
+import { PostgresAiRegistryRepository } from "./ai-registry-repository.js";
 import type {
   HumanApprovalExpectedBinding,
   HumanApprovalRequest,
@@ -23,11 +24,20 @@ import type {
   ResolveCurrentClassificationInput,
 } from "./request-classification-runtime.js";
 import type { PostgresHumanApprovalRuntime } from "./human-approval-runtime.js";
+import type { RuntimeDatabase } from "./postgres.js";
+import {
+  createRegistryFreshnessPolicyReadPort,
+  deriveRegistryFreshUntil,
+  type RegistryFreshnessPolicyReadPort,
+} from "./registry-freshness-policy-read-port.js";
+import {
+  REGISTRY_FRESHNESS_SCOPE,
+  type RegistryFreshnessEnvironment,
+} from "./registry-freshness-policy-repository.js";
 import {
   RoutingContractError,
   type RoutingErrorCode,
 } from "./routing-contracts.js";
-import type { MigrationDatabase } from "./types.js";
 
 export function canonicalOrdinalCompare(left: string, right: string) {
   if (left === right) return 0;
@@ -163,6 +173,7 @@ interface RegistryCanonicalObservation {
   readonly freshUntil: string;
   readonly freshnessPolicyRef: string;
   readonly freshnessPolicyVersion: string;
+  readonly freshnessMaxAgeMs: number;
   readonly providers: readonly AiRegistryProviderRecord[];
   readonly models: readonly AiRegistryModelRecord[];
   readonly runtimeAdapters: readonly AiRegistryHostRecord[];
@@ -176,11 +187,6 @@ interface RegistryCanonicalSnapshotBackend {
     input: RegistrySnapshotQuery,
   ): Promise<RegistryCanonicalObservation>;
 }
-interface RegistryFreshnessPolicy {
-  readonly policyRef: string;
-  readonly policyVersion: string;
-  readonly maxAgeMs: number;
-}
 export interface RegistryAuthoritySnapshot {
   readonly snapshotRef: string;
   readonly revision: string;
@@ -188,6 +194,7 @@ export interface RegistryAuthoritySnapshot {
   readonly transactionSnapshot: RegistryTransactionSnapshot;
   readonly freshnessPolicyRef: string;
   readonly freshnessPolicyVersion: string;
+  readonly freshnessMaxAgeMs: number;
   readonly observedAt: string;
   readonly freshUntil: string;
   readonly providers: readonly RegistryProviderSnapshot[];
@@ -211,32 +218,40 @@ export interface RegistryAuthorityReadPort {
 
 class PostgresPhase15bRegistrySnapshotBackend implements RegistryCanonicalSnapshotBackend {
   constructor(
-    private readonly database: MigrationDatabase,
+    private readonly database: RuntimeDatabase,
     private readonly registry: AiRegistryRepository,
-    private readonly freshnessPolicy: RegistryFreshnessPolicy,
+    private readonly freshnessPolicy: RegistryFreshnessPolicyReadPort,
+    private readonly environment: RegistryFreshnessEnvironment,
   ) {}
 
   async readCanonicalSnapshot(
     _input: RegistrySnapshotQuery,
   ): Promise<RegistryCanonicalObservation> {
-    if (
-      !this.freshnessPolicy.policyRef ||
-      !this.freshnessPolicy.policyVersion ||
-      !Number.isSafeInteger(this.freshnessPolicy.maxAgeMs) ||
-      this.freshnessPolicy.maxAgeMs <= 0
-    )
-      throw new RoutingContractError("REGISTRY_STALE");
     await this.database.exec("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     try {
       const marker = await this.database.query<{
         xmin: string;
         xmax: string;
         observed_at: Date | string;
+        isolation_level: string;
+        read_only: string;
       }>(
         `SELECT txid_snapshot_xmin(txid_current_snapshot())::text AS xmin,
                 txid_snapshot_xmax(txid_current_snapshot())::text AS xmax,
-                transaction_timestamp() AS observed_at`,
+                transaction_timestamp() AS observed_at,
+                current_setting('transaction_isolation') AS isolation_level,
+                current_setting('transaction_read_only') AS read_only`,
       );
+      if (
+        marker.rows.length !== 1 ||
+        marker.rows[0]!.isolation_level !== "repeatable read" ||
+        marker.rows[0]!.read_only !== "on"
+      )
+        throw new RoutingContractError("REGISTRY_STALE");
+      const policy = await this.freshnessPolicy.resolveCurrentPolicy({
+        registryScope: REGISTRY_FRESHNESS_SCOPE,
+        environment: this.environment,
+      });
       const providers = await this.registry.listProviders();
       const models = await this.registry.listModels();
       const runtimeAdapters = await this.registry.listHosts();
@@ -249,9 +264,7 @@ class PostgresPhase15bRegistrySnapshotBackend implements RegistryCanonicalSnapsh
         )
       ).flat();
       const observedAt = new Date(marker.rows[0]!.observed_at).toISOString();
-      const freshUntil = new Date(
-        new Date(observedAt).getTime() + this.freshnessPolicy.maxAgeMs,
-      ).toISOString();
+      const freshUntil = deriveRegistryFreshUntil(observedAt, policy.maxAgeMs);
       await this.database.exec("COMMIT");
       return {
         authoritySource: "PHASE15B_AI_REGISTRY",
@@ -261,8 +274,9 @@ class PostgresPhase15bRegistrySnapshotBackend implements RegistryCanonicalSnapsh
         },
         observedAt,
         freshUntil,
-        freshnessPolicyRef: this.freshnessPolicy.policyRef,
-        freshnessPolicyVersion: this.freshnessPolicy.policyVersion,
+        freshnessPolicyRef: policy.policyRef,
+        freshnessPolicyVersion: String(policy.policyVersion),
+        freshnessMaxAgeMs: policy.maxAgeMs,
         providers,
         models,
         runtimeAdapters,
@@ -553,19 +567,15 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
     },
   ) {}
   static fromPostgres(
-    database: MigrationDatabase,
-    registry: AiRegistryRepository,
-    freshnessPolicy: {
-      readonly policyRef: string;
-      readonly policyVersion: string;
-      readonly maxAgeMs: number;
-    },
+    database: RuntimeDatabase,
+    environment: RegistryFreshnessEnvironment,
   ) {
     return new Phase15bRegistryAuthorityAdapter(
       new PostgresPhase15bRegistrySnapshotBackend(
         database,
-        registry,
-        freshnessPolicy,
+        new PostgresAiRegistryRepository(database),
+        createRegistryFreshnessPolicyReadPort(database),
+        environment,
       ),
     );
   }
@@ -587,7 +597,9 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
       !observation.transactionSnapshot.xmin ||
       !observation.transactionSnapshot.xmax ||
       !observation.freshnessPolicyRef ||
-      !observation.freshnessPolicyVersion
+      !observation.freshnessPolicyVersion ||
+      !Number.isSafeInteger(observation.freshnessMaxAgeMs) ||
+      observation.freshnessMaxAgeMs <= 0
     )
       throw new RoutingContractError("REGISTRY_STALE");
     if (
@@ -768,6 +780,7 @@ export class Phase15bRegistryAuthorityAdapter implements RegistryAuthorityReadPo
       transactionSnapshot: observation.transactionSnapshot,
       freshnessPolicyRef: observation.freshnessPolicyRef,
       freshnessPolicyVersion: observation.freshnessPolicyVersion,
+      freshnessMaxAgeMs: observation.freshnessMaxAgeMs,
       observedAt: new Date(observedAt).toISOString(),
       freshUntil,
       ...mapped,

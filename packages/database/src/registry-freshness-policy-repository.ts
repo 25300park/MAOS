@@ -117,6 +117,7 @@ export interface RegistryFreshnessCurrentPolicySnapshot {
   readonly policyRef: string;
   readonly policyVersion: number;
   readonly maxAgeMs: number;
+  readonly authorityIdentifier: typeof REGISTRY_FRESHNESS_POLICY_AUTHORITY;
   readonly environment: RegistryFreshnessEnvironment;
   readonly registryScope: typeof REGISTRY_FRESHNESS_SCOPE;
   readonly effectiveState: "ACTIVE";
@@ -577,6 +578,8 @@ export class PostgresRegistryFreshnessPolicyRepository implements RegistryFreshn
       policyRef: String(row.registry_freshness_policy_id),
       policyVersion: Number(row.registry_freshness_policy_version),
       maxAgeMs: Number(row.max_age_ms),
+      authorityIdentifier:
+        row.authority_identifier as typeof REGISTRY_FRESHNESS_POLICY_AUTHORITY,
       environment: row.environment as RegistryFreshnessEnvironment,
       registryScope: row.registry_scope as typeof REGISTRY_FRESHNESS_SCOPE,
       effectiveState: "ACTIVE",
