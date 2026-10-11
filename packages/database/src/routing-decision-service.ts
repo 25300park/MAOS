@@ -134,6 +134,7 @@ function authorityIdentity(context: ValidatedRoutingContext) {
       ? {
           snapshotRef: context.candidates.registrySnapshotRef,
           revision: context.candidates.registrySnapshotRevision,
+          freshnessAuthority: context.candidates.registryFreshnessAuthority,
           resourceRefs: [...context.candidates.registryResourceRefs].sort(),
           eligibleCandidates: context.candidates.eligibleCandidates,
           excludedCandidates: context.candidates.excludedCandidates,
@@ -216,6 +217,7 @@ function candidateSnapshot(
   routingMode: RoutingMode,
 ): RoutingCandidateSnapshotInput {
   const registry = context.candidates!;
+  const freshness = registry.registryFreshnessAuthority!;
   return Object.freeze({
     candidateSnapshotId: deterministicAuditUuid(
       `PHASE15D.ROUTING_CANDIDATE:${decisionId}:${candidate.modelHostBindingId}`,
@@ -241,6 +243,10 @@ function candidateSnapshot(
     rankingEvidence: Object.freeze({ ...candidate.rankingEvidence }),
     registrySnapshotRef: registry.registrySnapshotRef!,
     registrySnapshotRevision: registry.registrySnapshotRevision!,
+    registryFreshnessPolicyRef: freshness.policyRef,
+    registryFreshnessPolicyVersion: freshness.policyVersion,
+    registryFreshnessMaxAgeMs: freshness.maxAgeMs,
+    registrySnapshotHash: freshness.snapshotHash,
     observedAt: registry.registryObservedAt!,
     freshUntil: registry.registryFreshUntil!,
   });
@@ -343,6 +349,9 @@ function createAppendInput(
         context.aidos!.eligibilityRevision ?? "NOT_OBSERVED",
       ].join(":")
     : context.candidates!.registrySnapshotRevision!;
+  const registryFreshness = development
+    ? null
+    : context.candidates!.registryFreshnessAuthority!;
   const approval = context.approval;
   const policyFreshUntil = minimumIso([
     context.policy.expiresAt,
@@ -405,6 +414,10 @@ function createAppendInput(
     selectedModelHostBindingRef: selected?.modelHostBindingId ?? null,
     registrySnapshotRef,
     registrySnapshotRevision,
+    registryFreshnessPolicyRef: registryFreshness?.policyRef ?? null,
+    registryFreshnessPolicyVersion: registryFreshness?.policyVersion ?? null,
+    registryFreshnessMaxAgeMs: registryFreshness?.maxAgeMs ?? null,
+    registrySnapshotHash: registryFreshness?.snapshotHash ?? null,
     registryObservedAt,
     registryFreshUntil,
     requiredCapabilities: requiredCapabilities(context),
@@ -944,11 +957,17 @@ export class RoutingDecisionService {
     )
       throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
     if (current.candidates) {
+      const freshness = current.candidates.registryFreshnessAuthority;
       if (
-        decision.registrySnapshotRef !==
-          current.candidates.registrySnapshotRef ||
-        decision.registrySnapshotRevision !==
-          current.candidates.registrySnapshotRevision
+        !freshness ||
+        decision.registryFreshnessPolicyRef !== freshness.policyRef ||
+        decision.registryFreshnessPolicyVersion !== freshness.policyVersion ||
+        decision.registryFreshnessMaxAgeMs !== freshness.maxAgeMs ||
+        decision.registryObservedAt !== freshness.registryObservedAt ||
+        decision.registryFreshUntil !== freshness.freshUntil ||
+        decision.registrySnapshotRef !== freshness.snapshotRef ||
+        decision.registrySnapshotRevision !== freshness.snapshotRevision ||
+        decision.registrySnapshotHash !== freshness.snapshotHash
       )
         throw new RoutingContractError("REGISTRY_STALE");
     } else if (

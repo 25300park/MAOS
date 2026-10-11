@@ -46,6 +46,10 @@ function decision(
     selectedModelHostBindingRef: "binding-1",
     registrySnapshotRef: "registry-snapshot-1",
     registrySnapshotRevision: "registry-revision-1",
+    registryFreshnessPolicyRef: "registry-policy-1",
+    registryFreshnessPolicyVersion: "1",
+    registryFreshnessMaxAgeMs: 3_600_000,
+    registrySnapshotHash: "a".repeat(64),
     registryObservedAt: "2026-10-08T00:00:00.000Z",
     registryFreshUntil: "2026-10-08T01:00:00.000Z",
     requiredCapabilities: ["capability-required"],
@@ -136,6 +140,10 @@ function candidate(rank: number): RoutingCandidateSnapshot {
     },
     registrySnapshotRef: "registry-snapshot-1",
     registrySnapshotRevision: "registry-revision-1",
+    registryFreshnessPolicyRef: "registry-policy-1",
+    registryFreshnessPolicyVersion: "1",
+    registryFreshnessMaxAgeMs: 3_600_000,
+    registrySnapshotHash: "a".repeat(64),
     observedAt: "2026-10-08T00:00:00.000Z",
     freshUntil: "2026-10-08T01:00:00.000Z",
     createdAt: "2026-10-08T00:00:02.000Z",
@@ -161,7 +169,8 @@ class ReadRepository implements RoutingDecisionRepository {
   }
   async findById(request: string, id: string) {
     return this.records.find(
-      (record) => record.requestId === request && record.routingDecisionId === id,
+      (record) =>
+        record.requestId === request && record.routingDecisionId === id,
     );
   }
   async listHistory(request: string, purpose: RoutingPurpose) {
@@ -205,9 +214,34 @@ test("reads only the latest decision in the exact request and purpose stream", a
   assert.equal(result.routingDecisionId, decisionId(2));
   assert.equal(result.routingVersion, 2);
   assert.equal(result.routingPurpose, "PRIMARY_EXECUTION");
+  assert.deepEqual(result.registryProof.freshnessAuthority, {
+    policyRef: "registry-policy-1",
+    policyVersion: "1",
+    maxAgeMs: 3_600_000,
+    snapshotHash: "a".repeat(64),
+  });
   assert.equal("idempotencyKey" in result, false);
   assert.equal("canonicalIntentFingerprint" in result, false);
   assert.deepEqual(repository.mutationCalls, []);
+});
+
+test("reads pre-0033 policy-less history without fabricating governed freshness", async () => {
+  const repository = new ReadRepository();
+  repository.records.push(
+    decision(1, {
+      registryFreshnessPolicyRef: null,
+      registryFreshnessPolicyVersion: null,
+      registryFreshnessMaxAgeMs: null,
+      registrySnapshotHash: null,
+    }),
+  );
+  const result = await new RoutingReadService({
+    repository,
+  }).getCurrentDecision({
+    requestId,
+    routingPurpose: "PRIMARY_EXECUTION",
+  });
+  assert.equal(result.registryProof.freshnessAuthority, null);
 });
 
 test("missing current decision fails with a frozen canonical code", async () => {
@@ -309,6 +343,10 @@ test("returns deterministic decision-bound candidate DTOs with allowlisted linea
   assert.equal(result[0]!.lineage.provider.id, "provider-1");
   assert.equal(result[0]!.lineage.capabilityBindings.length, 1);
   assert.equal(result[0]!.ranking.preferredCapabilityMatchCount, 1);
+  assert.equal(result[0]!.registryFreshnessPolicyRef, "registry-policy-1");
+  assert.equal(result[0]!.registryFreshnessPolicyVersion, "1");
+  assert.equal(result[0]!.registryFreshnessMaxAgeMs, 3_600_000);
+  assert.equal(result[0]!.registrySnapshotHash, "a".repeat(64));
   assert.equal(JSON.stringify(result).includes("unrestrictedSecret"), false);
   assert.equal(JSON.stringify(result).includes("must-not-cross"), false);
 });

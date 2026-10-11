@@ -9,6 +9,7 @@ import {
   loadMigrations,
   openPostgresDatabase,
   PostgresRoutingDecisionRepository,
+  RoutingReadService,
   type AppendRoutingDecisionInput,
 } from "../src/index.js";
 import { withDisposablePostgres } from "../../../scripts/testing/disposable-postgres.js";
@@ -42,6 +43,15 @@ async function fixture(t: test.TestContext) {
       VALUES('${id("7")}','${id("6")}',1,'OPERATIONS','VALIDATED','DETERMINISTIC_POLICY','MAOS_NATIVE','VALID','${id("8")}','1','SYSTEM','${id("5")}',CURRENT_TIMESTAMP,'${sha("d")}','classification-1','corr','${id("4")}');
     INSERT INTO governance.ai_routing_policy_versions(routing_policy_version_id,routing_policy_id,version,authority_identifier,lifecycle_intent,canonical_domain,routing_purpose,role_class,scope_ref,environment,effective_at,content_fingerprint,created_by_actor_type,created_by_actor_id,audit_ref)
       VALUES('${id("9")}','${id("10")}',1,'MAOS_GOVERNANCE_ROUTING_POLICY_STEWARD','ACTIVE','OPERATIONS','PRIMARY_EXECUTION','EXECUTOR','scope','STAGING',CURRENT_TIMESTAMP,'${sha("e")}','SYSTEM','${id("5")}','${id("4")}');
+    INSERT INTO governance.registry_freshness_policy_versions(
+      registry_freshness_policy_version_id,registry_freshness_policy_id,
+      policy_version,authority_identifier,registry_scope,environment,max_age_ms,
+      lifecycle_intent,effective_at,content_fingerprint,idempotency_key,
+      created_by_actor_type,created_by_actor_id,reason_code,audit_ref
+    ) VALUES('${id("29")}','${id("30")}',1,
+      'MAOS_GOVERNANCE_REGISTRY_FRESHNESS_POLICY_STEWARD','PHASE15B_AI_REGISTRY',
+      'STAGING',3600000,'ACTIVE',CURRENT_TIMESTAMP,'${sha("9")}',
+      'registry-policy-1','SYSTEM','${id("5")}','TEST','${id("4")}');
   `);
   return { db, repository: new PostgresRoutingDecisionRepository(db) };
 }
@@ -70,6 +80,10 @@ const appendInput = {
   selectedModelHostBindingRef: null,
   registrySnapshotRef: `registry-snapshot:${sha("f")}`,
   registrySnapshotRevision: "registry-r1",
+  registryFreshnessPolicyRef: id("30"),
+  registryFreshnessPolicyVersion: "1",
+  registryFreshnessMaxAgeMs: 3_600_000,
+  registrySnapshotHash: sha("f").slice("sha256:".length),
   registryObservedAt: "2026-10-08T00:00:00.000Z",
   registryFreshUntil: "2026-10-08T01:00:00.000Z",
   requiredCapabilities: [] as string[],
@@ -139,19 +153,81 @@ test("persists immutable stream-local versions with exact replay", async (t) => 
   assert.equal(created.decision.classificationCurrentnessProof, sha("d"));
   assert.equal(created.decision.classificationPolicyResolutionRef, id("8"));
   assert.equal(created.decision.classificationPolicyResolutionVersion, "1");
+  assert.equal(created.decision.registryFreshnessPolicyRef, id("30"));
+  assert.equal(created.decision.registryFreshnessPolicyVersion, "1");
+  assert.equal(created.decision.registryFreshnessMaxAgeMs, 3_600_000);
+  assert.equal(
+    created.decision.registrySnapshotHash,
+    sha("f").slice("sha256:".length),
+  );
   assert.equal("classificationFreshUntil" in created.decision, false);
   assert.equal(
     (await repository.listHistory(id("6"), "PRIMARY_EXECUTION")).length,
     1,
   );
   assert.equal((await repository.listCandidates(id("20"))).length, 0);
-  const audits = await db.query<{ count: number }>(
-    "SELECT count(*)::int AS count FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED'",
+  const audits = await db.query<{
+    count: number;
+    lineage: Record<string, unknown>;
+  }>(
+    `SELECT count(*)::int AS count,
+      (array_agg(metadata))[1]->'registryFreshnessAuthority' AS lineage
+     FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED'`,
   );
   assert.equal(audits.rows[0]!.count, 1);
+  assert.deepEqual(audits.rows[0]!.lineage, {
+    policyRef: id("30"),
+    policyVersion: "1",
+    maxAgeMs: 3_600_000,
+    registryObservedAt: "2026-10-08T00:00:00.000Z",
+    freshUntil: "2026-10-08T01:00:00.000Z",
+    snapshotRef: `registry-snapshot:${sha("f")}`,
+    snapshotRevision: "registry-r1",
+    snapshotHash: sha("f").slice("sha256:".length),
+  });
   await assert.rejects(
     repository.appendDecision({ ...appendInput, canonicalDomain: "WRITING" }),
     /ROUTING_IDEMPOTENCY_CONFLICT/,
+  );
+});
+
+test("rejects derived freshness and decision/candidate lineage mismatches before persistence", async (t) => {
+  const { repository } = await fixture(t);
+  await assert.rejects(
+    repository.appendDecision({
+      ...appendInput,
+      registryFreshUntil: "2026-10-08T02:00:00.000Z",
+    }),
+    /REGISTRY_CONFLICT/,
+  );
+  await assert.rejects(
+    repository.appendDecision({
+      ...appendInput,
+      candidates: [
+        {
+          candidateSnapshotId: id("31"),
+          deterministicRank: 1,
+          providerId: id("32"),
+          modelId: id("33"),
+          runtimeAdapterId: id("34"),
+          modelHostBindingId: id("35"),
+          eligibilityState: "ELIGIBLE",
+          reasonCodes: ["ELIGIBLE"],
+          capabilityEvidence: {},
+          rankingEvidence: {},
+          registrySnapshotRef: appendInput.registrySnapshotRef,
+          registrySnapshotRevision: "registry-r2",
+          registryFreshnessPolicyRef: appendInput.registryFreshnessPolicyRef,
+          registryFreshnessPolicyVersion:
+            appendInput.registryFreshnessPolicyVersion,
+          registryFreshnessMaxAgeMs: appendInput.registryFreshnessMaxAgeMs,
+          registrySnapshotHash: appendInput.registrySnapshotHash,
+          observedAt: appendInput.registryObservedAt,
+          freshUntil: appendInput.registryFreshUntil,
+        },
+      ],
+    }),
+    /REGISTRY_CONFLICT/,
   );
 });
 
@@ -307,7 +383,7 @@ test("rejects missing request and cross-stream predecessor", async (t) => {
 });
 
 test(
-  "real PostgreSQL separates exact replay from distinct competing successors",
+  "real PostgreSQL preserves exact freshness lineage across replay and competing overrides",
   { timeout: 120_000 },
   async () => {
     await withDisposablePostgres({}, async (context) => {
@@ -332,59 +408,305 @@ test(
           VALUES('${id("7")}','${id("6")}',1,'OPERATIONS','VALIDATED','DETERMINISTIC_POLICY','MAOS_NATIVE','VALID','${id("8")}','1','SYSTEM','${id("5")}',CURRENT_TIMESTAMP,'${sha("d")}','classification-1','corr','${id("4")}');
         INSERT INTO governance.ai_routing_policy_versions(routing_policy_version_id,routing_policy_id,version,authority_identifier,lifecycle_intent,canonical_domain,routing_purpose,role_class,scope_ref,environment,effective_at,content_fingerprint,created_by_actor_type,created_by_actor_id,audit_ref)
           VALUES('${id("9")}','${id("10")}',1,'MAOS_GOVERNANCE_ROUTING_POLICY_STEWARD','ACTIVE','OPERATIONS','PRIMARY_EXECUTION','EXECUTOR','scope','STAGING',CURRENT_TIMESTAMP,'${sha("e")}','SYSTEM','${id("5")}','${id("4")}');
+        INSERT INTO governance.registry_freshness_policy_versions(
+          registry_freshness_policy_version_id,registry_freshness_policy_id,
+          policy_version,authority_identifier,registry_scope,environment,max_age_ms,
+          lifecycle_intent,effective_at,content_fingerprint,idempotency_key,
+          created_by_actor_type,created_by_actor_id,reason_code,audit_ref
+        ) VALUES('${id("29")}','${id("30")}',1,
+          'MAOS_GOVERNANCE_REGISTRY_FRESHNESS_POLICY_STEWARD','PHASE15B_AI_REGISTRY',
+          'STAGING',3600000,'ACTIVE',CURRENT_TIMESTAMP,'${sha("9")}',
+          'registry-policy-real-1','SYSTEM','${id("5")}','TEST','${id("4")}');
+        INSERT INTO governance.registry_freshness_policy_versions(
+          registry_freshness_policy_version_id,registry_freshness_policy_id,
+          policy_version,authority_identifier,registry_scope,environment,max_age_ms,
+          lifecycle_intent,effective_at,content_fingerprint,idempotency_key,
+          created_by_actor_type,created_by_actor_id,reason_code,audit_ref
+        ) VALUES('${id("36")}','${id("37")}',1,
+          'MAOS_GOVERNANCE_REGISTRY_FRESHNESS_POLICY_STEWARD','PHASE15B_AI_REGISTRY',
+          'STAGING',7200000,'ACTIVE',CURRENT_TIMESTAMP,'${sha("8")}',
+          'registry-policy-real-2','SYSTEM','${id("5")}','TEST','${id("4")}');
+        INSERT INTO ai.model_providers(id,name,status)
+          VALUES('${id("32")}','RFA05 Provider','ACTIVE');
+        INSERT INTO ai.models(id,provider_id,name,lifecycle,capabilities)
+          VALUES('${id("33")}','${id("32")}','RFA05 Model','ACTIVE',ARRAY['routing']);
+        INSERT INTO ai.host_runtimes(
+          id,provider_id,host_key,display_name,host_type,execution_mode,
+          network_required,credential_mode,adapter_ref
+        ) VALUES('${id("34")}','${id("32")}','rfa05-host','RFA05 Host',
+          'PROVIDER_API','REMOTE_API',true,'NONE','adapter:rfa05');
+        INSERT INTO ai.model_host_bindings(id,model_id,host_id)
+          VALUES('${id("35")}','${id("33")}','${id("34")}');
       `);
         const firstRepository = new PostgresRoutingDecisionRepository(first);
         const secondRepository = new PostgresRoutingDecisionRepository(second);
+        const realInput: AppendRoutingDecisionInput = {
+          ...appendInput,
+          candidates: [
+            {
+              candidateSnapshotId: id("31"),
+              deterministicRank: 1,
+              providerId: id("32"),
+              modelId: id("33"),
+              runtimeAdapterId: id("34"),
+              modelHostBindingId: id("35"),
+              eligibilityState: "ELIGIBLE",
+              reasonCodes: ["ELIGIBLE"],
+              capabilityEvidence: {},
+              rankingEvidence: {},
+              registrySnapshotRef: appendInput.registrySnapshotRef,
+              registrySnapshotRevision: appendInput.registrySnapshotRevision,
+              registryFreshnessPolicyRef:
+                appendInput.registryFreshnessPolicyRef,
+              registryFreshnessPolicyVersion:
+                appendInput.registryFreshnessPolicyVersion,
+              registryFreshnessMaxAgeMs: appendInput.registryFreshnessMaxAgeMs,
+              registrySnapshotHash: appendInput.registrySnapshotHash,
+              observedAt: appendInput.registryObservedAt,
+              freshUntil: appendInput.registryFreshUntil,
+            },
+          ],
+        };
         const results = await Promise.all([
-          firstRepository.appendDecision(appendInput),
-          secondRepository.appendDecision(appendInput),
+          firstRepository.appendDecision(realInput),
+          secondRepository.appendDecision(realInput),
         ]);
         assert.deepEqual(results.map((x) => x.outcome).sort(), [
           "CREATED",
           "REUSED",
         ]);
-        await assert.rejects(
-          secondRepository.appendDecision({
-            ...appendInput,
-            canonicalDomain: "WRITING",
-          }),
-          /ROUTING_IDEMPOTENCY_CONFLICT/,
+        const persistedDecision = await firstRepository.findById(
+          appendInput.requestId,
+          appendInput.routingDecisionId,
         );
+        assert.deepEqual(
+          {
+            policyRef: persistedDecision?.registryFreshnessPolicyRef,
+            policyVersion: persistedDecision?.registryFreshnessPolicyVersion,
+            maxAgeMs: persistedDecision?.registryFreshnessMaxAgeMs,
+            registryObservedAt: persistedDecision?.registryObservedAt,
+            freshUntil: persistedDecision?.registryFreshUntil,
+            snapshotRef: persistedDecision?.registrySnapshotRef,
+            snapshotRevision: persistedDecision?.registrySnapshotRevision,
+            snapshotHash: persistedDecision?.registrySnapshotHash,
+          },
+          {
+            policyRef: id("30"),
+            policyVersion: "1",
+            maxAgeMs: 3_600_000,
+            registryObservedAt: "2026-10-08T00:00:00.000Z",
+            freshUntil: "2026-10-08T01:00:00.000Z",
+            snapshotRef: `registry-snapshot:${sha("f")}`,
+            snapshotRevision: "registry-r1",
+            snapshotHash: sha("f").slice("sha256:".length),
+          },
+        );
+        const decisionAudit = await first.query<{
+          lineage: Record<string, unknown>;
+        }>(
+          "SELECT metadata->'registryFreshnessAuthority' AS lineage FROM audit.audit_records WHERE id=$1",
+          [persistedDecision!.auditRef],
+        );
+        assert.deepEqual(decisionAudit.rows[0]!.lineage, {
+          policyRef: id("30"),
+          policyVersion: "1",
+          maxAgeMs: 3_600_000,
+          registryObservedAt: "2026-10-08T00:00:00.000Z",
+          freshUntil: "2026-10-08T01:00:00.000Z",
+          snapshotRef: `registry-snapshot:${sha("f")}`,
+          snapshotRevision: "registry-r1",
+          snapshotHash: sha("f").slice("sha256:".length),
+        });
+        const persistedCandidates = await firstRepository.listCandidates(
+          appendInput.routingDecisionId,
+        );
+        assert.equal(persistedCandidates.length, 1);
+        assert.deepEqual(
+          {
+            policyRef: persistedCandidates[0]!.registryFreshnessPolicyRef,
+            policyVersion:
+              persistedCandidates[0]!.registryFreshnessPolicyVersion,
+            maxAgeMs: persistedCandidates[0]!.registryFreshnessMaxAgeMs,
+            registryObservedAt: persistedCandidates[0]!.observedAt,
+            freshUntil: persistedCandidates[0]!.freshUntil,
+            snapshotRef: persistedCandidates[0]!.registrySnapshotRef,
+            snapshotRevision: persistedCandidates[0]!.registrySnapshotRevision,
+            snapshotHash: persistedCandidates[0]!.registrySnapshotHash,
+          },
+          {
+            policyRef: persistedDecision!.registryFreshnessPolicyRef,
+            policyVersion: persistedDecision!.registryFreshnessPolicyVersion,
+            maxAgeMs: persistedDecision!.registryFreshnessMaxAgeMs,
+            registryObservedAt: persistedDecision!.registryObservedAt,
+            freshUntil: persistedDecision!.registryFreshUntil,
+            snapshotRef: persistedDecision!.registrySnapshotRef,
+            snapshotRevision: persistedDecision!.registrySnapshotRevision,
+            snapshotHash: persistedDecision!.registrySnapshotHash,
+          },
+        );
+        const readDecision = await new RoutingReadService({
+          repository: firstRepository,
+        }).getDecisionById({
+          requestId: appendInput.requestId,
+          routingPurpose: appendInput.routingPurpose,
+          routingDecisionId: appendInput.routingDecisionId,
+        });
+        assert.deepEqual(
+          {
+            policyRef: readDecision.registryProof.freshnessAuthority?.policyRef,
+            policyVersion:
+              readDecision.registryProof.freshnessAuthority?.policyVersion,
+            maxAgeMs: readDecision.registryProof.freshnessAuthority?.maxAgeMs,
+            registryObservedAt: readDecision.registryProof.observedAt,
+            freshUntil: readDecision.registryProof.freshUntil,
+            snapshotRef: readDecision.registryProof.snapshotRef,
+            snapshotRevision: readDecision.registryProof.revision,
+            snapshotHash:
+              readDecision.registryProof.freshnessAuthority?.snapshotHash,
+          },
+          {
+            policyRef: id("30"),
+            policyVersion: "1",
+            maxAgeMs: 3_600_000,
+            registryObservedAt: "2026-10-08T00:00:00.000Z",
+            freshUntil: "2026-10-08T01:00:00.000Z",
+            snapshotRef: `registry-snapshot:${sha("f")}`,
+            snapshotRevision: "registry-r1",
+            snapshotHash: sha("f").slice("sha256:".length),
+          },
+        );
+        const replayCounts = async () =>
+          (
+            await first.query<{
+              decisions: string;
+              candidates: string;
+              audits: string;
+            }>(`
+              SELECT
+                (SELECT count(*)::text FROM governance.request_routing_decision_versions) AS decisions,
+                (SELECT count(*)::text FROM governance.request_routing_candidate_snapshots) AS candidates,
+                (SELECT count(*)::text FROM audit.audit_records WHERE action='ROUTING.DECISION_CREATED') AS audits
+            `)
+          ).rows[0];
+        assert.deepEqual(await replayCounts(), {
+          decisions: "1",
+          candidates: "1",
+          audits: "1",
+        });
+
+        const freshnessDriftCases: readonly AppendRoutingDecisionInput[] = [
+          {
+            ...realInput,
+            registryFreshnessPolicyVersion: "2",
+            candidates: realInput.candidates.map((candidate) => ({
+              ...candidate,
+              registryFreshnessPolicyVersion: "2",
+            })),
+          },
+          {
+            ...realInput,
+            registryFreshnessMaxAgeMs: 7_200_000,
+            registryFreshUntil: "2026-10-08T02:00:00.000Z",
+            candidates: realInput.candidates.map((candidate) => ({
+              ...candidate,
+              registryFreshnessMaxAgeMs: 7_200_000,
+              freshUntil: "2026-10-08T02:00:00.000Z",
+            })),
+          },
+          {
+            ...realInput,
+            registryObservedAt: "2026-10-08T00:30:00.000Z",
+            registryFreshUntil: "2026-10-08T01:30:00.000Z",
+            candidates: realInput.candidates.map((candidate) => ({
+              ...candidate,
+              observedAt: "2026-10-08T00:30:00.000Z",
+              freshUntil: "2026-10-08T01:30:00.000Z",
+            })),
+          },
+          { ...realInput, registryFreshUntil: "2026-10-08T02:00:00.000Z" },
+          {
+            ...realInput,
+            registrySnapshotRevision: "registry-r2",
+            candidates: realInput.candidates.map((candidate) => ({
+              ...candidate,
+              registrySnapshotRevision: "registry-r2",
+            })),
+          },
+        ];
+        for (const drift of freshnessDriftCases)
+          await assert.rejects(
+            secondRepository.appendDecision(drift),
+            /(ROUTING_IDEMPOTENCY_CONFLICT|REGISTRY_CONFLICT)/,
+          );
+
+        for (const mismatchedCandidate of [
+          {
+            ...realInput.candidates[0]!,
+            registryFreshnessPolicyVersion: "2",
+          },
+          {
+            ...realInput.candidates[0]!,
+            registrySnapshotRevision: "registry-r2",
+          },
+        ])
+          await assert.rejects(
+            secondRepository.appendDecision({
+              ...realInput,
+              candidates: [mismatchedCandidate],
+            }),
+            /REGISTRY_CONFLICT/,
+          );
+        assert.deepEqual(await replayCounts(), {
+          decisions: "1",
+          candidates: "1",
+          audits: "1",
+        });
+
+        const currentFreshness = {
+          registryFreshnessPolicyRef: id("37"),
+          registryFreshnessPolicyVersion: "1",
+          registryFreshnessMaxAgeMs: 7_200_000,
+          registryObservedAt: "2026-10-08T00:30:00.000Z",
+          registryFreshUntil: "2026-10-08T02:30:00.000Z",
+          registrySnapshotRef: `registry-snapshot:${sha("7")}`,
+          registrySnapshotRevision: "registry-r2",
+          registrySnapshotHash: sha("7").slice("sha256:".length),
+        } as const;
+        const overrideA: AppendRoutingDecisionInput = {
+          ...appendInput,
+          ...currentFreshness,
+          routingDecisionId: id("40"),
+          expectedPredecessorId: appendInput.routingDecisionId,
+          idempotencyKey: "route-successor-a",
+          canonicalIntentFingerprint: sha("2"),
+          contextRefs: ["successor:a"],
+          actorType: "HUMAN",
+          auditAction: "ROUTING.OVERRIDE_CREATED",
+          auditMetadata: {
+            authority: overrideAuthority(appendInput.routingDecisionId),
+            overrideTargetDecisionId: appendInput.routingDecisionId,
+            overrideIntentType: "REEVALUATE_CANONICAL",
+            reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+            reasonText: "Concurrent override A.",
+          },
+        };
+        const overrideB: AppendRoutingDecisionInput = {
+          ...overrideA,
+          routingDecisionId: id("41"),
+          idempotencyKey: "route-successor-b",
+          canonicalIntentFingerprint: sha("3"),
+          contextRefs: ["successor:b"],
+          auditMetadata: {
+            authority: overrideAuthority(appendInput.routingDecisionId),
+            overrideTargetDecisionId: appendInput.routingDecisionId,
+            overrideIntentType: "REEVALUATE_CANONICAL",
+            reasonCode: "HUMAN_REQUESTED_REEVALUATION",
+            reasonText: "Concurrent override B.",
+          },
+        };
         const competing = await Promise.allSettled([
-          firstRepository.appendDecision({
-            ...appendInput,
-            routingDecisionId: id("30"),
-            expectedPredecessorId: appendInput.routingDecisionId,
-            idempotencyKey: "route-successor-a",
-            canonicalIntentFingerprint: sha("2"),
-            contextRefs: ["successor:a"],
-            actorType: "HUMAN",
-            auditAction: "ROUTING.OVERRIDE_CREATED",
-            auditMetadata: {
-              authority: overrideAuthority(appendInput.routingDecisionId),
-              overrideTargetDecisionId: appendInput.routingDecisionId,
-              overrideIntentType: "REEVALUATE_CANONICAL",
-              reasonCode: "HUMAN_REQUESTED_REEVALUATION",
-              reasonText: "Concurrent override A.",
-            },
-          }),
-          secondRepository.appendDecision({
-            ...appendInput,
-            routingDecisionId: id("31"),
-            expectedPredecessorId: appendInput.routingDecisionId,
-            idempotencyKey: "route-successor-b",
-            canonicalIntentFingerprint: sha("3"),
-            contextRefs: ["successor:b"],
-            actorType: "HUMAN",
-            auditAction: "ROUTING.OVERRIDE_CREATED",
-            auditMetadata: {
-              authority: overrideAuthority(appendInput.routingDecisionId),
-              overrideTargetDecisionId: appendInput.routingDecisionId,
-              overrideIntentType: "REEVALUATE_CANONICAL",
-              reasonCode: "HUMAN_REQUESTED_REEVALUATION",
-              reasonText: "Concurrent override B.",
-            },
-          }),
+          firstRepository.appendDecision(overrideA),
+          secondRepository.appendDecision(overrideB),
         ]);
         assert.equal(
           competing.filter(({ status }) => status === "fulfilled").length,
@@ -401,6 +723,57 @@ test(
           appendInput.routingPurpose,
         );
         assert.equal(head?.routingVersion, 2);
+        assert.deepEqual(
+          {
+            policyRef: head?.registryFreshnessPolicyRef,
+            policyVersion: head?.registryFreshnessPolicyVersion,
+            maxAgeMs: head?.registryFreshnessMaxAgeMs,
+            registryObservedAt: head?.registryObservedAt,
+            freshUntil: head?.registryFreshUntil,
+            snapshotRef: head?.registrySnapshotRef,
+            snapshotRevision: head?.registrySnapshotRevision,
+            snapshotHash: head?.registrySnapshotHash,
+          },
+          {
+            policyRef: id("37"),
+            policyVersion: "1",
+            maxAgeMs: 7_200_000,
+            registryObservedAt: "2026-10-08T00:30:00.000Z",
+            freshUntil: "2026-10-08T02:30:00.000Z",
+            snapshotRef: `registry-snapshot:${sha("7")}`,
+            snapshotRevision: "registry-r2",
+            snapshotHash: sha("7").slice("sha256:".length),
+          },
+        );
+        const winnerInput =
+          competing[0]!.status === "fulfilled" ? overrideA : overrideB;
+        assert.equal(
+          (await firstRepository.appendDecision(winnerInput)).outcome,
+          "REUSED",
+        );
+        await assert.rejects(
+          firstRepository.appendDecision({
+            ...winnerInput,
+            registrySnapshotRevision: "registry-r3",
+          }),
+          /ROUTING_IDEMPOTENCY_CONFLICT/,
+        );
+        const overrideAudit = await first.query<{
+          lineage: Record<string, unknown>;
+        }>(
+          "SELECT metadata->'registryFreshnessAuthority' AS lineage FROM audit.audit_records WHERE id=$1",
+          [head!.auditRef],
+        );
+        assert.deepEqual(overrideAudit.rows[0]!.lineage, {
+          policyRef: id("37"),
+          policyVersion: "1",
+          maxAgeMs: 7_200_000,
+          registryObservedAt: "2026-10-08T00:30:00.000Z",
+          freshUntil: "2026-10-08T02:30:00.000Z",
+          snapshotRef: `registry-snapshot:${sha("7")}`,
+          snapshotRevision: "registry-r2",
+          snapshotHash: sha("7").slice("sha256:".length),
+        });
         const counts = await first.query<{
           decisions: string;
           decision_audits: string;

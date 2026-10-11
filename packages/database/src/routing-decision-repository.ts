@@ -16,17 +16,83 @@ import {
 import type { MigrationDatabase } from "./types.js";
 
 type Row = Record<string, unknown>;
-const decisionSelect = `SELECT routing_decision_id::text,routing_decision_stream_id::text,request_id::text,routing_purpose,routing_version,supersedes_routing_decision_id::text,classification_version_id::text,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref::text,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id::text,routing_policy_version_id::text,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,registry_snapshot_ref,registry_snapshot_revision,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref::text,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref::text,created_at FROM governance.request_routing_decision_versions`;
-const candidateSelect = `SELECT candidate_snapshot_id::text,routing_decision_id::text,deterministic_rank,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,eligibility_state,reason_codes,capability_evidence,ranking_evidence,registry_snapshot_ref,registry_snapshot_revision,observed_at,fresh_until,created_at FROM governance.request_routing_candidate_snapshots`;
+const decisionSelect = `SELECT routing_decision_id::text,routing_decision_stream_id::text,request_id::text,routing_purpose,routing_version,supersedes_routing_decision_id::text,classification_version_id::text,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref::text,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id::text,routing_policy_version_id::text,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id::text,registry_freshness_policy_version::text,registry_max_age_ms::text,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref::text,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref::text,created_at FROM governance.request_routing_decision_versions`;
+const candidateSelect = `SELECT candidate_snapshot_id::text,routing_decision_id::text,deterministic_rank,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,eligibility_state,reason_codes,capability_evidence,ranking_evidence,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id::text,registry_freshness_policy_version::text,registry_max_age_ms::text,observed_at,fresh_until,created_at FROM governance.request_routing_candidate_snapshots`;
 const nullable = (value: unknown) => (value == null ? null : String(value));
 const strings = (value: unknown) =>
   Array.isArray(value) ? value.map(String) : [];
 const iso = (value: unknown) => new Date(value as string | Date).toISOString();
 const nullableIso = (value: unknown) => (value == null ? null : iso(value));
+const nullableNumber = (value: unknown) =>
+  value == null ? null : Number(value);
+const snapshotHash = (value: string, lineagePresent: boolean) =>
+  lineagePresent && value.startsWith("registry-snapshot:sha256:")
+    ? value.slice("registry-snapshot:sha256:".length)
+    : null;
 const object = (value: unknown): Readonly<Record<string, unknown>> =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+
+function requireRegistryFreshnessLineage(input: AppendRoutingDecisionInput) {
+  const lineage = [
+    input.registryFreshnessPolicyRef,
+    input.registryFreshnessPolicyVersion,
+    input.registryFreshnessMaxAgeMs,
+    input.registrySnapshotHash,
+  ];
+  const policyless = lineage.every((value) => value == null);
+  if (policyless) {
+    if (input.canonicalDomain !== "DEVELOPMENT" || input.candidates.length > 0)
+      throw new RoutingContractError("REGISTRY_CONFLICT");
+    return;
+  }
+  const observedAt = Date.parse(input.registryObservedAt);
+  const freshUntil = Date.parse(input.registryFreshUntil);
+  if (
+    lineage.some((value) => value == null) ||
+    !Number.isSafeInteger(input.registryFreshnessMaxAgeMs) ||
+    input.registryFreshnessMaxAgeMs! <= 0 ||
+    !Number.isFinite(observedAt) ||
+    !Number.isFinite(freshUntil) ||
+    !input.registrySnapshotRef.startsWith("registry-snapshot:sha256:") ||
+    input.registrySnapshotHash !==
+      input.registrySnapshotRef.slice("registry-snapshot:sha256:".length) ||
+    observedAt + input.registryFreshnessMaxAgeMs! !== freshUntil ||
+    input.candidates.some(
+      (candidate) =>
+        candidate.registryFreshnessPolicyRef !==
+          input.registryFreshnessPolicyRef ||
+        candidate.registryFreshnessPolicyVersion !==
+          input.registryFreshnessPolicyVersion ||
+        candidate.registryFreshnessMaxAgeMs !==
+          input.registryFreshnessMaxAgeMs ||
+        candidate.observedAt !== input.registryObservedAt ||
+        candidate.freshUntil !== input.registryFreshUntil ||
+        candidate.registrySnapshotRef !== input.registrySnapshotRef ||
+        candidate.registrySnapshotRevision !== input.registrySnapshotRevision ||
+        candidate.registrySnapshotHash !== input.registrySnapshotHash,
+    )
+  )
+    throw new RoutingContractError("REGISTRY_CONFLICT");
+}
+
+function sameRegistryFreshnessLineage(
+  decision: RoutingDecisionRecord,
+  input: AppendRoutingDecisionInput,
+) {
+  return (
+    decision.registryFreshnessPolicyRef === input.registryFreshnessPolicyRef &&
+    decision.registryFreshnessPolicyVersion ===
+      input.registryFreshnessPolicyVersion &&
+    decision.registryFreshnessMaxAgeMs === input.registryFreshnessMaxAgeMs &&
+    decision.registryObservedAt === input.registryObservedAt &&
+    decision.registryFreshUntil === input.registryFreshUntil &&
+    decision.registrySnapshotRef === input.registrySnapshotRef &&
+    decision.registrySnapshotRevision === input.registrySnapshotRevision &&
+    decision.registrySnapshotHash === input.registrySnapshotHash
+  );
+}
 
 function mapDecision(row: Row): RoutingDecisionRecord {
   const result: RoutingDecisionRecord = {
@@ -64,6 +130,15 @@ function mapDecision(row: Row): RoutingDecisionRecord {
     selectedModelHostBindingRef: nullable(row.model_host_binding_id),
     registrySnapshotRef: String(row.registry_snapshot_ref),
     registrySnapshotRevision: String(row.registry_snapshot_revision),
+    registryFreshnessPolicyRef: nullable(row.registry_freshness_policy_id),
+    registryFreshnessPolicyVersion: nullable(
+      row.registry_freshness_policy_version,
+    ),
+    registryFreshnessMaxAgeMs: nullableNumber(row.registry_max_age_ms),
+    registrySnapshotHash: snapshotHash(
+      String(row.registry_snapshot_ref),
+      row.registry_freshness_policy_id != null,
+    ),
     registryObservedAt: iso(row.registry_observed_at),
     registryFreshUntil: iso(row.registry_fresh_until),
     requiredCapabilities: strings(row.required_capability_refs),
@@ -125,6 +200,15 @@ function mapCandidate(row: Row): RoutingCandidateSnapshot {
     rankingEvidence: object(row.ranking_evidence),
     registrySnapshotRef: String(row.registry_snapshot_ref),
     registrySnapshotRevision: String(row.registry_snapshot_revision),
+    registryFreshnessPolicyRef: nullable(row.registry_freshness_policy_id),
+    registryFreshnessPolicyVersion: nullable(
+      row.registry_freshness_policy_version,
+    ),
+    registryFreshnessMaxAgeMs: nullableNumber(row.registry_max_age_ms),
+    registrySnapshotHash: snapshotHash(
+      String(row.registry_snapshot_ref),
+      row.registry_freshness_policy_id != null,
+    ),
     observedAt: iso(row.observed_at),
     freshUntil: iso(row.fresh_until),
     createdAt: iso(row.created_at),
@@ -238,6 +322,7 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
   async appendDecision(
     input: AppendRoutingDecisionInput,
   ): Promise<RoutingAppendResult> {
+    requireRegistryFreshnessLineage(input);
     if (
       input.routingPurpose !== "PRIMARY_EXECUTION" &&
       input.routingMode === "FALLBACK"
@@ -267,7 +352,8 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
             input.canonicalIntentFingerprint ||
           decision.routingPurpose !== input.routingPurpose ||
           decision.canonicalDomain !== input.canonicalDomain ||
-          decision.routingMode !== input.routingMode
+          decision.routingMode !== input.routingMode ||
+          !sameRegistryFreshnessLineage(decision, input)
         )
           throw new RoutingContractError("ROUTING_IDEMPOTENCY_CONFLICT");
         const candidates = await this.listCandidates(
@@ -335,14 +421,27 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
           version,
           state: input.decisionState,
           ...(input.auditMetadata ?? {}),
+          registryFreshnessAuthority:
+            input.registryFreshnessPolicyRef == null
+              ? null
+              : {
+                  policyRef: input.registryFreshnessPolicyRef,
+                  policyVersion: input.registryFreshnessPolicyVersion,
+                  maxAgeMs: input.registryFreshnessMaxAgeMs,
+                  registryObservedAt: input.registryObservedAt,
+                  freshUntil: input.registryFreshUntil,
+                  snapshotRef: input.registrySnapshotRef,
+                  snapshotRevision: input.registrySnapshotRevision,
+                  snapshotHash: input.registrySnapshotHash,
+                },
         },
         idempotencyKey: input.idempotencyKey,
         deterministicIdentitySeed: `${auditAction}:${input.requestId}:${input.idempotencyKey}`,
       });
       await this.database.query(
         `INSERT INTO governance.request_routing_decision_versions(
-          routing_decision_id,routing_decision_stream_id,request_id,routing_purpose,routing_version,supersedes_routing_decision_id,classification_version_id,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id,routing_policy_version_id,provider_id,model_id,runtime_adapter_id,model_host_binding_id,registry_snapshot_ref,registry_snapshot_revision,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref)
-         VALUES(${Array.from({ length: 57 }, (_, i) => `$${i + 1}`).join(",")})`,
+          routing_decision_id,routing_decision_stream_id,request_id,routing_purpose,routing_version,supersedes_routing_decision_id,classification_version_id,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id,routing_policy_version_id,provider_id,model_id,runtime_adapter_id,model_host_binding_id,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id,registry_freshness_policy_version,registry_max_age_ms,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref)
+         VALUES(${Array.from({ length: 60 }, (_, i) => `$${i + 1}`).join(",")})`,
         [
           input.routingDecisionId,
           input.routingDecisionStreamId,
@@ -368,6 +467,9 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
           input.selectedModelHostBindingRef,
           input.registrySnapshotRef,
           input.registrySnapshotRevision,
+          input.registryFreshnessPolicyRef,
+          input.registryFreshnessPolicyVersion,
+          input.registryFreshnessMaxAgeMs,
           input.registryObservedAt,
           input.registryFreshUntil,
           input.requiredCapabilities,
@@ -407,7 +509,7 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
         (a, b) => a.deterministicRank - b.deterministicRank,
       )) {
         await this.database.query(
-          `INSERT INTO governance.request_routing_candidate_snapshots(candidate_snapshot_id,routing_decision_id,deterministic_rank,provider_id,model_id,runtime_adapter_id,model_host_binding_id,eligibility_state,reason_codes,capability_evidence,ranking_evidence,registry_snapshot_ref,registry_snapshot_revision,observed_at,fresh_until) VALUES(${Array.from({ length: 15 }, (_, i) => `$${i + 1}`).join(",")})`,
+          `INSERT INTO governance.request_routing_candidate_snapshots(candidate_snapshot_id,routing_decision_id,deterministic_rank,provider_id,model_id,runtime_adapter_id,model_host_binding_id,eligibility_state,reason_codes,capability_evidence,ranking_evidence,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id,registry_freshness_policy_version,registry_max_age_ms,observed_at,fresh_until) VALUES(${Array.from({ length: 18 }, (_, i) => `$${i + 1}`).join(",")})`,
           [
             candidate.candidateSnapshotId,
             input.routingDecisionId,
@@ -422,6 +524,9 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
             candidate.rankingEvidence,
             candidate.registrySnapshotRef,
             candidate.registrySnapshotRevision,
+            candidate.registryFreshnessPolicyRef,
+            candidate.registryFreshnessPolicyVersion,
+            candidate.registryFreshnessMaxAgeMs,
             candidate.observedAt,
             candidate.freshUntil,
           ],

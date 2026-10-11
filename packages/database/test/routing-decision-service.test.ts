@@ -234,7 +234,7 @@ function validated(
         freshUntil: future,
         snapshotRef: `registry-snapshot:${sha("d")}`,
         snapshotRevision: "registry-r1",
-        snapshotHash: sha("d"),
+        snapshotHash: sha("d").slice("sha256:".length),
       },
       registryResourceRefs: [
         id("20"),
@@ -351,6 +351,14 @@ class MemoryDecisionRepository implements RoutingDecisionRepository {
     string,
     AppendRoutingDecisionInput["auditMetadata"]
   >();
+
+  replaceDecisionForTest(result: RoutingAppendResult) {
+    this.records.set(result.decision.routingDecisionId, result);
+    this.heads.set(
+      `${result.decision.requestId}:${result.decision.routingPurpose}`,
+      result.decision,
+    );
+  }
 
   async findOrCreateStreamIdentity(input: {
     requestId: string;
@@ -474,7 +482,7 @@ test("creates one deterministic stream decision with safe candidate lineage", as
   const result = await decisionService.createDecision(createInput());
   assert.equal(
     result.decision.canonicalIntentFingerprint,
-    "sha256:2db8c808b787a828ae82519ad6fdbf7d2eeef9b5c7a6144cc4c361c1b10538b4",
+    "sha256:89c78ee5d10059e5ae19ae01d33b5c47e75d6fef276d6190681cf63797e1a10d",
   );
 
   assert.equal(result.outcome, "CREATED");
@@ -482,9 +490,27 @@ test("creates one deterministic stream decision with safe candidate lineage", as
   assert.equal(result.decision.supersedesRoutingDecisionId, null);
   assert.equal(result.decision.decisionState, "SELECTED");
   assert.equal(result.decision.selectedModelHostBindingRef, id("23"));
+  assert.equal(
+    result.decision.registryFreshnessPolicyRef,
+    "registry-freshness-policy",
+  );
+  assert.equal(result.decision.registryFreshnessPolicyVersion, "1");
+  assert.equal(result.decision.registryFreshnessMaxAgeMs, 3_600_000);
+  assert.equal(
+    result.decision.registrySnapshotHash,
+    sha("d").slice("sha256:".length),
+  );
   assert.equal(validationCalls(), 2);
   assert.equal(repository.appends.length, 1);
   assert.equal(result.candidates.length, 1);
+  assert.equal(
+    result.candidates[0]!.registryFreshnessPolicyRef,
+    result.decision.registryFreshnessPolicyRef,
+  );
+  assert.equal(
+    result.candidates[0]!.registrySnapshotHash,
+    result.decision.registrySnapshotHash,
+  );
   assert.deepEqual(result.candidates[0]!.capabilityEvidence, {
     provider: { id: id("20"), version: 2 },
     model: { id: id("21"), version: 3 },
@@ -1700,4 +1726,171 @@ test("concurrent distinct Human overrides against one head produce one successor
     (await repository.listHistory(id("1"), "PRIMARY_EXECUTION")).length,
     2,
   );
+});
+
+function withRegistryFreshness(
+  source: ValidatedRoutingContext,
+  changes: Partial<
+    NonNullable<
+      NonNullable<
+        ValidatedRoutingContext["candidates"]
+      >["registryFreshnessAuthority"]
+    >
+  >,
+): ValidatedRoutingContext {
+  const candidates = source.candidates!;
+  const authority = { ...candidates.registryFreshnessAuthority!, ...changes };
+  return {
+    ...source,
+    candidates: {
+      ...candidates,
+      registrySnapshotRef: authority.snapshotRef,
+      registrySnapshotRevision: authority.snapshotRevision,
+      registryObservedAt: authority.registryObservedAt,
+      registryFreshUntil: authority.freshUntil,
+      registryFreshnessAuthority: authority,
+    },
+  };
+}
+
+test("Registry freshness-only replay drift fails closed for decisions and overrides", async (t) => {
+  const base = validated();
+  const driftCases = [
+    ["policyRef", { policyRef: "registry-freshness-policy-v2" }],
+    ["policyVersion", { policyVersion: "2" }],
+    [
+      "maxAgeMs",
+      { maxAgeMs: 7_200_000, freshUntil: "2026-10-09T02:00:00.000Z" },
+    ],
+    [
+      "registryObservedAt",
+      {
+        registryObservedAt: "2026-10-08T23:30:00.000Z",
+        freshUntil: "2026-10-09T00:30:00.000Z",
+      },
+    ],
+    ["freshUntil", { freshUntil: "2026-10-09T02:00:00.000Z" }],
+    ["snapshotRevision", { snapshotRevision: "registry-r2" }],
+    [
+      "snapshotHash",
+      {
+        snapshotRef: `registry-snapshot:${sha("e")}`,
+        snapshotHash: sha("e").slice("sha256:".length),
+      },
+    ],
+  ] as const;
+  for (const [name, changes] of driftCases) {
+    await t.test(name, async () => {
+      const changed = withRegistryFreshness(base, changes);
+      const decisionHarness = service([base, base, changed, changed]);
+      await decisionHarness.decisionService.createDecision(createInput());
+      await assert.rejects(
+        decisionHarness.decisionService.createDecision(createInput()),
+        /ROUTING_IDEMPOTENCY_CONFLICT/,
+      );
+
+      const overrideHarness = service([
+        base,
+        base,
+        base,
+        base,
+        changed,
+        changed,
+      ]);
+      const predecessor =
+        await overrideHarness.decisionService.createDecision(createInput());
+      const override = overrideInput(predecessor.decision.routingDecisionId);
+      await overrideHarness.decisionService.applyHumanOverride(override);
+      await assert.rejects(
+        overrideHarness.decisionService.applyHumanOverride(override),
+        /ROUTING_IDEMPOTENCY_CONFLICT/,
+      );
+    });
+  }
+});
+
+test("Human override persists current Registry freshness instead of predecessor history", async () => {
+  const base = validated();
+  const current = withRegistryFreshness(base, {
+    policyVersion: "2",
+    snapshotRevision: "registry-r2",
+  });
+  const harness = service([base, base, current, current]);
+  const predecessor =
+    await harness.decisionService.createDecision(createInput());
+  const override = await harness.decisionService.applyHumanOverride(
+    overrideInput(predecessor.decision.routingDecisionId),
+  );
+  assert.equal(predecessor.decision.registryFreshnessPolicyVersion, "1");
+  assert.equal(override.decision.registryFreshnessPolicyVersion, "2");
+  assert.equal(override.decision.registrySnapshotRevision, "registry-r2");
+  assert.equal(
+    override.candidates[0]!.registryFreshnessPolicyVersion,
+    override.decision.registryFreshnessPolicyVersion,
+  );
+});
+
+test("handoff requires exact current Registry freshness lineage and rejects policy-less history", async (t) => {
+  const base = validated();
+  const cases = [
+    withRegistryFreshness(base, { policyRef: "registry-policy-changed" }),
+    withRegistryFreshness(base, { policyVersion: "2" }),
+    withRegistryFreshness(base, {
+      maxAgeMs: 7_200_000,
+      freshUntil: "2026-10-09T02:00:00.000Z",
+    }),
+    withRegistryFreshness(base, { snapshotRevision: "registry-r2" }),
+    withRegistryFreshness(base, {
+      snapshotRef: `registry-snapshot:${sha("e")}`,
+      snapshotHash: sha("e").slice("sha256:".length),
+    }),
+  ];
+  for (const [index, changed] of cases.entries()) {
+    await t.test(`drift-${index + 1}`, async () => {
+      const harness = service([base, base, changed]);
+      const created =
+        await harness.decisionService.createDecision(createInput());
+      await assert.rejects(
+        harness.decisionService.validateForHandoff(
+          created.decision.routingDecisionId,
+          validationInput(),
+        ),
+        /REGISTRY_STALE/,
+      );
+    });
+  }
+
+  const policylessHarness = service([base, base, base]);
+  const policyless =
+    await policylessHarness.decisionService.createDecision(createInput());
+  policylessHarness.repository.replaceDecisionForTest({
+    ...policyless,
+    decision: {
+      ...policyless.decision,
+      registryFreshnessPolicyRef: null,
+      registryFreshnessPolicyVersion: null,
+      registryFreshnessMaxAgeMs: null,
+      registrySnapshotHash: null,
+    },
+  });
+  await assert.rejects(
+    policylessHarness.decisionService.validateForHandoff(
+      policyless.decision.routingDecisionId,
+      validationInput(),
+    ),
+    /REGISTRY_STALE/,
+  );
+
+  for (const code of ["REGISTRY_STALE", "REGISTRY_CONFLICT"] as const) {
+    const staleHarness = service([base, base, new RoutingContractError(code)]);
+    const created =
+      await staleHarness.decisionService.createDecision(createInput());
+    await assert.rejects(
+      staleHarness.decisionService.validateForHandoff(
+        created.decision.routingDecisionId,
+        validationInput(),
+      ),
+      new RegExp(code),
+    );
+  }
 });

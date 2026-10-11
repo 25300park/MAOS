@@ -39,6 +39,12 @@ export interface RoutingDecisionReadDto extends RoutingDecisionOutputV1 {
     revision: string;
     observedAt: string;
     freshUntil: string;
+    freshnessAuthority: Readonly<{
+      policyRef: string;
+      policyVersion: string;
+      maxAgeMs: number;
+      snapshotHash: string;
+    }> | null;
   }>;
 }
 
@@ -63,6 +69,10 @@ export interface RoutingCandidateReadDto {
   }>;
   readonly registrySnapshotRef: string;
   readonly registrySnapshotRevision: string;
+  readonly registryFreshnessPolicyRef: string | null;
+  readonly registryFreshnessPolicyVersion: string | null;
+  readonly registryFreshnessMaxAgeMs: number | null;
+  readonly registrySnapshotHash: string | null;
   readonly observedAt: string;
   readonly freshUntil: string;
   readonly createdAt: string;
@@ -130,7 +140,10 @@ function jsonObject(
 
 function versionedRef(value: unknown) {
   const source = object(value);
-  return Object.freeze({ id: string(source.id), version: number(source.version) });
+  return Object.freeze({
+    id: string(source.id),
+    version: number(source.version),
+  });
 }
 
 function capabilityBindings(value: unknown) {
@@ -184,7 +197,9 @@ function policyLineage(value: unknown) {
   });
 }
 
-function candidateDto(candidate: RoutingCandidateSnapshot): RoutingCandidateReadDto {
+function candidateDto(
+  candidate: RoutingCandidateSnapshot,
+): RoutingCandidateReadDto {
   const evidence = object(candidate.capabilityEvidence);
   const ranking = object(candidate.rankingEvidence);
   const roleClass = evidence.roleClass;
@@ -246,6 +261,10 @@ function candidateDto(candidate: RoutingCandidateSnapshot): RoutingCandidateRead
     }),
     registrySnapshotRef: candidate.registrySnapshotRef,
     registrySnapshotRevision: candidate.registrySnapshotRevision,
+    registryFreshnessPolicyRef: candidate.registryFreshnessPolicyRef,
+    registryFreshnessPolicyVersion: candidate.registryFreshnessPolicyVersion,
+    registryFreshnessMaxAgeMs: candidate.registryFreshnessMaxAgeMs,
+    registrySnapshotHash: candidate.registrySnapshotHash,
     observedAt: candidate.observedAt,
     freshUntil: candidate.freshUntil,
     createdAt: candidate.createdAt,
@@ -341,8 +360,7 @@ export class RoutingReadService {
     );
     if (
       candidates.some(
-        (candidate) =>
-          candidate.routingDecisionId !== record.routingDecisionId,
+        (candidate) => candidate.routingDecisionId !== record.routingDecisionId,
       )
     )
       throw new RoutingContractError("ROUTING_DECISION_STALE");
@@ -390,6 +408,18 @@ export class RoutingReadService {
         revision: record.registrySnapshotRevision,
         observedAt: record.registryObservedAt,
         freshUntil: record.registryFreshUntil,
+        freshnessAuthority:
+          record.registryFreshnessPolicyRef == null ||
+          record.registryFreshnessPolicyVersion == null ||
+          record.registryFreshnessMaxAgeMs == null ||
+          record.registrySnapshotHash == null
+            ? null
+            : Object.freeze({
+                policyRef: record.registryFreshnessPolicyRef,
+                policyVersion: record.registryFreshnessPolicyVersion,
+                maxAgeMs: record.registryFreshnessMaxAgeMs,
+                snapshotHash: record.registrySnapshotHash,
+              }),
       }),
     });
   }

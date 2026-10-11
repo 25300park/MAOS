@@ -139,11 +139,25 @@ export interface RoutingCandidateSnapshotInput {
   readonly rankingEvidence: Readonly<Record<string, unknown>>;
   readonly registrySnapshotRef: string;
   readonly registrySnapshotRevision: string;
+  readonly registryFreshnessPolicyRef: string;
+  readonly registryFreshnessPolicyVersion: string;
+  readonly registryFreshnessMaxAgeMs: number;
+  readonly registrySnapshotHash: string;
   readonly observedAt: string;
   readonly freshUntil: string;
 }
 
-export interface RoutingCandidateSnapshot extends RoutingCandidateSnapshotInput {
+export interface RoutingCandidateSnapshot extends Omit<
+  RoutingCandidateSnapshotInput,
+  | "registryFreshnessPolicyRef"
+  | "registryFreshnessPolicyVersion"
+  | "registryFreshnessMaxAgeMs"
+  | "registrySnapshotHash"
+> {
+  readonly registryFreshnessPolicyRef: string | null;
+  readonly registryFreshnessPolicyVersion: string | null;
+  readonly registryFreshnessMaxAgeMs: number | null;
+  readonly registrySnapshotHash: string | null;
   readonly routingDecisionId: string;
   readonly createdAt: string;
 }
@@ -173,6 +187,10 @@ export interface RoutingDecisionRecord {
   readonly selectedModelHostBindingRef: string | null;
   readonly registrySnapshotRef: string;
   readonly registrySnapshotRevision: string;
+  readonly registryFreshnessPolicyRef: string | null;
+  readonly registryFreshnessPolicyVersion: string | null;
+  readonly registryFreshnessMaxAgeMs: number | null;
+  readonly registrySnapshotHash: string | null;
   readonly registryObservedAt: string;
   readonly registryFreshUntil: string;
   readonly requiredCapabilities: readonly string[];
