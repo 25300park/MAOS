@@ -29,6 +29,11 @@ export class HumanApprovalDeniedError extends Error {
   }
 }
 
+export interface HumanApprovalReferenceResolution {
+  readonly request: HumanApprovalRequest;
+  readonly decision: HumanApprovalDecision;
+}
+
 type RequestRow = {
   id: string;
   approval_id: string;
@@ -200,6 +205,39 @@ export class PostgresHumanApprovalRuntime {
 
   findRequest(id: string): Promise<HumanApprovalRequest | undefined> {
     return this.#findRequest("r.id = $1", [id]);
+  }
+
+  async resolveApprovalReference(
+    approvalRef: string,
+  ): Promise<HumanApprovalReferenceResolution | undefined> {
+    const requests = await this.database.query<RequestRow>(
+      `SELECT ${requestSelect}
+       FROM governance.human_approval_requests r
+       JOIN governance.approvals a ON a.id = r.approval_id
+       WHERE r.approval_id = $1
+       ORDER BY r.created_at, r.id
+       LIMIT 2`,
+      [approvalRef],
+    );
+    if (requests.rows.length > 1) throw new HumanApprovalConflictError();
+    const requestRow = requests.rows[0];
+    if (!requestRow) return undefined;
+    const decisions = await this.database.query<DecisionRow>(
+      `SELECT ${decisionSelect}
+       FROM governance.human_approval_decisions d
+       WHERE d.request_id = $1 AND d.approval_id = $2
+         AND d.decision_type = 'APPROVED'
+       ORDER BY d.decided_at DESC, d.id DESC
+       LIMIT 2`,
+      [requestRow.id, approvalRef],
+    );
+    if (decisions.rows.length > 1) throw new HumanApprovalConflictError();
+    const decisionRow = decisions.rows[0];
+    if (!decisionRow) return undefined;
+    return Object.freeze({
+      request: requestFrom(requestRow),
+      decision: decisionFrom(decisionRow),
+    });
   }
 
   async resolveDecisionAuthorityRef(

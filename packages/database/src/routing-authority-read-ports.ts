@@ -313,6 +313,8 @@ export interface HumanApprovalSnapshot extends AuthorityExpiryResult {
   readonly state:
     "APPROVED" | "REJECTED" | "MISSING" | "EXPIRED" | "REVOKED" | "STALE";
   readonly approvalRef: string | null;
+  readonly approvalRequestRef?: string;
+  readonly approvalDecisionRef?: string | null;
   readonly authorityRuleRef: string;
   readonly approvalPolicyRef: string;
   readonly approvalPolicyVersion: string;
@@ -320,6 +322,11 @@ export interface HumanApprovalSnapshot extends AuthorityExpiryResult {
   readonly targetId: string;
   readonly targetVersion: string;
   readonly targetHash: string;
+  readonly companyScopeRef?: string;
+  readonly teamScopeRef?: string | null;
+  readonly projectScopeRef?: string;
+  readonly systemScopeRef?: string | null;
+  readonly environment?: string;
   readonly approvalStatus: string;
   readonly approvalValidity: string;
   readonly issuedAt: string;
@@ -865,6 +872,13 @@ type ApprovalBackend = Pick<
   PostgresHumanApprovalRuntime,
   "findRequest" | "resolveDecisionAuthorityRef" | "revalidate"
 >;
+export interface ApprovalReferenceBinding {
+  readonly requestId: string;
+  readonly expected: HumanApprovalExpectedBinding;
+  readonly approvalDecisionRef: string;
+  readonly authorityRuleRef: string;
+  readonly checkedAt: string;
+}
 function requireApprovalAllowed(result: HumanApprovalRevalidationResult): void {
   if (result.allowed) return;
   if (result.status === "REVOKED")
@@ -880,9 +894,7 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
       ref: string,
       version: string,
       hash: string,
-    ) => Promise<
-      { requestId: string; expected: HumanApprovalExpectedBinding } | undefined
-    >,
+    ) => Promise<ApprovalReferenceBinding | undefined>,
   ) {}
   async resolveRequirement(
     input: ApprovalRequirementQuery,
@@ -899,7 +911,7 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
       request.authorityOwnerActorId,
     );
     if (!authorityRef) throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
-    return this.map(result, request, input.expected, authorityRef);
+    return this.map(result, request, input.expected, authorityRef, null);
   }
   async revalidate(
     approvalRef: string,
@@ -929,14 +941,24 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
       request.id,
       request.authorityOwnerActorId,
     );
-    if (!authorityRef) throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
-    return this.map(result, request, binding.expected, authorityRef);
+    if (!authorityRef || authorityRef !== binding.authorityRuleRef)
+      throw new RoutingContractError("HUMAN_APPROVAL_INVALID");
+    return this.map(
+      result,
+      request,
+      binding.expected,
+      authorityRef,
+      binding.approvalDecisionRef,
+      binding.checkedAt,
+    );
   }
   private map(
     result: HumanApprovalRevalidationResult,
     request: HumanApprovalRequest,
     expected: HumanApprovalExpectedBinding,
     authorityRuleRef: string,
+    approvalDecisionRef: string | null,
+    checkedAt = new Date(request.createdAt).toISOString(),
   ): HumanApprovalSnapshot {
     requireApprovalAllowed(result);
     return {
@@ -949,11 +971,13 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
         expected.targetHash,
         authorityRuleRef,
       ].join(":"),
-      checkedAt: new Date().toISOString(),
+      checkedAt,
       freshUntil: new Date(request.freshUntil).toISOString(),
       freshnessModel: "AUTHORITY_EXPIRY",
       state: "APPROVED",
       approvalRef: result.approvalId,
+      approvalRequestRef: request.id,
+      approvalDecisionRef,
       authorityRuleRef,
       approvalPolicyRef: request.approvalPolicyRef,
       approvalPolicyVersion: request.approvalPolicyVersion,
@@ -961,6 +985,11 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
       targetId: request.targetId,
       targetVersion: request.targetVersion,
       targetHash: request.targetHash,
+      companyScopeRef: request.companyScopeRef,
+      teamScopeRef: request.teamScopeRef ?? null,
+      projectScopeRef: request.projectScopeRef,
+      systemScopeRef: request.systemScopeRef ?? null,
+      environment: request.environment,
       approvalStatus: result.status,
       approvalValidity: result.validity,
       issuedAt: new Date(request.createdAt).toISOString(),

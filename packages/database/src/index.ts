@@ -14,6 +14,7 @@ export * from "./phase14-governance-repositories.js";
 export * from "./planner-reviewer-routing-runtime.js";
 export * from "./phase14-routing-policy-repository.js";
 export * from "./human-approval-runtime.js";
+export * from "./human-approval-authority-runtime-factory.js";
 export * from "./executor-routing-runtime.js";
 export * from "./maos019-runner-integration.js";
 export * from "./verification-routing-runtime.js";
