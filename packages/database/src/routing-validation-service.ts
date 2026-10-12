@@ -38,6 +38,12 @@ import type {
   CanonicalWorkRequestRecord,
   WorkRequestReadPort,
 } from "./work-request-contracts.js";
+import {
+  validateAidosDelegationInput,
+  validateAidosSnapshotBinding,
+  type AidosDelegationInput,
+  type AidosSnapshotBinding,
+} from "./aidos-delegation-contracts.js";
 
 export interface RoutingPolicyResolver {
   resolveActivePolicy(
@@ -65,6 +71,7 @@ export interface CreateRoutingDecisionInput {
   readonly specializationRef: string | null;
   readonly approval: ApprovalRequirementQuery | null;
   readonly aidosTargetRef: string | null;
+  readonly aidosDelegationInput?: AidosDelegationInput | null;
 }
 
 export interface ValidatedAidosAuthority {
@@ -75,6 +82,8 @@ export interface ValidatedAidosAuthority {
   readonly checkedAt: string;
   readonly freshUntil: string;
   readonly evidenceRefs: readonly string[];
+  readonly delegationInput: AidosDelegationInput;
+  readonly snapshotBinding: AidosSnapshotBinding | null;
 }
 
 export interface ValidatedRoutingContext {
@@ -499,12 +508,20 @@ export class RoutingValidationService {
         throw new RoutingContractError(
           "DEVELOPMENT_NATIVE_EXECUTION_PROHIBITED",
         );
+      if (!input.aidosDelegationInput)
+        throw new RoutingContractError("WAITING_AIDOS_DELEGATION_INPUT");
+      const delegationInput = validateAidosDelegationInput(
+        input.aidosDelegationInput,
+      );
+      if (delegationInput.aidosProjectRef !== input.aidosTargetRef)
+        throw new RoutingContractError("WAITING_AIDOS_DELEGATION_INPUT");
       const aidosQuery = {
         projectRef: input.aidosTargetRef,
         organizationId: input.context.organizationId,
         projectId: input.context.projectId,
         environment: input.context.environment,
         scopeRef: input.scopeRef,
+        delegationInput,
       };
       const availability = await this.dependencies.aidos.readAidosAvailability({
         environment: input.context.environment,
@@ -513,6 +530,7 @@ export class RoutingValidationService {
         projectId: input.context.projectId,
         scopeRef: input.scopeRef,
         correlationId: classification.handoff.correlationId,
+        delegationInput,
       });
       requireAidosSnapshotCurrent(
         availability,
@@ -531,6 +549,7 @@ export class RoutingValidationService {
             projectId: input.context.projectId,
             scopeRef: input.scopeRef,
             correlationId: classification.handoff.correlationId,
+            delegationInput,
           });
         requireAidosSnapshotCurrent(
           currentAvailability,
@@ -566,6 +585,8 @@ export class RoutingValidationService {
             checkedAt: availability.observedAt,
             freshUntil: availability.freshUntil,
             evidenceRefs: Object.freeze([availability.evidenceRef]),
+            delegationInput,
+            snapshotBinding: null,
           }),
           developmentDelegationState: "AIDOS_UNAVAILABLE",
         });
@@ -589,6 +610,7 @@ export class RoutingValidationService {
             projectId: input.context.projectId,
             scopeRef: input.scopeRef,
             correlationId: classification.handoff.correlationId,
+            delegationInput,
           }),
           this.dependencies.aidos.readProjectOnboardingState(aidosQuery),
         ]);
@@ -647,6 +669,8 @@ export class RoutingValidationService {
               availability.evidenceRef,
               registration.evidenceRef,
             ]),
+            delegationInput,
+            snapshotBinding: null,
           }),
           developmentDelegationState: "WAITING_AIDOS_ONBOARDING",
         });
@@ -657,13 +681,7 @@ export class RoutingValidationService {
         await this.dependencies.aidos.readDelegationEligibility({
           ...aidosQuery,
           classificationVersionId: classification.identity,
-          requiredCapabilityRefs: [
-            ...new Set([
-              ...classification.handoff.requiredCapabilityRefs,
-              ...policy.requiredCapabilityRefs,
-              ...(specialization?.requiredCapabilityRefs ?? []),
-            ]),
-          ],
+          delegationInput,
         });
       requireAidosSnapshotCurrent(
         eligibility,
@@ -675,6 +693,24 @@ export class RoutingValidationService {
         throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
       if (eligibility.state !== "ELIGIBLE")
         throw new RoutingContractError("AIDOS_DELEGATION_INELIGIBLE");
+      const snapshotBinding = validateAidosSnapshotBinding(
+        eligibility.snapshotBinding,
+      );
+      const snapshotRevisions = new Map(
+        snapshotBinding.projectionBindings.map((binding) => [
+          binding.projectionType,
+          binding.projectionRevision,
+        ]),
+      );
+      if (
+        snapshotRevisions.get(AIDOS_AVAILABILITY_SOURCE) !==
+          availability.revision ||
+        snapshotRevisions.get(AIDOS_PROJECT_REGISTRATION_SOURCE) !==
+          registration.revision ||
+        snapshotRevisions.get(AIDOS_DELEGATION_ELIGIBILITY_SOURCE) !==
+          eligibility.revision
+      )
+        throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
       const checkedAt = new Date(
         Math.max(
           Date.parse(availability.observedAt),
@@ -703,6 +739,7 @@ export class RoutingValidationService {
           revision: eligibility.revision,
         },
         context: input.context,
+        snapshotBinding,
       });
       if (
         !aidosProof.current ||
@@ -715,6 +752,8 @@ export class RoutingValidationService {
             eligibility.revision,
           ].join(":") ||
         aidosProof.freshnessModel !== "AUTHORITY_EXPIRY" ||
+        JSON.stringify(aidosProof.snapshotBinding) !==
+          JSON.stringify(snapshotBinding) ||
         !Number.isFinite(Date.parse(aidosProof.freshUntil)) ||
         Date.parse(aidosProof.freshUntil) <= this.now().getTime()
       )
@@ -746,6 +785,8 @@ export class RoutingValidationService {
             registration.evidenceRef,
             eligibility.evidenceRef,
           ]),
+          delegationInput,
+          snapshotBinding: aidosProof.snapshotBinding,
         }),
         developmentDelegationState: "READY_TO_DELEGATE",
       });

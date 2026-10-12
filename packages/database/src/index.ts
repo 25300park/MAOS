@@ -97,3 +97,6 @@ export type {
   MigrationRegistryMode,
   MigrationResult,
 } from "./types.js";
+export * from "./aidos-delegation-contracts.js";
+export * from "./aidos-authority-runtime.js";
+export * from "./aidos-authority-runtime-factory.js";

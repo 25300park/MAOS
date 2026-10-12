@@ -139,9 +139,9 @@ test(
         const applied = await applyMigrations(migration, migrations);
         assert.equal(
           applied.applied.at(-1),
-          "0033_phase15b_registry_freshness_policy",
+          "0034_phase15d_aidos_delegation_input_binding",
         );
-        assert.equal(applied.applied.length, 33);
+        assert.equal(applied.applied.length, 34);
         assert.deepEqual(await applyMigrations(migration, migrations), {
           applied: [],
           skipped: migrations.map(({ id }) => id),

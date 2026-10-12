@@ -19,6 +19,29 @@ import {
 const now = "2099-10-08T00:00:00.000Z";
 const future = "2099-10-08T01:00:00.000Z";
 const past = "2000-01-01T00:00:00.000Z";
+const digest = `sha256:${"a".repeat(64)}`;
+const aidosDelegationInput = {
+  developmentIntent: "Implement the approved change",
+  requestedRoleClass: "EXECUTOR" as const,
+  requiredCapabilities: ["execute"] as const,
+  preferredCapabilities: [] as const,
+  policyConstraints: [] as const,
+  contextRefs: [] as const,
+  artifactRefs: [] as const,
+  priority: 50,
+  aidosProjectRef: "aidos-project:1",
+  delegationRequestId: "delegation-request",
+};
+const aidosSnapshotBinding = {
+  snapshotId: "018f47a2-5c2d-7b9f-8abc-0123456789ab",
+  authorityEpoch: digest,
+  requestDigest: digest,
+  projectionBindings: [
+    { projectionType: AIDOS_PROJECT_REGISTRATION_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: digest },
+    { projectionType: AIDOS_AVAILABILITY_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: digest },
+    { projectionType: AIDOS_DELEGATION_ELIGIBILITY_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: digest },
+  ],
+};
 const currentClassificationContext = {
   requestId: "request",
   organizationId: "o",
@@ -453,12 +476,14 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       evidenceRef: "evidence:aidos:eligibility:1",
       source: AIDOS_AUTHORITY_SOURCE,
       sourceProjection: AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+      snapshotBinding: aidosSnapshotBinding,
     }),
     revalidate: async () => ({
+      snapshotBinding: aidosSnapshotBinding,
       availability: {
         state: "AVAILABLE",
         projectRef: "aidos-project:1",
-        revision: "availability-r1",
+        revision: digest,
         observedAt: now,
         freshUntil: future,
         evidenceRef: "evidence:aidos:availability:1",
@@ -468,7 +493,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       registration: {
         state: "PROJECT_ONBOARDED",
         projectRef: "aidos-project:1",
-        revision: "registration-r1",
+        revision: digest,
         observedAt: now,
         freshUntil: future,
         evidenceRef: "evidence:aidos:onboarding:1",
@@ -478,12 +503,13 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       eligibility: {
         state: "ELIGIBLE",
         projectRef: "aidos-project:1",
-        revision: "eligibility-r1",
+        revision: digest,
         observedAt: now,
         freshUntil: future,
         evidenceRef: "evidence:aidos:eligibility:1",
         source: AIDOS_AUTHORITY_SOURCE,
         sourceProjection: AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+        snapshotBinding: aidosSnapshotBinding,
       },
     }),
   });
@@ -495,6 +521,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
     projectId: "p",
     scopeRef: "scope",
     correlationId: "c",
+    delegationInput: aidosDelegationInput,
   });
   assert.equal(availability.source, AIDOS_AUTHORITY_SOURCE);
   assert.equal(availability.sourceProjection, AIDOS_AVAILABILITY_SOURCE);
@@ -506,6 +533,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
         projectId: "p",
         environment: "STAGING",
         scopeRef: "scope",
+        delegationInput: aidosDelegationInput,
       })
     ).sourceProjection,
     AIDOS_PROJECT_REGISTRATION_SOURCE,
@@ -519,7 +547,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
         environment: "STAGING",
         scopeRef: "scope",
         classificationVersionId: "classification",
-        requiredCapabilityRefs: [],
+        delegationInput: aidosDelegationInput,
       })
     ).sourceProjection,
     AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
@@ -527,22 +555,23 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
   const revalidated = await adapter.revalidate({
     availability: {
       projectRef: "aidos-project:1",
-      revision: "availability-r1",
+      revision: digest,
     },
     registration: {
       projectRef: "aidos-project:1",
-      revision: "registration-r1",
+      revision: digest,
     },
     eligibility: {
       projectRef: "aidos-project:1",
-      revision: "eligibility-r1",
+      revision: digest,
     },
     context: currentClassificationContext,
+    snapshotBinding: aidosSnapshotBinding,
   });
   assert.equal(revalidated.current, true);
   assert.equal(
     revalidated.revision,
-    "availability-r1:registration-r1:eligibility-r1",
+    `${digest}:${digest}:${digest}`,
   );
 
   const unavailable = new ExternalAidosAuthorityAdapter({
@@ -581,6 +610,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       projectId: "p",
       scopeRef: "scope",
       correlationId: "c",
+      delegationInput: aidosDelegationInput,
     }),
     (error) =>
       error instanceof RoutingContractError &&
@@ -593,6 +623,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       projectId: "p",
       environment: "STAGING",
       scopeRef: "scope",
+      delegationInput: aidosDelegationInput,
     }),
     (error) =>
       error instanceof RoutingContractError &&
@@ -628,6 +659,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       projectId: "p",
       scopeRef: "scope",
       correlationId: "c",
+      delegationInput: aidosDelegationInput,
     }),
     (error) =>
       error instanceof RoutingContractError &&
@@ -662,6 +694,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       projectId: "p",
       environment: "STAGING",
       scopeRef: "scope",
+      delegationInput: aidosDelegationInput,
     }),
     (error) =>
       error instanceof RoutingContractError &&
@@ -684,6 +717,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       evidenceRef: "evidence:aidos:eligibility:stale",
       source: AIDOS_AUTHORITY_SOURCE,
       sourceProjection: AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+      snapshotBinding: aidosSnapshotBinding,
     }),
     revalidate: async () => {
       throw new Error("unused");
@@ -697,7 +731,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
       environment: "STAGING",
       scopeRef: "scope",
       classificationVersionId: "classification",
-      requiredCapabilityRefs: [],
+      delegationInput: aidosDelegationInput,
     }),
     (error) =>
       error instanceof RoutingContractError &&
@@ -1153,6 +1187,7 @@ test("AIDOS authority rejects malformed projection freshness", async () => {
           projectId: "p",
           scopeRef: "scope",
           correlationId: "correlation",
+          delegationInput: aidosDelegationInput,
         }),
       () =>
         adapter.readProjectOnboardingState({
@@ -1161,6 +1196,7 @@ test("AIDOS authority rejects malformed projection freshness", async () => {
           projectId: "p",
           environment: "STAGING",
           scopeRef: "scope",
+          delegationInput: aidosDelegationInput,
         }),
       () =>
         adapter.readDelegationEligibility({
@@ -1170,7 +1206,7 @@ test("AIDOS authority rejects malformed projection freshness", async () => {
           environment: "STAGING",
           scopeRef: "scope",
           classificationVersionId: "classification",
-          requiredCapabilityRefs: [],
+          delegationInput: aidosDelegationInput,
         }),
     ]) {
       await assert.rejects(

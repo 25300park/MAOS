@@ -4,6 +4,10 @@ import type {
   CandidateResourceLineage,
 } from "./candidate-resolution-service.js";
 import {
+  validateAidosDelegationInput,
+  validateAidosSnapshotBinding,
+} from "./aidos-delegation-contracts.js";
+import {
   RoutingContractError,
   toRoutingDecisionOutputV1,
   type RoutingCandidateSnapshot,
@@ -379,6 +383,12 @@ export class RoutingReadService {
       artifactRefs: Object.freeze([...output.artifactRefs]),
       aidosRequiredCapabilities: output.aidosRequiredCapabilities
         ? Object.freeze([...output.aidosRequiredCapabilities])
+        : null,
+      aidosDelegationInput: output.aidosDelegationInput
+        ? validateAidosDelegationInput(output.aidosDelegationInput)
+        : null,
+      aidosSnapshotBinding: output.aidosSnapshotBinding
+        ? validateAidosSnapshotBinding(output.aidosSnapshotBinding)
         : null,
       decisionReasonCodes: Object.freeze([...output.decisionReasonCodes]),
       freshnessReferences: Object.freeze(

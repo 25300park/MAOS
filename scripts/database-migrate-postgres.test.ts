@@ -263,7 +263,7 @@ test("requires an exact staging migration target before opening", async () => {
   }
 });
 
-test("applies migrations 0001 through 0033 and skips all 33 on replay", async (t) => {
+test("applies migrations 0001 through 0034 and skips all 34 on replay", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
   await initializeExistingRegistry(database);
@@ -283,7 +283,7 @@ test("applies migrations 0001 through 0033 and skips all 33 on replay", async (t
     0,
   );
   const firstRecords = first.stdout.map((line) => JSON.parse(line));
-  assert.equal(firstRecords.length, 34);
+  assert.equal(firstRecords.length, 35);
   assert.equal(firstRecords[0].migration_id, "0001_canonical_schemas");
   assert.equal(firstRecords[18].migration_id, "0019_staging_session_ingress");
   assert.equal(
@@ -333,11 +333,15 @@ test("applies migrations 0001 through 0033 and skips all 33 on replay", async (t
     firstRecords[32].migration_id,
     "0033_phase15b_registry_freshness_policy",
   );
-  assert.ok(
-    firstRecords.slice(0, 33).every(({ status }) => status === "APPLIED"),
+  assert.equal(
+    firstRecords[33].migration_id,
+    "0034_phase15d_aidos_delegation_input_binding",
   );
-  assert.deepEqual(firstRecords[33], {
-    applied: 33,
+  assert.ok(
+    firstRecords.slice(0, 34).every(({ status }) => status === "APPLIED"),
+  );
+  assert.deepEqual(firstRecords[34], {
+    applied: 34,
     skipped: 0,
     status: "SUCCEEDED",
   });
@@ -353,11 +357,11 @@ test("applies migrations 0001 through 0033 and skips all 33 on replay", async (t
   );
   const replayRecords = replay.stdout.map((line) => JSON.parse(line));
   assert.ok(
-    replayRecords.slice(0, 33).every(({ status }) => status === "SKIPPED"),
+    replayRecords.slice(0, 34).every(({ status }) => status === "SKIPPED"),
   );
-  assert.deepEqual(replayRecords[33], {
+  assert.deepEqual(replayRecords[34], {
     applied: 0,
-    skipped: 33,
+    skipped: 34,
     status: "SUCCEEDED",
   });
   assert.equal(closeCount, 2);

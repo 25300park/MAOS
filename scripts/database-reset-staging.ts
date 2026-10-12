@@ -194,6 +194,11 @@ export const RESET_MIGRATION_MANIFEST = Object.freeze(
       "d52d50505d375c2eebbc77e013cf27f271e65a630c0e1bde61a663d191b2f53a",
       "ca3da96dba9b8215e2c13b8c4c82ed676ad115b055f3a1763d8d384e313957dc",
     ],
+    [
+      "0034_phase15d_aidos_delegation_input_binding",
+      "81db09844d8bc5754578d3fd46a92cb5e68e9c6cbfb6135caa62b3f264b6e531",
+      "38f2094193372a45785e72d68fcfec8e1bad5ddabbfbeca3be8b84c1d40366b9",
+    ],
   ].map(([id, canonicalChecksum, legacyCrlfChecksum]) => ({
     canonicalChecksum: canonicalChecksum ?? "",
     id: id ?? "",

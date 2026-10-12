@@ -175,8 +175,10 @@ test("applicability fingerprint is canonically derived and caller drift is rejec
 test("migration 0033 creates the Registry freshness authority without seeding policy", async (t) => {
   const migrations = await loadMigrations(migrationDirectory);
   assert.equal(
-    migrations.at(-1)?.id,
-    "0033_phase15b_registry_freshness_policy",
+    migrations.some(
+      ({ id }) => id === "0033_phase15b_registry_freshness_policy",
+    ),
+    true,
   );
 
   const database = new PGlite();
@@ -454,7 +456,7 @@ test(
       try {
         const migrations = await loadMigrations(migrationDirectory);
         const applied = await applyMigrations(first, migrations);
-        assert.equal(applied.applied.length, 33);
+        assert.equal(applied.applied.length, 34);
         assert.deepEqual(await applyMigrations(first, migrations), {
           applied: [],
           skipped: migrations.map(({ id }) => id),

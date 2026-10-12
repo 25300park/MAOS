@@ -271,12 +271,13 @@ test(
         assert.deepEqual(applied.applied, [
           "0032_phase15d_multi_ai_role_model_routing",
           "0033_phase15b_registry_freshness_policy",
+          "0034_phase15d_aidos_delegation_input_binding",
         ]);
         const replay = await applyMigrations(admin, migrations, {
           registryMode: "VERIFY_EXISTING",
         });
         assert.equal(replay.applied.length, 0);
-        assert.equal(replay.skipped.length, 33);
+        assert.equal(replay.skipped.length, 34);
 
         await admin.exec("RESET ROLE");
         await assert.rejects(

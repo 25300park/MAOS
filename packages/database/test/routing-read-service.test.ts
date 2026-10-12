@@ -72,6 +72,8 @@ function decision(
     aidosAuthorityRevision: null,
     aidosCheckedAt: null,
     aidosFreshUntil: null,
+    aidosDelegationInput: null,
+    aidosSnapshotBinding: null,
     decisionState: "SELECTED",
     decisionReasonCodes: ["ROUTING_ALLOWED"],
     stalenessState: "CURRENT",
@@ -389,7 +391,7 @@ test("preserves persisted Development AIDOS states without execution side effect
 });
 
 test("does not add read-service failure codes", () => {
-  assert.equal(ROUTING_ERROR_CODES.length, 40);
+  assert.equal(ROUTING_ERROR_CODES.length, 41);
   assert.equal(
     ROUTING_ERROR_CODES.some((code) => code.includes("READ_SERVICE")),
     false,

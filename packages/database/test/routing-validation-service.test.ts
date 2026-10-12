@@ -24,6 +24,29 @@ import {
 
 const now = "2026-10-09T00:00:00.000Z";
 const future = "2026-10-09T01:00:00.000Z";
+const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}`;
+const aidosDelegationInput = {
+  developmentIntent: "Implement the approved change",
+  requestedRoleClass: "EXECUTOR" as const,
+  requiredCapabilities: ["execute"] as const,
+  preferredCapabilities: ["verify"] as const,
+  policyConstraints: [] as const,
+  contextRefs: [] as const,
+  artifactRefs: [] as const,
+  priority: 50,
+  aidosProjectRef: "aidos-project",
+  delegationRequestId: "delegation-request",
+};
+const aidosSnapshotBinding = {
+  snapshotId: "018f47a2-5c2d-7b9f-8abc-0123456789ab",
+  authorityEpoch: digest("a"),
+  requestDigest: digest("b"),
+  projectionBindings: [
+    { projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: digest("c") },
+    { projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: digest("d") },
+    { projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: digest("e") },
+  ],
+};
 const registrySnapshotHash = "a".repeat(64);
 const context: ExactRequestContext = {
   requestId: "request",
@@ -302,27 +325,32 @@ function aidos(): AidosAuthorityReadPort {
   return {
     readAidosAvailability: async () => ({
       ...base,
+      revision: digest("d"),
       state: "AVAILABLE",
       sourceProjection: AIDOS_AVAILABILITY_SOURCE,
     }),
     readProjectOnboardingState: async () => ({
       ...base,
+      revision: digest("c"),
       state: "PROJECT_ONBOARDED",
       sourceProjection: AIDOS_PROJECT_REGISTRATION_SOURCE,
     }),
     readDelegationEligibility: async () => ({
       ...base,
+      revision: digest("e"),
       state: "ELIGIBLE",
       sourceProjection: AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+      snapshotBinding: aidosSnapshotBinding,
     }),
     revalidate: async () => ({
       current: true,
       authority: AIDOS_AUTHORITY_SOURCE,
       identity: "aidos-project",
-      revision: "aidos-r1:aidos-r1:aidos-r1",
+      revision: `${digest("d")}:${digest("c")}:${digest("e")}`,
       checkedAt: now,
       freshUntil: future,
       freshnessModel: "AUTHORITY_EXPIRY",
+      snapshotBinding: aidosSnapshotBinding,
     }),
   };
 }
@@ -386,6 +414,7 @@ const validationInput = {
   specializationRef: null,
   approval: null,
   aidosTargetRef: null,
+  aidosDelegationInput,
 };
 
 test("validates current canonical authorities and returns non-authoritative candidate evidence", async () => {
@@ -883,7 +912,7 @@ test("Development revalidates AIDOS and never calls MAOS candidate resolution", 
     aidos: {
       ...aidosPort,
       readDelegationEligibility: async (query) => {
-        aidosRequiredCapabilityRefs = query.requiredCapabilityRefs;
+        aidosRequiredCapabilityRefs = query.delegationInput.requiredCapabilities;
         return aidosPort.readDelegationEligibility(query);
       },
       revalidate: async (...args) => {
@@ -899,11 +928,7 @@ test("Development revalidates AIDOS and never calls MAOS candidate resolution", 
   assert.equal(result.candidates, null);
   assert.equal(candidateCalls, 0);
   assert.equal(aidosRevalidations, 1);
-  assert.deepEqual(aidosRequiredCapabilityRefs, [
-    "cap-required",
-    "cap-policy",
-    "cap-specialization",
-  ]);
+  assert.deepEqual(aidosRequiredCapabilityRefs, ["execute"]);
 });
 
 test("Development fails closed when AIDOS projection authority changes after reads", async () => {
@@ -936,6 +961,47 @@ test("Development fails closed when AIDOS projection authority changes after rea
       error instanceof RoutingContractError &&
       error.code === "AIDOS_AUTHORITY_CONFLICT",
   );
+});
+
+test("Development blocks before AIDOS when canonical delegation input is missing", async () => {
+  const base = classification();
+  const developmentClassification = classification({
+    handoff: {
+      ...base.handoff,
+      domainKey: "DEVELOPMENT",
+      routingDisposition: "DELEGATE_TO_AIDOS",
+    },
+  });
+  const developmentPolicy = {
+    ...policy({
+      allowedRoutingModes: ["PRIMARY_EXECUTION"],
+      routingDisposition: "DELEGATE_TO_AIDOS",
+    }),
+    canonicalDomain: "DEVELOPMENT" as const,
+  };
+  let aidosCalls = 0;
+  const blockedPort = aidos();
+  await assert.rejects(
+    service({
+      classifications: classifications(developmentClassification),
+      policies: policies(developmentPolicy),
+      aidos: {
+        ...blockedPort,
+        readAidosAvailability: async (query) => {
+          aidosCalls += 1;
+          return blockedPort.readAidosAvailability(query);
+        },
+      },
+    }).validate({
+      ...validationInput,
+      aidosTargetRef: "aidos-project",
+      aidosDelegationInput: null,
+    }),
+    (error) =>
+      error instanceof RoutingContractError &&
+      error.code === "WAITING_AIDOS_DELEGATION_INPUT",
+  );
+  assert.equal(aidosCalls, 0);
 });
 
 test("Development returns bounded unavailable and onboarding outcomes", async () => {
@@ -1002,6 +1068,7 @@ test("Development returns bounded unavailable and onboarding outcomes", async ()
             projectId: "project",
             scopeRef: "scope",
             correlationId: "correlation",
+            delegationInput: aidosDelegationInput,
           })),
           state: "UNKNOWN",
         }),

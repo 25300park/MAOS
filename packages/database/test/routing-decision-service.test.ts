@@ -22,6 +22,28 @@ const now = "2026-10-09T00:00:00.000Z";
 const future = "2026-10-09T01:00:00.000Z";
 const id = (n: string) => `00000000-0000-4000-8000-${n.padStart(12, "0")}`;
 const sha = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}`;
+const aidosDelegationInput = {
+  developmentIntent: "Implement the approved change",
+  requestedRoleClass: "EXECUTOR" as const,
+  requiredCapabilities: ["execute"] as const,
+  preferredCapabilities: ["verify"] as const,
+  policyConstraints: [] as const,
+  contextRefs: [] as const,
+  artifactRefs: [] as const,
+  priority: 50,
+  aidosProjectRef: "aidos:project",
+  delegationRequestId: "delegation-request",
+};
+const aidosSnapshotBinding = {
+  snapshotId: "018f47a2-5c2d-7b9f-8abc-0123456789ab",
+  authorityEpoch: sha("a"),
+  requestDigest: sha("b"),
+  projectionBindings: [
+    { projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: sha("c") },
+    { projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: sha("d") },
+    { projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: sha("e") },
+  ],
+};
 
 function validationInput(
   overrides: Partial<CreateRoutingDecisionInput> = {},
@@ -56,6 +78,7 @@ function validationInput(
     specializationRef: null,
     approval: null,
     aidosTargetRef: null,
+    aidosDelegationInput,
     ...overrides,
   };
 }
@@ -334,6 +357,8 @@ function developmentValidated(
         "evidence:aidos:registration",
         "evidence:aidos:eligibility",
       ],
+      delegationInput: aidosDelegationInput,
+      snapshotBinding: aidosSnapshotBinding,
       ...aidosOverrides,
     },
     developmentDelegationState: "READY_TO_DELEGATE",
@@ -715,6 +740,8 @@ test("rejects changed Registry, Approval, and AIDOS authority before append", as
       checkedAt: now,
       freshUntil: future,
       evidenceRefs: ["evidence:aidos"],
+      delegationInput: aidosDelegationInput,
+      snapshotBinding: aidosSnapshotBinding,
     },
     developmentDelegationState: "READY_TO_DELEGATE",
   });
@@ -845,6 +872,8 @@ test("persists Development delegation without MAOS-native selection", async () =
       checkedAt: now,
       freshUntil: future,
       evidenceRefs: ["evidence:aidos"],
+      delegationInput: aidosDelegationInput,
+      snapshotBinding: aidosSnapshotBinding,
     },
     developmentDelegationState: "READY_TO_DELEGATE",
   });
@@ -893,6 +922,8 @@ test("persists bounded unavailable and onboarding Development outcomes", async (
         checkedAt: now,
         freshUntil: future,
         evidenceRefs: ["evidence:aidos"],
+        delegationInput: aidosDelegationInput,
+        snapshotBinding: null,
       },
       developmentDelegationState: state,
     });

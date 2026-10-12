@@ -106,6 +106,8 @@ const appendInput = {
   aidosAuthorityRevision: null,
   aidosCheckedAt: null,
   aidosFreshUntil: null,
+  aidosDelegationInput: null,
+  aidosSnapshotBinding: null,
   decisionState: "DENIED" as const,
   decisionReasonCodes: ["POLICY_DENIED"],
   stalenessState: "CURRENT" as const,
@@ -123,6 +125,49 @@ const appendInput = {
   projectId: id("3"),
   candidates: [] as const,
 };
+
+test("persists exact canonical AIDOS delegation input and snapshot binding", async (t) => {
+  const { repository } = await fixture(t);
+  const digest = sha("a");
+  const aidosDelegationInput = {
+    developmentIntent: "Implement the approved change",
+    requestedRoleClass: "EXECUTOR" as const,
+    requiredCapabilities: ["execute"] as const,
+    preferredCapabilities: ["verify"] as const,
+    policyConstraints: [] as const,
+    contextRefs: [] as const,
+    artifactRefs: [] as const,
+    priority: 50,
+    aidosProjectRef: "aidos-project",
+    delegationRequestId: "delegation-request",
+  };
+  const aidosSnapshotBinding = {
+    snapshotId: "018f47a2-5c2d-7b9f-8abc-0123456789ab",
+    authorityEpoch: digest,
+    requestDigest: digest,
+    projectionBindings: [
+      { projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: digest },
+      { projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: digest },
+      { projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: digest },
+    ],
+  };
+  const created = await repository.appendDecision({
+    ...appendInput,
+    canonicalDomain: "DEVELOPMENT",
+    developmentDelegationState: "READY_TO_DELEGATE",
+    aidosProjectRef: "aidos-project",
+    aidosRequiredCapabilities: ["execute"],
+    aidosAuthorityRevision: "aidos-r1",
+    aidosCheckedAt: "2026-10-08T00:00:00.000Z",
+    aidosFreshUntil: "2026-10-08T01:00:00.000Z",
+    aidosDelegationInput,
+    aidosSnapshotBinding,
+    decisionState: "SELECTED",
+    decisionReasonCodes: ["DELEGATE_TO_AIDOS"],
+  });
+  assert.deepEqual(created.decision.aidosDelegationInput, aidosDelegationInput);
+  assert.deepEqual(created.decision.aidosSnapshotBinding, aidosSnapshotBinding);
+});
 
 const overrideAuthority = (targetDecisionId: string) => ({
   authorityId: "authority:routing-override",

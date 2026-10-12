@@ -17,6 +17,12 @@ import type {
   HumanApprovalRevalidationResult,
 } from "./phase14-runtime-contracts.js";
 import type { Phase15dClassificationHandoff } from "./request-classification-contracts.js";
+import {
+  validateAidosSnapshotBinding,
+  type AidosDelegationInput,
+  type AidosProjectionBinding,
+  type AidosSnapshotBinding,
+} from "./aidos-delegation-contracts.js";
 import type {
   ClassificationStalenessInput,
   CurrentClassificationResult,
@@ -351,6 +357,7 @@ export interface AidosAvailabilityQuery {
   readonly projectId: string;
   readonly scopeRef: string;
   readonly correlationId: string;
+  readonly delegationInput: AidosDelegationInput;
 }
 export interface AidosProjectOnboardingQuery {
   readonly projectRef: string;
@@ -358,10 +365,11 @@ export interface AidosProjectOnboardingQuery {
   readonly projectId: string;
   readonly environment: string;
   readonly scopeRef: string;
+  readonly delegationInput: AidosDelegationInput;
 }
 export interface AidosDelegationEligibilityQuery extends AidosProjectOnboardingQuery {
   readonly classificationVersionId: string;
-  readonly requiredCapabilityRefs: readonly string[];
+  readonly delegationInput: AidosDelegationInput;
 }
 export interface AidosProjectionReference {
   readonly projectRef: string;
@@ -372,6 +380,7 @@ export interface AidosRevalidationQuery {
   readonly registration: AidosProjectionReference;
   readonly eligibility: AidosProjectionReference;
   readonly context: ExactRequestContext;
+  readonly snapshotBinding: AidosSnapshotBinding;
 }
 interface AidosSnapshotBase {
   readonly projectRef: string;
@@ -393,6 +402,7 @@ export interface AidosProjectOnboardingSnapshot extends AidosSnapshotBase {
 export interface AidosDelegationEligibilitySnapshot extends AidosSnapshotBase {
   readonly sourceProjection: typeof AIDOS_DELEGATION_ELIGIBILITY_SOURCE;
   readonly state: "ELIGIBLE" | "INELIGIBLE" | "UNKNOWN";
+  readonly snapshotBinding: AidosSnapshotBinding;
 }
 export interface AidosRevalidationObservation {
   readonly availability: AidosAvailabilitySnapshot;
@@ -409,7 +419,11 @@ export interface AidosAuthorityReadPort {
   readDelegationEligibility(
     input: AidosDelegationEligibilityQuery,
   ): Promise<AidosDelegationEligibilitySnapshot>;
-  revalidate(input: AidosRevalidationQuery): Promise<AuthorityFreshnessResult>;
+  revalidate(
+    input: AidosRevalidationQuery,
+  ): Promise<
+    AuthorityFreshnessResult & { readonly snapshotBinding: AidosSnapshotBinding }
+  >;
 }
 
 interface ClassificationBackend {
@@ -999,7 +1013,17 @@ export class GovernedHumanApprovalAuthorityAdapter implements HumanApprovalAutho
   }
 }
 
-interface AidosAuthorityBackend {
+export interface AidosCanonicalRevalidationObservation {
+  readonly kind: "AIDOS_CANONICAL_REVALIDATION";
+  readonly projectRef: string;
+  readonly state: "CURRENT" | "SUPERSEDED" | "STALE" | "NOT_FOUND";
+  readonly checkedAt: string;
+  readonly validUntil: string | null;
+  readonly snapshotBinding: AidosSnapshotBinding;
+  readonly projectionResults: readonly AidosProjectionBinding[];
+}
+
+export interface AidosAuthorityBackend {
   readAidosAvailability(
     input: AidosAvailabilityQuery,
   ): Promise<AidosAvailabilitySnapshot>;
@@ -1011,7 +1035,12 @@ interface AidosAuthorityBackend {
   ): Promise<AidosDelegationEligibilitySnapshot>;
   revalidate(
     input: AidosRevalidationQuery,
-  ): Promise<AidosRevalidationObservation>;
+  ): Promise<
+    | (AidosRevalidationObservation & {
+        readonly snapshotBinding: AidosSnapshotBinding;
+      })
+    | AidosCanonicalRevalidationObservation
+  >;
 }
 function requireCurrent<
   T extends AidosSnapshotBase & { readonly sourceProjection: string },
@@ -1064,6 +1093,7 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
       await this.backend.readDelegationEligibility(input),
       AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
     );
+    validateAidosSnapshotBinding(value.snapshotBinding);
     if (value.state === "UNKNOWN")
       throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
     if (value.state === "INELIGIBLE")
@@ -1072,6 +1102,59 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
   }
   async revalidate(input: AidosRevalidationQuery) {
     const value = await this.backend.revalidate(input);
+    if (
+      "kind" in value &&
+      value.kind === "AIDOS_CANONICAL_REVALIDATION"
+    ) {
+      const snapshotBinding = validateAidosSnapshotBinding(
+        value.snapshotBinding,
+      );
+      const requestedBinding = validateAidosSnapshotBinding(
+        input.snapshotBinding,
+      );
+      if (
+        value.projectRef !== input.availability.projectRef ||
+        value.projectRef !== input.registration.projectRef ||
+        value.projectRef !== input.eligibility.projectRef ||
+        JSON.stringify(snapshotBinding) !== JSON.stringify(requestedBinding)
+      )
+        throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+      if (value.state === "SUPERSEDED")
+        throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+      if (
+        value.state !== "CURRENT" ||
+        value.validUntil === null ||
+        Date.parse(value.validUntil) <= Date.now()
+      )
+        throw new RoutingContractError("AIDOS_AUTHORITY_STALE");
+      if (
+        JSON.stringify(value.projectionResults) !==
+        JSON.stringify(snapshotBinding.projectionBindings)
+      )
+        throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+      return {
+        current: true,
+        authority: AIDOS_AUTHORITY_SOURCE,
+        identity: value.projectRef,
+        revision: [
+          input.availability.revision,
+          input.registration.revision,
+          input.eligibility.revision,
+        ].join(":"),
+        checkedAt: value.checkedAt,
+        freshUntil: value.validUntil,
+        freshnessModel: "AUTHORITY_EXPIRY" as const,
+        snapshotBinding,
+      };
+    }
+    if (
+      !("availability" in value) ||
+      !("registration" in value) ||
+      !("eligibility" in value)
+    )
+      throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+    const snapshotBinding = validateAidosSnapshotBinding(value.snapshotBinding);
+    const requestedBinding = validateAidosSnapshotBinding(input.snapshotBinding);
     const availability = requireCurrent(
       value.availability,
       AIDOS_AVAILABILITY_SOURCE,
@@ -1084,6 +1167,12 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
       value.eligibility,
       AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
     );
+    const revisions = new Map(
+      snapshotBinding.projectionBindings.map((binding) => [
+        binding.projectionType,
+        binding.projectionRevision,
+      ]),
+    );
     if (
       availability.projectRef !== input.availability.projectRef ||
       availability.revision !== input.availability.revision ||
@@ -1092,7 +1181,13 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
       eligibility.projectRef !== input.eligibility.projectRef ||
       eligibility.revision !== input.eligibility.revision ||
       availability.projectRef !== registration.projectRef ||
-      availability.projectRef !== eligibility.projectRef
+      availability.projectRef !== eligibility.projectRef ||
+      revisions.get(AIDOS_AVAILABILITY_SOURCE) !== availability.revision ||
+      revisions.get(AIDOS_PROJECT_REGISTRATION_SOURCE) !==
+        registration.revision ||
+      revisions.get(AIDOS_DELEGATION_ELIGIBILITY_SOURCE) !==
+        eligibility.revision ||
+      JSON.stringify(snapshotBinding) !== JSON.stringify(requestedBinding)
     )
       throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
     if (availability.state === "UNKNOWN")
@@ -1133,6 +1228,7 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
         ),
       ).toISOString(),
       freshnessModel: "AUTHORITY_EXPIRY" as const,
+      snapshotBinding,
     };
   }
 }

@@ -14,9 +14,13 @@ import {
   type RoutingPurpose,
 } from "./routing-contracts.js";
 import type { MigrationDatabase } from "./types.js";
+import {
+  validateAidosDelegationInput,
+  validateAidosSnapshotBinding,
+} from "./aidos-delegation-contracts.js";
 
 type Row = Record<string, unknown>;
-const decisionSelect = `SELECT routing_decision_id::text,routing_decision_stream_id::text,request_id::text,routing_purpose,routing_version,supersedes_routing_decision_id::text,classification_version_id::text,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref::text,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id::text,routing_policy_version_id::text,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id::text,registry_freshness_policy_version::text,registry_max_age_ms::text,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref::text,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref::text,created_at FROM governance.request_routing_decision_versions`;
+const decisionSelect = `SELECT routing_decision_id::text,routing_decision_stream_id::text,request_id::text,routing_purpose,routing_version,supersedes_routing_decision_id::text,classification_version_id::text,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref::text,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id::text,routing_policy_version_id::text,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id::text,registry_freshness_policy_version::text,registry_max_age_ms::text,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref::text,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capabilities,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,aidos_delegation_input,aidos_snapshot_binding,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref::text,created_at FROM governance.request_routing_decision_versions`;
 const candidateSelect = `SELECT candidate_snapshot_id::text,routing_decision_id::text,deterministic_rank,provider_id::text,model_id::text,runtime_adapter_id::text,model_host_binding_id::text,eligibility_state,reason_codes,capability_evidence,ranking_evidence,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id::text,registry_freshness_policy_version::text,registry_max_age_ms::text,observed_at,fresh_until,created_at FROM governance.request_routing_candidate_snapshots`;
 const nullable = (value: unknown) => (value == null ? null : String(value));
 const strings = (value: unknown) =>
@@ -160,12 +164,20 @@ function mapDecision(row: Row): RoutingDecisionRecord {
       row.development_delegation_state as RoutingDecisionRecord["developmentDelegationState"],
     aidosProjectRef: nullable(row.aidos_project_ref),
     aidosRequiredCapabilities:
-      row.aidos_required_capability_refs == null
+      row.aidos_required_capabilities == null
         ? null
-        : strings(row.aidos_required_capability_refs),
+        : strings(row.aidos_required_capabilities),
     aidosAuthorityRevision: nullable(row.aidos_authority_revision),
     aidosCheckedAt: nullableIso(row.aidos_checked_at),
     aidosFreshUntil: nullableIso(row.aidos_fresh_until),
+    aidosDelegationInput:
+      row.aidos_delegation_input == null
+        ? null
+        : validateAidosDelegationInput(row.aidos_delegation_input),
+    aidosSnapshotBinding:
+      row.aidos_snapshot_binding == null
+        ? null
+        : validateAidosSnapshotBinding(row.aidos_snapshot_binding),
     decisionState: row.decision_state as RoutingDecisionRecord["decisionState"],
     decisionReasonCodes: strings(row.decision_reason_codes),
     stalenessState:
@@ -440,8 +452,8 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
       });
       await this.database.query(
         `INSERT INTO governance.request_routing_decision_versions(
-          routing_decision_id,routing_decision_stream_id,request_id,routing_purpose,routing_version,supersedes_routing_decision_id,classification_version_id,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id,routing_policy_version_id,provider_id,model_id,runtime_adapter_id,model_host_binding_id,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id,registry_freshness_policy_version,registry_max_age_ms,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref)
-         VALUES(${Array.from({ length: 60 }, (_, i) => `$${i + 1}`).join(",")})`,
+          routing_decision_id,routing_decision_stream_id,request_id,routing_purpose,routing_version,supersedes_routing_decision_id,classification_version_id,classification_version,classification_state,classification_currentness_state,classification_currentness_proof,classification_policy_resolution_ref,classification_policy_resolution_version,canonical_domain,role_class,routing_mode,specialization_version_id,routing_policy_version_id,provider_id,model_id,runtime_adapter_id,model_host_binding_id,registry_snapshot_ref,registry_snapshot_revision,registry_freshness_policy_id,registry_freshness_policy_version,registry_max_age_ms,registry_observed_at,registry_fresh_until,required_capability_refs,preferred_capability_refs,policy_constraints,context_refs,artifact_refs,evidence_refs,priority,human_approval_state,human_approval_ref,human_approval_target_version,human_approval_target_hash,human_approval_authority,human_approval_checked_at,human_approval_expires_at,development_delegation_state,aidos_project_ref,aidos_required_capability_refs,aidos_required_capabilities,aidos_authority_revision,aidos_checked_at,aidos_fresh_until,aidos_delegation_input,aidos_snapshot_binding,decision_state,decision_reason_codes,staleness_state,classification_checked_at,policy_checked_at,policy_fresh_until,idempotency_key,canonical_intent_fingerprint,correlation_id,causation_refs,audit_ref)
+         VALUES(${Array.from({ length: 63 }, (_, i) => `$${i + 1}`).join(",")})`,
         [
           input.routingDecisionId,
           input.routingDecisionStreamId,
@@ -488,10 +500,13 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
           input.humanApprovalExpiresAt,
           input.developmentDelegationState,
           input.aidosProjectRef,
+          input.canonicalDomain === "DEVELOPMENT" ? [] : null,
           input.aidosRequiredCapabilities,
           input.aidosAuthorityRevision,
           input.aidosCheckedAt,
           input.aidosFreshUntil,
+          input.aidosDelegationInput,
+          input.aidosSnapshotBinding,
           input.decisionState,
           input.decisionReasonCodes,
           input.stalenessState,

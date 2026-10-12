@@ -29,6 +29,7 @@ import type {
   ValidatedRoutingContext,
 } from "./routing-validation-service.js";
 import type { GovernedActorType } from "./work-request-contracts.js";
+import { validateAidosDelegationInput } from "./aidos-delegation-contracts.js";
 
 export const HUMAN_ROUTING_OVERRIDE_REASON_CODES = [
   "HUMAN_SELECTED_ELIGIBLE_RESOURCE",
@@ -314,6 +315,20 @@ function createAppendInput(
   const decisionId = routingDecisionIdentity(input);
   const development =
     context.classification.handoff.domainKey === "DEVELOPMENT";
+  if (development) {
+    if (!input.aidosDelegationInput || !context.aidos)
+      throw new RoutingContractError("WAITING_AIDOS_DELEGATION_INPUT");
+    const canonicalInput = validateAidosDelegationInput(
+      input.aidosDelegationInput,
+    );
+    if (
+      JSON.stringify(canonicalInput) !==
+        JSON.stringify(context.aidos.delegationInput) ||
+      (context.developmentDelegationState === "READY_TO_DELEGATE" &&
+        !context.aidos.snapshotBinding)
+    )
+      throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
+  }
   const candidates = development
     ? []
     : [...context.candidates!.eligibleCandidates]
@@ -446,7 +461,7 @@ function createAppendInput(
     developmentDelegationState: context.developmentDelegationState,
     aidosProjectRef: context.aidos?.projectRef ?? null,
     aidosRequiredCapabilities: development
-      ? requiredCapabilities(context)
+      ? context.aidos!.delegationInput.requiredCapabilities
       : null,
     aidosAuthorityRevision: context.aidos
       ? [
@@ -457,6 +472,12 @@ function createAppendInput(
       : null,
     aidosCheckedAt: context.aidos?.checkedAt ?? null,
     aidosFreshUntil: context.aidos?.freshUntil ?? null,
+    aidosDelegationInput: development
+      ? (context.aidos?.delegationInput ?? null)
+      : null,
+    aidosSnapshotBinding: development
+      ? (context.aidos?.snapshotBinding ?? null)
+      : null,
     decisionState:
       development && context.developmentDelegationState !== "READY_TO_DELEGATE"
         ? "WAITING"

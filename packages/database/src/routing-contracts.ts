@@ -1,3 +1,8 @@
+import type {
+  AidosDelegationInput,
+  AidosSnapshotBinding,
+} from "./aidos-delegation-contracts.js";
+
 export const ROUTING_ROLE_CLASSES = [
   "PLANNER",
   "EXECUTOR",
@@ -43,6 +48,7 @@ export type RoutingHumanApprovalState =
   | "CONSUMED";
 export type DevelopmentDelegationState =
   | "NOT_APPLICABLE"
+  | "WAITING_AIDOS_DELEGATION_INPUT"
   | "READY_TO_DELEGATE"
   | "AIDOS_UNAVAILABLE"
   | "WAITING_AIDOS_ONBOARDING";
@@ -91,6 +97,7 @@ export const ROUTING_ERROR_CODES = [
   "AIDOS_AUTHORITY_STALE",
   "AIDOS_AUTHORITY_CONFLICT",
   "AIDOS_DELEGATION_INELIGIBLE",
+  "WAITING_AIDOS_DELEGATION_INPUT",
   "DEVELOPMENT_NATIVE_EXECUTION_PROHIBITED",
   "ROUTING_DECISION_STALE",
   "ROUTING_STREAM_CONFLICT",
@@ -213,6 +220,8 @@ export interface RoutingDecisionRecord {
   readonly aidosAuthorityRevision: string | null;
   readonly aidosCheckedAt: string | null;
   readonly aidosFreshUntil: string | null;
+  readonly aidosDelegationInput: AidosDelegationInput | null;
+  readonly aidosSnapshotBinding: AidosSnapshotBinding | null;
   readonly decisionState: RoutingDecisionState;
   readonly decisionReasonCodes: readonly string[];
   readonly stalenessState: RoutingStalenessState;
@@ -262,6 +271,8 @@ export interface RoutingDecisionOutputV1 {
   readonly aidosAuthorityRevision: string | null;
   readonly aidosCheckedAt: string | null;
   readonly aidosFreshUntil: string | null;
+  readonly aidosDelegationInput: AidosDelegationInput | null;
+  readonly aidosSnapshotBinding: AidosSnapshotBinding | null;
   readonly decisionReasonCodes: readonly string[];
   readonly createdAt: string;
   readonly supersedesRoutingDecisionId: string | null;
@@ -430,6 +441,8 @@ export function toRoutingDecisionOutputV1(
     aidosAuthorityRevision: record.aidosAuthorityRevision,
     aidosCheckedAt: record.aidosCheckedAt,
     aidosFreshUntil: record.aidosFreshUntil,
+    aidosDelegationInput: record.aidosDelegationInput,
+    aidosSnapshotBinding: record.aidosSnapshotBinding,
     decisionReasonCodes: record.decisionReasonCodes,
     createdAt: record.createdAt,
     supersedesRoutingDecisionId: record.supersedesRoutingDecisionId,
