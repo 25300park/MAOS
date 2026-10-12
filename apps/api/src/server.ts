@@ -3,6 +3,7 @@ import {
   loadDatabaseRuntimeConfig,
   loadStagingClassificationRuntimeConfig,
   loadStagingCoreBootstrapConfig,
+  loadStagingPhase15dRoutingConfig,
   loadStagingSessionApiConfig,
 } from "@maos/config";
 import {
@@ -70,6 +71,7 @@ import { createApiServer } from "./app.js";
 import { createAlertEmailApiRuntime } from "./alert-email-runtime.js";
 import { composeAiRegistryRoutes } from "./ai-registry-server-composition.js";
 import { composeStagingClassificationRoutes } from "./classification-server-composition.js";
+import { composeStagingRoutingRoutes } from "./routing-server-composition.js";
 import { createAiMlsRoutes } from "./ai-mls-routes.js";
 import { createCrmRoutes } from "./crm-routes.js";
 import { createErpAccountingTaxRoutes } from "./erp-accounting-tax-routes.js";
@@ -125,9 +127,13 @@ const stagingSessionConfig = loadStagingSessionApiConfig(process.env);
 const stagingClassificationConfig = loadStagingClassificationRuntimeConfig(
   process.env,
 );
+const stagingPhase15dRoutingConfig = loadStagingPhase15dRoutingConfig(
+  process.env,
+);
 const stagingRuntimeDatabaseConfig =
   stagingSessionConfig.enabled ||
   stagingClassificationConfig.enabled ||
+  stagingPhase15dRoutingConfig.enabled ||
   stagingCoreBootstrapConfig.enabled
     ? loadDatabaseRuntimeConfig(process.env)
     : undefined;
@@ -870,6 +876,71 @@ const routes = [
             projectScopeRef: stagingClassificationConfig.scope,
             systemScopeRef: null,
             environment: "STAGING",
+          },
+        }
+      : { enabled: false },
+  ),
+  ...composeStagingRoutingRoutes(
+    stagingDatabase,
+    stagingPhase15dRoutingConfig.enabled
+      ? {
+          ...stagingPhase15dRoutingConfig,
+          environment: config.environment,
+          requestContext: {
+            organizationId: stagingPhase15dRoutingConfig.organizationId,
+            projectId: stagingPhase15dRoutingConfig.projectId,
+            companyScopeRef: "company-maos",
+            teamScopeRef: "team-development",
+            projectScopeRef: stagingPhase15dRoutingConfig.scope,
+            systemScopeRef: null,
+            environment: "STAGING",
+            staleness: {
+              requestChanged: false,
+              taskChanged: false,
+              policyChanged: false,
+              capabilitiesChanged: false,
+              evidenceInvalid: false,
+              humanOverride: false,
+              conflictingClassification: false,
+              taxonomyInvalid: false,
+            },
+          },
+          resolveOverrideAuthority: ({
+            actorId,
+            identity,
+            requestId,
+            routingPurpose,
+            targetDecisionId,
+          }) => {
+            const allowed = identity.roles.some((role) =>
+              role.permissions.some(
+                (permission) =>
+                  permission.effect === "ALLOW" &&
+                  permission.resource === "ROUTING_DECISION" &&
+                  permission.action === "OVERRIDE" &&
+                  permission.environment === config.environment &&
+                  permission.scope === stagingPhase15dRoutingConfig.scope &&
+                  permission.risk === "R2",
+              ),
+            );
+            if (!allowed)
+              throw new Error("PHASE15D_HUMAN_OVERRIDE_AUTHORITY_REQUIRED");
+            const checkedAt = new Date();
+            return {
+              authorityId: "AUTHENTICATED_HTTP_ROUTING_OVERRIDE",
+              permission: "ROUTING_DECISION:OVERRIDE",
+              state: "ACTIVE",
+              actorId,
+              organizationId: stagingPhase15dRoutingConfig.organizationId,
+              projectId: stagingPhase15dRoutingConfig.projectId,
+              scopeRef: stagingPhase15dRoutingConfig.scope,
+              environment: "STAGING",
+              targetRequestId: requestId,
+              targetRoutingPurpose: routingPurpose,
+              targetDecisionId,
+              checkedAt: checkedAt.toISOString(),
+              freshUntil: new Date(checkedAt.getTime() + 60_000).toISOString(),
+            };
           },
         }
       : { enabled: false },

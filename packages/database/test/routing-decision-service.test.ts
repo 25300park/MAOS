@@ -401,6 +401,9 @@ class MemoryDecisionRepository implements RoutingDecisionRepository {
     const decision = this.records.get(decisionId)?.decision;
     return decision?.requestId === requestId ? decision : undefined;
   }
+  async findDecisionById(decisionId: string) {
+    return this.records.get(decisionId)?.decision;
+  }
   async listHistory(requestId: string, purpose: RoutingPurpose) {
     return [...this.records.values()]
       .map(({ decision }) => decision)

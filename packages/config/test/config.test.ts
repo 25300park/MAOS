@@ -9,11 +9,66 @@ import {
   loadDatabaseRuntimeConfig,
   loadProductionConfig,
   loadStagingClassificationRuntimeConfig,
+  loadStagingPhase15dRoutingConfig,
   loadStagingCoreBootstrapConfig,
   loadStagingSessionApiConfig,
   loadStagingSessionBffConfig,
   loadStagingOperationsAuthConfig,
 } from "../src/index.js";
+
+test("Phase15D routing is disabled by default and requires exact staging context", () => {
+  assert.deepEqual(loadStagingPhase15dRoutingConfig({ MAOS_ENV: "staging" }), {
+    enabled: false,
+  });
+  assert.deepEqual(
+    loadStagingPhase15dRoutingConfig({
+      MAOS_ENV: "staging",
+      PHASE15D_ROUTING_ENABLED: "true",
+      MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID:
+        "81000000-0000-4000-8000-000000000001",
+      MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID:
+        "81000000-0000-4000-8000-000000000002",
+      MAOS_STAGING_AIDOS_AUTHORITY_BASE_URL: "https://aidos.test",
+      MAOS_STAGING_AIDOS_AUTHORITY_READER_ID: "maos-staging-reader",
+      MAOS_STAGING_AIDOS_AUTHORITY_KEY_ID: "synthetic-key-id",
+      MAOS_STAGING_AIDOS_AUTHORITY_IDENTITY_SUBJECT: "maos:staging",
+      MAOS_STAGING_AIDOS_AUTHORITY_HMAC_SECRET: "synthetic-hmac-secret",
+    }),
+    {
+      enabled: true,
+      organizationId: "81000000-0000-4000-8000-000000000001",
+      projectId: "81000000-0000-4000-8000-000000000002",
+      scope: "project-maos",
+      aidos: {
+        baseUrl: "https://aidos.test",
+        readerId: "maos-staging-reader",
+        keyId: "synthetic-key-id",
+        identitySubject: "maos:staging",
+        hmacSecret: "synthetic-hmac-secret",
+      },
+    },
+  );
+  assert.throws(
+    () =>
+      loadStagingPhase15dRoutingConfig({
+        MAOS_ENV: "production",
+        PHASE15D_ROUTING_ENABLED: "true",
+      }),
+    /PHASE15D_ROUTING_FORBIDDEN/u,
+  );
+  assert.throws(
+    () =>
+      loadStagingPhase15dRoutingConfig({
+        MAOS_ENV: "staging",
+        PHASE15D_ROUTING_ENABLED: "true",
+        MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID:
+          "81000000-0000-4000-8000-000000000001",
+        MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID:
+          "81000000-0000-4000-8000-000000000002",
+      }),
+    /MAOS_STAGING_AIDOS_AUTHORITY_BASE_URL_REQUIRED/u,
+  );
+});
 
 const stagingCoreBootstrapEnv = {
   MAOS_ENV: "staging",

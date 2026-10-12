@@ -493,6 +493,12 @@ function parseRevalidation(
     result.valid_until === null ? null : requireTimestamp(result.valid_until);
   if ((state === "CURRENT") !== (validUntil !== null)) failStale();
   const revalidationStates = ["CURRENT", "STALE", "SUPERSEDED", "NOT_FOUND"] as const;
+  const reasonCodeByState = {
+    CURRENT: null,
+    SUPERSEDED: "SNAPSHOT_SUPERSEDED",
+    STALE: "SNAPSHOT_STALE",
+    NOT_FOUND: "SNAPSHOT_METADATA_NOT_FOUND",
+  } as const;
   const projectionResults = result.projection_results.map((item, index) => {
     const projection = record(item);
     exactKeys(projection, [
@@ -513,9 +519,11 @@ function parseRevalidation(
         projection.state as (typeof revalidationStates)[number],
       ) ||
       (projection.state === "CURRENT" &&
-        projection.current_revision !== binding.projectionRevision) ||
-      typeof projection.reason_code !== "string"
+        projection.current_revision !== binding.projectionRevision)
     )
+      failConflict();
+    const projectionState = projection.state as (typeof revalidationStates)[number];
+    if (projection.reason_code !== reasonCodeByState[projectionState])
       failConflict();
     if (
       projection.current_revision !== null &&

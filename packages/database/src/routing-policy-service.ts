@@ -120,6 +120,24 @@ export class RoutingPolicyService {
     private readonly registry?: RegistryAuthorityReadPort,
   ) {}
 
+  async getPolicyVersion(
+    policyId: string,
+    version: number,
+  ): Promise<RoutingPolicySnapshot | undefined> {
+    const policy = await this.repository.findPolicyVersionByIdentity(
+      policyId,
+      version,
+    );
+    if (!policy) return undefined;
+    if (
+      policy.routingPolicyId !== policyId ||
+      policy.version !== version ||
+      policy.authorityIdentifier !== ROUTING_POLICY_AUTHORITY
+    )
+      throw new RoutingContractError("ROUTING_POLICY_CONFLICT");
+    return policy;
+  }
+
   async resolveActivePolicy(
     input: ResolveActiveRoutingPolicyInput,
   ): Promise<RoutingPolicySnapshot> {

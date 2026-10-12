@@ -280,6 +280,13 @@ export class PostgresRoutingDecisionRepository implements RoutingDecisionReposit
     );
     return result.rows[0] ? mapDecision(result.rows[0]) : undefined;
   }
+  async findDecisionById(decisionId: string) {
+    const result = await this.database.query<Row>(
+      `${decisionSelect} WHERE routing_decision_id=$1`,
+      [decisionId],
+    );
+    return result.rows[0] ? mapDecision(result.rows[0]) : undefined;
+  }
   async listHistory(requestId: string, purpose: RoutingPurpose) {
     const result = await this.database.query<Row>(
       `${decisionSelect} WHERE request_id=$1 AND routing_purpose=$2 ORDER BY routing_version`,

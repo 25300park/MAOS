@@ -8,6 +8,7 @@ import {
   AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
   AIDOS_PROJECT_REGISTRATION_SOURCE,
   createExternalAidosAuthorityReadPort,
+  HmacAidosAuthorityBackend,
   RoutingContractError,
   type AidosDelegationInput,
 } from "../src/index.js";
@@ -140,7 +141,16 @@ function resolveResponse() {
   };
 }
 
-function revalidateResponse(state = "CURRENT") {
+type RevalidationState = "CURRENT" | "SUPERSEDED" | "STALE" | "NOT_FOUND";
+
+const revalidationReason = {
+  CURRENT: null,
+  SUPERSEDED: "SNAPSHOT_SUPERSEDED",
+  STALE: "SNAPSHOT_STALE",
+  NOT_FOUND: "SNAPSHOT_METADATA_NOT_FOUND",
+} as const;
+
+function revalidateResponse(state: RevalidationState = "CURRENT") {
   return {
     checked_at: testNow.toISOString(),
     contract_version: "AIDOS_EXTERNAL_AUTHORITY_PROJECTION_READ/1.0",
@@ -153,10 +163,11 @@ function revalidateResponse(state = "CURRENT") {
       [AIDOS_AVAILABILITY_SOURCE, revisions.availability],
       [AIDOS_DELEGATION_ELIGIBILITY_SOURCE, revisions.eligibility],
     ].map(([type, revision]) => ({
-      current_revision: state === "CURRENT" ? revision : digest("7"),
+      current_revision:
+        state === "CURRENT" ? revision : state === "NOT_FOUND" ? null : digest("7"),
       projection_id: projectionId(type!),
       projection_type: type,
-      reason_code: state,
+      reason_code: revalidationReason[state],
       state,
       submitted_revision: revision,
     })),
@@ -173,7 +184,7 @@ function mixedRevalidateResponse() {
   response.valid_until = null;
   response.projection_results[1]!.state = "SUPERSEDED";
   response.projection_results[1]!.current_revision = digest("7");
-  response.projection_results[1]!.reason_code = "SUPERSEDED";
+  response.projection_results[1]!.reason_code = "SNAPSHOT_SUPERSEDED";
   return response;
 }
 
@@ -197,6 +208,55 @@ function config(fetchImpl: typeof fetch) {
       randomNonce: () => "AAAAAAAAAAAAAAAAAAAAAA",
     },
   } as const;
+}
+
+async function parseRevalidationResponse(response: unknown) {
+  const resolvePort = createExternalAidosAuthorityReadPort(
+    config((async () =>
+      new Response(canonical(resolveResponse()), {
+        status: 200,
+        headers: { "content-type": mediaType },
+      })) as typeof fetch),
+  );
+  const availability = await resolvePort.readAidosAvailability(availabilityQuery);
+  const registration = await resolvePort.readProjectOnboardingState(onboardingQuery);
+  const eligibility = await resolvePort.readDelegationEligibility({
+    ...onboardingQuery,
+    classificationVersionId: "classification-1",
+  });
+  const backend = new HmacAidosAuthorityBackend(
+    config((async () =>
+      new Response(canonical(response), {
+        status: 200,
+        headers: { "content-type": mediaType },
+      })) as typeof fetch),
+  );
+  return backend.revalidate({
+    availability,
+    registration,
+    eligibility,
+    context: {
+      requestId: "request-1",
+      organizationId: availabilityQuery.organizationId,
+      projectId: availabilityQuery.projectId,
+      companyScopeRef: "company",
+      teamScopeRef: null,
+      projectScopeRef: "project",
+      systemScopeRef: null,
+      environment: "STAGING",
+      staleness: {
+        requestChanged: false,
+        taskChanged: false,
+        policyChanged: false,
+        capabilitiesChanged: false,
+        evidenceInvalid: false,
+        humanOverride: false,
+        conflictingClassification: false,
+        taxonomyInvalid: false,
+      },
+    },
+    snapshotBinding: eligibility.snapshotBinding,
+  });
 }
 
 const availabilityQuery = {
@@ -331,6 +391,56 @@ test("revalidates the exact complete snapshot without returning replacement auth
     assert.equal(result.freshUntil, validUntil);
 });
 
+test("enforces the canonical revalidation state and reason-code contract", async (t) => {
+  for (const state of ["CURRENT", "SUPERSEDED", "STALE", "NOT_FOUND"] as const) {
+    await t.test(`accepts canonical ${state} mapping`, async () => {
+      const result = await parseRevalidationResponse(revalidateResponse(state));
+      assert.equal(result.kind, "AIDOS_CANONICAL_REVALIDATION");
+      assert.equal(result.state, state);
+    });
+  }
+
+  for (const [state, reasonCode] of [
+    ["CURRENT", "SNAPSHOT_STALE"],
+    ["SUPERSEDED", "SNAPSHOT_STALE"],
+    ["STALE", "SNAPSHOT_SUPERSEDED"],
+    ["NOT_FOUND", "UNKNOWN_REASON"],
+  ] as const) {
+    await t.test(`rejects ${state} with ${reasonCode}`, async () => {
+      const response = revalidateResponse(state);
+      (
+        response.projection_results[0] as {
+          reason_code: string | null;
+        }
+      ).reason_code = reasonCode;
+      await assert.rejects(
+        parseRevalidationResponse(response),
+        (error) =>
+          error instanceof RoutingContractError &&
+          error.code === "AIDOS_AUTHORITY_CONFLICT",
+      );
+    });
+  }
+
+  await t.test("accepts canonical NOT_FOUND with empty projection results", async () => {
+    const result = await parseRevalidationResponse(notFoundRevalidateResponse());
+    assert.equal(result.kind, "AIDOS_CANONICAL_REVALIDATION");
+    assert.equal(result.state, "NOT_FOUND");
+    assert.deepEqual(result.projectionResults, []);
+  });
+
+  for (const state of ["CURRENT", "SUPERSEDED", "STALE"] as const) {
+    await t.test(`rejects empty projection results for ${state}`, async () => {
+      const response = revalidateResponse(state);
+      response.projection_results = [];
+      await assert.rejects(
+        parseRevalidationResponse(response),
+        (error) => error instanceof RoutingContractError,
+      );
+    });
+  }
+});
+
 test("retries one retryable technical failure and never fabricates an authority state", async () => {
   let calls = 0;
   const fetchImpl = (async () => {
@@ -419,7 +529,7 @@ test("maps malformed and superseded authority to bounded MAOS failures", async (
   });
   for (const [name, response, expectedCode] of [
     ["mixed projection states reduce to superseded", mixedRevalidateResponse(), "AIDOS_AUTHORITY_CONFLICT"],
-    ["empty not-found result remains stale", notFoundRevalidateResponse(), "AIDOS_AUTHORITY_STALE"],
+    ["canonical empty not-found result remains stale", notFoundRevalidateResponse(), "AIDOS_AUTHORITY_STALE"],
   ] as const) {
     await t.test(name, async () => {
       let calls = 0;

@@ -366,6 +366,9 @@ export interface RoutingDecisionRepository {
     requestId: string,
     decisionId: string,
   ): Promise<RoutingDecisionRecord | undefined>;
+  findDecisionById(
+    decisionId: string,
+  ): Promise<RoutingDecisionRecord | undefined>;
   listHistory(
     requestId: string,
     purpose: RoutingPurpose,

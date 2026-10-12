@@ -87,7 +87,7 @@ interface StreamReadInput {
   readonly routingPurpose: RoutingPurpose;
 }
 
-interface DecisionReadInput extends StreamReadInput {
+interface DecisionReadInput {
   readonly routingDecisionId: string;
 }
 
@@ -474,26 +474,20 @@ export class RoutingReadService {
   async getDecisionById(
     input: DecisionReadInput,
   ): Promise<RoutingDecisionReadDto> {
-    const record = requireDecisionScope(
-      await this.dependencies.repository.findById(
-        input.requestId,
-        input.routingDecisionId,
-      ),
-      input,
+    const record = await this.dependencies.repository.findDecisionById(
+      input.routingDecisionId,
     );
+    if (!record) throw new RoutingContractError("ROUTING_DECISION_STALE");
     return this.decisionDto(record);
   }
 
   async getDecisionCandidates(
     input: DecisionReadInput,
   ): Promise<readonly RoutingCandidateReadDto[]> {
-    requireDecisionScope(
-      await this.dependencies.repository.findById(
-        input.requestId,
-        input.routingDecisionId,
-      ),
-      input,
+    const decision = await this.dependencies.repository.findDecisionById(
+      input.routingDecisionId,
     );
+    if (!decision) throw new RoutingContractError("ROUTING_DECISION_STALE");
     const candidates = await this.dependencies.repository.listCandidates(
       input.routingDecisionId,
     );

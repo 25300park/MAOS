@@ -69,6 +69,10 @@ function repository(overrides: Partial<RoutingPolicyRepository> = {}) {
       throw new Error("unused");
     },
     findPolicyVersion: async () => policy,
+    findPolicyVersionByIdentity: async (id, version) =>
+      id === policy.routingPolicyId && version === policy.version
+        ? policy
+        : undefined,
     findSpecializationVersion: async () => undefined,
     findCurrentSpecializationVersion: async () => undefined,
     listCurrentSelections: async () => [policy],
@@ -124,6 +128,29 @@ test("resolves exactly one effective active policy and fails closed otherwise", 
       error instanceof RoutingContractError &&
       error.code === "ROUTING_POLICY_STALE",
   );
+});
+
+test("reads an exact policy identity and version through the canonical policy service", async () => {
+  const calls: Array<{ id: string; version: number }> = [];
+  const service = new RoutingPolicyService(
+    repository({
+      findPolicyVersionByIdentity: async (id, version) => {
+        calls.push({ id, version });
+        return id === policy.routingPolicyId && version === policy.version
+          ? policy
+          : undefined;
+      },
+    }),
+  );
+
+  assert.equal(
+    (await service.getPolicyVersion(policy.routingPolicyId, policy.version))
+      ?.routingPolicyVersionId,
+    policy.routingPolicyVersionId,
+  );
+  assert.deepEqual(calls, [
+    { id: policy.routingPolicyId, version: policy.version },
+  ]);
 });
 
 test("superseded, draft, retired, and scope-mismatched policies never resolve", async () => {

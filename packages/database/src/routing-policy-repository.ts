@@ -167,6 +167,10 @@ export interface RoutingPolicyRepository {
     input: ActivateRoutingPolicyVersionInput,
   ): Promise<RoutingPolicyActivationResult>;
   findPolicyVersion(id: string): Promise<RoutingPolicySnapshot | undefined>;
+  findPolicyVersionByIdentity(
+    policyId: string,
+    version: number,
+  ): Promise<RoutingPolicySnapshot | undefined>;
   findSpecializationVersion(
     id: string,
   ): Promise<SpecializationSnapshot | undefined>;
@@ -439,6 +443,14 @@ export class PostgresPhase15dRoutingPolicyRepository implements RoutingPolicyRep
     const result = await this.database.query<Row>(
       `${policySelect} WHERE routing_policy_version_id=$1`,
       [id],
+    );
+    return result.rows[0] ? mapPolicy(result.rows[0]) : undefined;
+  }
+
+  async findPolicyVersionByIdentity(policyId: string, version: number) {
+    const result = await this.database.query<Row>(
+      `${policySelect} WHERE routing_policy_id=$1 AND version=$2`,
+      [policyId, version],
     );
     return result.rows[0] ? mapPolicy(result.rows[0]) : undefined;
   }

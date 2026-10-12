@@ -91,6 +91,11 @@ test("appends immutable policy versions and reuses exact idempotent replay", asy
   assert.equal(Object.isFrozen(replay.policy.requiredCapabilityRefs), true);
   assert.equal(Object.isFrozen(replay.policy.preferredCapabilityRefs), true);
   assert.equal(Object.isFrozen(replay.policy.policyConstraints), true);
+  assert.equal(
+    (await repository.findPolicyVersionByIdentity(draft.routingPolicyId, 1))
+      ?.routingPolicyVersionId,
+    draft.routingPolicyVersionId,
+  );
   await assert.rejects(
     repository.appendPolicyVersion({
       ...draft,

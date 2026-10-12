@@ -175,6 +175,9 @@ class ReadRepository implements RoutingDecisionRepository {
         record.requestId === request && record.routingDecisionId === id,
     );
   }
+  async findDecisionById(id: string) {
+    return this.records.find((record) => record.routingDecisionId === id);
+  }
   async listHistory(request: string, purpose: RoutingPurpose) {
     return this.records.filter(
       (record) =>
@@ -297,8 +300,6 @@ test("reads the exact immutable decision and rejects purpose mismatch without su
   const service = new RoutingReadService({ repository });
 
   const result = await service.getDecisionById({
-    requestId,
-    routingPurpose: "PRIMARY_EXECUTION",
     routingDecisionId: decisionId(1),
   });
   assert.equal(result.routingDecisionId, decisionId(1));
@@ -306,18 +307,6 @@ test("reads the exact immutable decision and rejects purpose mismatch without su
 
   await assert.rejects(
     service.getDecisionById({
-      requestId,
-      routingPurpose: "INDEPENDENT_REVIEW",
-      routingDecisionId: decisionId(1),
-    }),
-    (error: unknown) =>
-      error instanceof RoutingContractError &&
-      error.code === "ROUTING_DECISION_STALE",
-  );
-  await assert.rejects(
-    service.getDecisionById({
-      requestId,
-      routingPurpose: "PRIMARY_EXECUTION",
       routingDecisionId: decisionId(99),
     }),
     (error: unknown) =>
@@ -333,8 +322,6 @@ test("returns deterministic decision-bound candidate DTOs with allowlisted linea
   const service = new RoutingReadService({ repository });
 
   const result = await service.getDecisionCandidates({
-    requestId,
-    routingPurpose: "PRIMARY_EXECUTION",
     routingDecisionId: decisionId(2),
   });
 

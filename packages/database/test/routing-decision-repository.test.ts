@@ -524,6 +524,14 @@ test(
           appendInput.requestId,
           appendInput.routingDecisionId,
         );
+        assert.equal(
+          (
+            await firstRepository.findDecisionById(
+              appendInput.routingDecisionId,
+            )
+          )?.requestId,
+          appendInput.requestId,
+        );
         assert.deepEqual(
           {
             policyRef: persistedDecision?.registryFreshnessPolicyRef,
@@ -592,8 +600,6 @@ test(
         const readDecision = await new RoutingReadService({
           repository: firstRepository,
         }).getDecisionById({
-          requestId: appendInput.requestId,
-          routingPurpose: appendInput.routingPurpose,
           routingDecisionId: appendInput.routingDecisionId,
         });
         assert.deepEqual(

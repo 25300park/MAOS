@@ -114,6 +114,22 @@ export type StagingClassificationRuntimeConfig =
       scope: "project-maos";
     };
 
+export type StagingPhase15dRoutingConfig =
+  | { enabled: false }
+  | {
+      aidos: {
+        baseUrl: string;
+        hmacSecret: string;
+        identitySubject: string;
+        keyId: string;
+        readerId: string;
+      };
+      enabled: true;
+      organizationId: string;
+      projectId: string;
+      scope: "project-maos";
+    };
+
 export interface ProductionConfig {
   autoMigrate: false;
   backupKeyReference: string;
@@ -468,6 +484,35 @@ export function loadStagingClassificationRuntimeConfig(
 ): StagingClassificationRuntimeConfig {
   if (!stagingSessionEnabled(env)) return { enabled: false };
   return {
+    enabled: true,
+    organizationId: requiredUuid(
+      env,
+      "MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID",
+    ),
+    projectId: requiredUuid(env, "MAOS_STAGING_CORE_BOOTSTRAP_PROJECT_ID"),
+    scope: "project-maos",
+  };
+}
+
+export function loadStagingPhase15dRoutingConfig(
+  env: Record<string, string | undefined>,
+): StagingPhase15dRoutingConfig {
+  if (env.PHASE15D_ROUTING_ENABLED !== "true") return { enabled: false };
+  if (env.MAOS_ENV !== "staging") throw new Error("PHASE15D_ROUTING_FORBIDDEN");
+  return {
+    aidos: {
+      baseUrl: exactHttpsOrigin(env, "MAOS_STAGING_AIDOS_AUTHORITY_BASE_URL"),
+      readerId: requiredValue(env, "MAOS_STAGING_AIDOS_AUTHORITY_READER_ID"),
+      keyId: requiredValue(env, "MAOS_STAGING_AIDOS_AUTHORITY_KEY_ID"),
+      identitySubject: requiredValue(
+        env,
+        "MAOS_STAGING_AIDOS_AUTHORITY_IDENTITY_SUBJECT",
+      ),
+      hmacSecret: requiredValue(
+        env,
+        "MAOS_STAGING_AIDOS_AUTHORITY_HMAC_SECRET",
+      ),
+    },
     enabled: true,
     organizationId: requiredUuid(
       env,
