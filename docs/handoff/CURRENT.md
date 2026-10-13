@@ -1,14 +1,14 @@
 # MAOS CURRENT STATE
 
-Last updated: 2026-09-16
+Last updated: 2026-10-13
 
 ## Current Phase
 
-**Phase 13 — Optimization / Learning / Expansion**
+**Phase 15D-B — Multi-AI Role / Model Routing Implementation**
 
-Status: **COMPLETE**
+Status: **EWP-08 IMPLEMENTED LOCALLY — PENDING FINAL REVIEW RETRY**
 
-Phase 1 MVP, Phase 1P, and Phases 2 through 13 are complete. Phase 13 established governed optimization, learning, and expansion candidates without permitting uncontrolled self-improvement or changing production-readiness status.
+EWP-07 is complete at commit `9cc693f5adee61f4a039f1db098b99d13e1c76ce`. EWP-08 now has a locally implemented read-only Web diagnostic UI and bounded observability projections consuming canonical redacted EWP-07 API DTOs; full regression is 879/879 PASS. The Web has no direct database or AIDOS authority access, no mutation authority, and no Development execution authority. AIDOS remains unchanged. EWP-08 remains uncommitted and requires Human review before finalization.
 
 REL-001 Phase 1C status: **COMPLETE / CLOSED**. The approved Staging Session ingress passed the complete live lifecycle and durable audit closure gate. This does not authorize production implementation or deployment.
 
@@ -94,17 +94,33 @@ Phase 14K status: **COMPLETE**. MAOS-CR-015 is `APPROVED_C2`, MAOS-030 is the ap
 
 ## Repository Baseline
 
-- Branch: `main`
-- Commit: `d4b36455330d1b1a1ce3823d0cc45f106ad4ee85`
-- Root: `D:\10. MAOS`
+- Branch: `codex/phase15d-routing-implementation`
+- Commit: `9cc693f5adee61f4a039f1db098b99d13e1c76ce`
+- Root: `D:\10. MAOS-phase15d-routing`
 
-## Phase 13 Goal
+## Phase 15D / EWP-08 Current Scope
 
-Establish governed optimization, learning, and expansion foundations in which verified results may create improvement candidates while humans retain authority over workflow, skill, model, and tool changes.
+- CURRENT_PHASE: `PHASE15D_B_IMPLEMENTATION`
+- LAST_COMPLETED_EWP: `EWP_07_GOVERNED_API_CONTRACTS_AND_COMPOSITION`
+- CURRENT_EWP: `EWP_08_READ_ONLY_PORTAL_AND_OBSERVABILITY_PROJECTION`
+- EWP08_STATUS: `IMPLEMENTED_LOCAL_PENDING_FINAL_REVIEW_RETRY`
+- READ_ONLY_PORTAL: `PASS`
+- WEB_DATABASE_ACCESS: `NONE`
+- WEB_AIDOS_AUTHORITY_ACCESS: `NONE`
+- CANONICAL_REDACTED_DTO_USAGE: `EWP07_API_ONLY`
+- AIDOS_CHANGED: `NO`
+- AUTHORITY_CHANGED: `NO`
+- FOCUSED_TESTS: `PASS_53_OF_53`
+- AFFECTED_TESTS: `PASS_71_OF_71`
+- FULL_REGRESSION: `PASS_879_OF_879`
+- PREEXISTING_LINT_DEBT: `6_ERRORS_IN_UNCHANGED_COMMITTED_DATABASE_FILES`
+- EWP08_CHANGED_FILES_LINT: `PASS`
 
 ## Context
 
-- Phase manifest: `docs/context/phase-13.md`
+- Phase 15D design: `docs/superpowers/2026-10-08-phase15d-multi-ai-role-model-routing-design.md`
+- Phase 15D implementation plan: `docs/superpowers/2026-10-08-phase15d-implementation-plan.md`
+- EWP-07 completion commit: `9cc693f5adee61f4a039f1db098b99d13e1c76ce`
 - Phase 12 control commit: `d7cf29e48920d5365b60f67885e3bd7ceb1f21eb`
 - Phase 12 implementation/evidence commit: `d4b36455330d1b1a1ce3823d0cc45f106ad4ee85`
 - Phase 12 evidence: `docs/implementation/phase-12-enterprise-production-readiness-evidence.md`

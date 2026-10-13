@@ -24,6 +24,7 @@ import {
   loadClassificationPortal,
   type ClassificationPortalView,
 } from "./classification.js";
+import { loadRoutingPortal, type RoutingPortalView } from "./routing.js";
 import {
   createSessionBffRequestHandler,
   type SessionBffRuntimeOptions,
@@ -329,6 +330,7 @@ export const CONTROL_ROOM_PREVIEW_OPTIMIZATION: OptimizationView = {
 export interface ControlRoomServerOptions {
   ai_registry?: AiRegistryPortalView | undefined;
   classification?: ClassificationPortalView | undefined;
+  routing?: RoutingPortalView | undefined;
   ai_mls?: AiMlsView | undefined;
   control_plane?: ControlPlaneView | undefined;
   crm?: CrmView | undefined;
@@ -360,6 +362,7 @@ function createRenderedControlRoomRequestHandler(
     const html = renderControlRoom({
       ai_registry: options.ai_registry,
       classification: options.classification,
+      routing: options.routing,
       ai_mls: options.ai_mls,
       control_plane: options.control_plane,
       crm: options.crm,
@@ -406,6 +409,7 @@ export function createControlRoomRequestHandler(
         const path = new URL(request.url ?? "/", "http://localhost").pathname;
         let aiRegistry = options.ai_registry;
         let classification = options.classification;
+        let routing = options.routing;
         if (
           !aiRegistry &&
           path === "/systems/ai-registry" &&
@@ -439,8 +443,26 @@ export function createControlRoomRequestHandler(
             }
           }
         }
+        if (
+          !routing &&
+          path === "/systems/routing" &&
+          identity?.permissions.includes("SYSTEM:READ") &&
+          readCore
+        ) {
+          const requestedId = new URL(
+            request.url ?? "/",
+            "http://localhost",
+          ).searchParams.get("requestId");
+          if (requestedId) {
+            try {
+              routing = await loadRoutingPortal(readCore, requestedId);
+            } catch {
+              routing = undefined;
+            }
+          }
+        }
         createRenderedControlRoomRequestHandler(
-          { ...options, ai_registry: aiRegistry, classification },
+          { ...options, ai_registry: aiRegistry, classification, routing },
           identity,
         )(request, response);
       },

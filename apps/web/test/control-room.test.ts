@@ -354,6 +354,7 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
     "PREVIEW",
   ])
     assert.match(systems, new RegExp(text));
+  assert.match(systems, /href="\/systems\/routing"/u);
 
   const workspace = controlRoom.renderControlRoom({
     identity: operator,

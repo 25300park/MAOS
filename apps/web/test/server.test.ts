@@ -5,6 +5,7 @@ import {
   CONTROL_ROOM_PREVIEW_IDENTITY,
   createControlRoomServer,
   buildClassificationPortalView,
+  buildRoutingPortalView,
   projectAiRegistryPortal,
 } from "../src/index.js";
 
@@ -41,6 +42,50 @@ test("serves the authorized read-only classification portal without controls or 
   assert.doesNotMatch(
     html,
     /secret-sentinel|Override classification|Select model|Start Development/iu,
+  );
+});
+
+test("serves the authorized read-only routing portal and denies mutation controls", async (t) => {
+  const routing = buildRoutingPortalView({
+    requestId: "92000000-0000-4000-8000-000000000001",
+    streams: [
+      {
+        purpose: "PRIMARY_EXECUTION",
+        current: {
+          routingDecisionId: "92000000-0000-4000-8000-000000000002",
+          routingVersion: 1,
+          routingPurpose: "PRIMARY_EXECUTION",
+          routingMode: "PRIMARY_EXECUTION",
+          roleClass: "PLANNER",
+          decisionState: "SELECTED",
+          stalenessState: "CURRENT",
+          policySnapshotRef: "policy-1",
+          registrySnapshotRef: "registry-1",
+          humanApprovalState: "NOT_REQUIRED",
+          developmentDelegationState: "NOT_APPLICABLE",
+          decisionReasonCodes: ["POLICY_MATCH"],
+          createdAt: "2026-10-13T00:00:00.000Z",
+        },
+        history: [],
+      },
+    ],
+    candidates: [],
+    observations: [],
+  });
+  const server = createControlRoomServer({
+    identity: CONTROL_ROOM_PREVIEW_IDENTITY,
+    routing,
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const html = await fetch(
+    `http://127.0.0.1:${port}/systems/routing?requestId=92000000-0000-4000-8000-000000000001`,
+  ).then((response) => response.text());
+  assert.match(html, /Routing diagnostics/u);
+  assert.doesNotMatch(
+    html,
+    /<form|data-action=|\/overrides|\/decisions(?:\?|"|')/iu,
   );
 });
 
@@ -218,6 +263,88 @@ test("composes the live AI Registry projection through the authenticated Core AP
     "/api/v1/ai-registry/hosts",
     "/api/v1/ai-registry/capabilities",
   ]);
+});
+
+test("composes routing diagnostics only through authenticated EWP-07 reads", async (t) => {
+  const requested: string[] = [];
+  const coreFetch: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    requested.push(`${url.pathname}${url.search}`);
+    if (url.pathname === "/api/v1/identity/session-context")
+      return Response.json({
+        ok: true,
+        data: {
+          actor_id: "human-system-reader",
+          roles: [
+            {
+              name: "SYSTEM_READER",
+              permissions: [
+                { action: "READ", effect: "ALLOW", resource: "SYSTEM" },
+              ],
+            },
+          ],
+        },
+      });
+    const purpose =
+      url.searchParams.get("routingPurpose") ?? "PRIMARY_EXECUTION";
+    const id =
+      purpose === "PRIMARY_EXECUTION"
+        ? "92000000-0000-4000-8000-000000000010"
+        : purpose === "INDEPENDENT_REVIEW"
+          ? "92000000-0000-4000-8000-000000000011"
+          : "92000000-0000-4000-8000-000000000012";
+    const decision = {
+      routingDecisionId: id,
+      routingVersion: 1,
+      routingPurpose: purpose,
+      routingMode: purpose,
+      roleClass: purpose === "PRIMARY_EXECUTION" ? "EXECUTOR" : "REVIEWER",
+      decisionState: "SELECTED",
+      stalenessState: "CURRENT",
+      policySnapshotRef: "policy-1",
+      registrySnapshotRef: "registry-1",
+      humanApprovalState: "NOT_REQUIRED",
+      developmentDelegationState: "DELEGATED_TO_AIDOS",
+      decisionReasonCodes: ["POLICY_MATCH"],
+      createdAt: "2026-10-13T00:00:00.000Z",
+      credential: "routing-live-secret",
+    };
+    if (url.pathname.endsWith("/candidates"))
+      return Response.json({ ok: true, data: { candidates: [] } });
+    return Response.json({
+      ok: true,
+      data: url.pathname.endsWith("/history")
+        ? { decisions: [decision] }
+        : { decision },
+    });
+  };
+  const server = createControlRoomServer({
+    session_bff: {
+      bffServiceBearerToken: "synthetic-bff-token",
+      controlRoomOrigin: "https://control-room.staging.example",
+      coreApiOrigin: "https://core-api.staging.example",
+      csrfSecret: "synthetic-csrf-secret",
+      enabled: true,
+      fetch: coreFetch,
+    },
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const html = await fetch(
+    `http://127.0.0.1:${port}/systems/routing?requestId=92000000-0000-4000-8000-000000000001`,
+    { headers: { cookie: "__Host-maos_session=session-reference" } },
+  ).then((response) => response.text());
+
+  assert.match(html, /Routing diagnostics|PRIMARY EXECUTION/u);
+  assert.doesNotMatch(html, /routing-live-secret/u);
+  assert.equal(
+    requested.filter((path) => path.startsWith("/api/v1/routing/")).length,
+    9,
+  );
+  assert.ok(
+    requested.every((path) => !path.startsWith("/api/external-authority/")),
+  );
 });
 
 test("keeps an authenticated registry page safely unavailable when its Core API dependency fails", async (t) => {
