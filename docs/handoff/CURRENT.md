@@ -6,9 +6,9 @@ Last updated: 2026-10-13
 
 **Phase 15D-B — Multi-AI Role / Model Routing Implementation**
 
-Status: **EWP-08 IMPLEMENTED LOCALLY — PENDING FINAL REVIEW RETRY**
+Status: **EWP-09 IMPLEMENTED LOCALLY — PENDING FINAL REVIEW**
 
-EWP-07 is complete at commit `9cc693f5adee61f4a039f1db098b99d13e1c76ce`. EWP-08 now has a locally implemented read-only Web diagnostic UI and bounded observability projections consuming canonical redacted EWP-07 API DTOs; full regression is 879/879 PASS. The Web has no direct database or AIDOS authority access, no mutation authority, and no Development execution authority. AIDOS remains unchanged. EWP-08 remains uncommitted and requires Human review before finalization.
+EWP-08 is complete at commit `0dd0102e08f3d15eb1a386c38daa0442df355acf`. EWP-09 local integration, compatibility, restart/recovery, and ACL verification are complete; the exact candidate manifest and Staging authorization package are prepared for Human review. Full regression is 879/879 PASS. No Staging, Production, or AIDOS change occurred.
 
 REL-001 Phase 1C status: **COMPLETE / CLOSED**. The approved Staging Session ingress passed the complete live lifecycle and durable audit closure gate. This does not authorize production implementation or deployment.
 
@@ -95,26 +95,29 @@ Phase 14K status: **COMPLETE**. MAOS-CR-015 is `APPROVED_C2`, MAOS-030 is the ap
 ## Repository Baseline
 
 - Branch: `codex/phase15d-routing-implementation`
-- Commit: `9cc693f5adee61f4a039f1db098b99d13e1c76ce`
+- Commit: `0dd0102e08f3d15eb1a386c38daa0442df355acf`
 - Root: `D:\10. MAOS-phase15d-routing`
 
-## Phase 15D / EWP-08 Current Scope
+## Phase 15D / EWP-09 Current Scope
 
 - CURRENT_PHASE: `PHASE15D_B_IMPLEMENTATION`
-- LAST_COMPLETED_EWP: `EWP_07_GOVERNED_API_CONTRACTS_AND_COMPOSITION`
-- CURRENT_EWP: `EWP_08_READ_ONLY_PORTAL_AND_OBSERVABILITY_PROJECTION`
-- EWP08_STATUS: `IMPLEMENTED_LOCAL_PENDING_FINAL_REVIEW_RETRY`
-- READ_ONLY_PORTAL: `PASS`
-- WEB_DATABASE_ACCESS: `NONE`
-- WEB_AIDOS_AUTHORITY_ACCESS: `NONE`
-- CANONICAL_REDACTED_DTO_USAGE: `EWP07_API_ONLY`
+- LAST_COMPLETED_EWP: `EWP_08_READ_ONLY_PORTAL_AND_OBSERVABILITY_PROJECTION`
+- CURRENT_EWP: `EWP_09_LOCAL_INTEGRATION_COMPATIBILITY_AND_STAGING_PACKAGE`
+- EWP09_STATUS: `IMPLEMENTED_LOCAL_PENDING_FINAL_REVIEW`
+- LOCAL_INTEGRATION: `PASS`
+- AIDOS_COMPATIBILITY: `PASS_READ_ONLY`
+- RESTART_RECOVERY: `PASS`
+- ACL_VERIFICATION: `PASS`
+- CANDIDATE_MANIFEST: `PREPARED_EXACT`
+- STAGING_AUTHORIZATION_PACKAGE: `PREPARED_NO_MUTATION`
 - AIDOS_CHANGED: `NO`
 - AUTHORITY_CHANGED: `NO`
-- FOCUSED_TESTS: `PASS_53_OF_53`
-- AFFECTED_TESTS: `PASS_71_OF_71`
+- FOCUSED_TESTS: `PASS_236_OF_236`
+- AFFECTED_TESTS: `PASS_70_OF_70`
 - FULL_REGRESSION: `PASS_879_OF_879`
-- PREEXISTING_LINT_DEBT: `6_ERRORS_IN_UNCHANGED_COMMITTED_DATABASE_FILES`
-- EWP08_CHANGED_FILES_LINT: `PASS`
+- PREEXISTING_UNTRACKED_DOCUMENT: `EXCLUDED_UNCHANGED`
+- STAGING_CHANGED: `NO`
+- PRODUCTION_CHANGED: `NO`
 
 ## Context
 

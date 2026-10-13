@@ -12,17 +12,10 @@ export type AidosCanonicalCapability =
   (typeof AIDOS_CANONICAL_CAPABILITIES)[number];
 
 export type AidosRequestedRoleClass =
-  | "PLANNER"
-  | "EXECUTOR"
-  | "REVIEWER"
-  | "ORCHESTRATOR"
-  | null;
+  "PLANNER" | "EXECUTOR" | "REVIEWER" | "ORCHESTRATOR" | null;
 export type AidosPolicyConstraintOperator = "EQ" | "IN" | "REQUIRES";
 export type AidosPolicyConstraintValue =
-  | string
-  | boolean
-  | number
-  | readonly string[];
+  string | boolean | number | readonly string[];
 
 export interface AidosPolicyConstraint {
   readonly key: string;
@@ -109,7 +102,9 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
     failInput();
 }
 
-function validConstraintValue(value: unknown): value is AidosPolicyConstraintValue {
+function validConstraintValue(
+  value: unknown,
+): value is AidosPolicyConstraintValue {
   return (
     (typeof value === "string" && value.length <= 4096) ||
     typeof value === "boolean" ||
@@ -164,7 +159,10 @@ export function validateAidosDelegationInput(
   )
     failInput();
 
-  if (!Array.isArray(input.policyConstraints) || input.policyConstraints.length > 32)
+  if (
+    !Array.isArray(input.policyConstraints) ||
+    input.policyConstraints.length > 32
+  )
     failInput();
   const constraints = input.policyConstraints.map((item) => {
     const constraint = object(item);
@@ -174,8 +172,8 @@ export function validateAidosDelegationInput(
       !operatorSet.has(String(constraint.operator)) ||
       !validConstraintValue(constraint.value) ||
       (Array.isArray(constraint.value) &&
-        new Set(constraint.value.map((entry) => entry.normalize("NFC"))).size !==
-          constraint.value.length)
+        new Set(constraint.value.map((entry) => entry.normalize("NFC")))
+          .size !== constraint.value.length)
     )
       failInput();
     return Object.freeze({ ...constraint }) as unknown as AidosPolicyConstraint;

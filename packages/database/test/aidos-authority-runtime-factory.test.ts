@@ -164,7 +164,11 @@ function revalidateResponse(state: RevalidationState = "CURRENT") {
       [AIDOS_DELEGATION_ELIGIBILITY_SOURCE, revisions.eligibility],
     ].map(([type, revision]) => ({
       current_revision:
-        state === "CURRENT" ? revision : state === "NOT_FOUND" ? null : digest("7"),
+        state === "CURRENT"
+          ? revision
+          : state === "NOT_FOUND"
+            ? null
+            : digest("7"),
       projection_id: projectionId(type!),
       projection_type: type,
       reason_code: revalidationReason[state],
@@ -212,24 +216,30 @@ function config(fetchImpl: typeof fetch) {
 
 async function parseRevalidationResponse(response: unknown) {
   const resolvePort = createExternalAidosAuthorityReadPort(
-    config((async () =>
-      new Response(canonical(resolveResponse()), {
-        status: 200,
-        headers: { "content-type": mediaType },
-      })) as typeof fetch),
+    config(
+      (async () =>
+        new Response(canonical(resolveResponse()), {
+          status: 200,
+          headers: { "content-type": mediaType },
+        })) as typeof fetch,
+    ),
   );
-  const availability = await resolvePort.readAidosAvailability(availabilityQuery);
-  const registration = await resolvePort.readProjectOnboardingState(onboardingQuery);
+  const availability =
+    await resolvePort.readAidosAvailability(availabilityQuery);
+  const registration =
+    await resolvePort.readProjectOnboardingState(onboardingQuery);
   const eligibility = await resolvePort.readDelegationEligibility({
     ...onboardingQuery,
     classificationVersionId: "classification-1",
   });
   const backend = new HmacAidosAuthorityBackend(
-    config((async () =>
-      new Response(canonical(response), {
-        status: 200,
-        headers: { "content-type": mediaType },
-      })) as typeof fetch),
+    config(
+      (async () =>
+        new Response(canonical(response), {
+          status: 200,
+          headers: { "content-type": mediaType },
+        })) as typeof fetch,
+    ),
   );
   return backend.revalidate({
     availability,
@@ -279,7 +289,10 @@ const onboardingQuery = {
 
 test("factory signs one canonical resolve and shares its three-projection snapshot", async () => {
   const requests: Array<{ url: string; init: RequestInit }> = [];
-  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     requests.push({ url: String(url), init: init! });
     return new Response(canonical(resolveResponse()), {
       status: 200,
@@ -296,14 +309,20 @@ test("factory signs one canonical resolve and shares its three-projection snapsh
   });
 
   assert.equal(requests.length, 1);
-  assert.equal(requests[0]!.url, "https://aidos.example/api/external-authority/v1/projections:resolve");
+  assert.equal(
+    requests[0]!.url,
+    "https://aidos.example/api/external-authority/v1/projections:resolve",
+  );
   assert.equal(requests[0]!.init.method, "POST");
   const body = String(requests[0]!.init.body);
   assert.equal(body, canonical(JSON.parse(body)));
   const parsed = JSON.parse(body);
   assert.equal(parsed.environment, "staging");
   assert.equal(parsed.project_id, "aidos-project-1");
-  assert.equal(parsed.delegation.development_intent, delegationInput.developmentIntent);
+  assert.equal(
+    parsed.delegation.development_intent,
+    delegationInput.developmentIntent,
+  );
   assert.equal(parsed.delegation.priority, 50);
   assert.equal("organization_id" in parsed, false);
   assert.equal("model" in parsed.delegation, false);
@@ -341,7 +360,8 @@ test("revalidates the exact complete snapshot without returning replacement auth
   const paths: string[] = [];
   const fetchImpl = (async (url: string | URL | Request) => {
     paths.push(new URL(String(url)).pathname);
-    const response = paths.length === 1 ? resolveResponse() : revalidateResponse();
+    const response =
+      paths.length === 1 ? resolveResponse() : revalidateResponse();
     return new Response(canonical(response), {
       status: 200,
       headers: { "content-type": mediaType },
@@ -392,7 +412,12 @@ test("revalidates the exact complete snapshot without returning replacement auth
 });
 
 test("enforces the canonical revalidation state and reason-code contract", async (t) => {
-  for (const state of ["CURRENT", "SUPERSEDED", "STALE", "NOT_FOUND"] as const) {
+  for (const state of [
+    "CURRENT",
+    "SUPERSEDED",
+    "STALE",
+    "NOT_FOUND",
+  ] as const) {
     await t.test(`accepts canonical ${state} mapping`, async () => {
       const result = await parseRevalidationResponse(revalidateResponse(state));
       assert.equal(result.kind, "AIDOS_CANONICAL_REVALIDATION");
@@ -422,12 +447,17 @@ test("enforces the canonical revalidation state and reason-code contract", async
     });
   }
 
-  await t.test("accepts canonical NOT_FOUND with empty projection results", async () => {
-    const result = await parseRevalidationResponse(notFoundRevalidateResponse());
-    assert.equal(result.kind, "AIDOS_CANONICAL_REVALIDATION");
-    assert.equal(result.state, "NOT_FOUND");
-    assert.deepEqual(result.projectionResults, []);
-  });
+  await t.test(
+    "accepts canonical NOT_FOUND with empty projection results",
+    async () => {
+      const result = await parseRevalidationResponse(
+        notFoundRevalidateResponse(),
+      );
+      assert.equal(result.kind, "AIDOS_CANONICAL_REVALIDATION");
+      assert.equal(result.state, "NOT_FOUND");
+      assert.deepEqual(result.projectionResults, []);
+    },
+  );
 
   for (const state of ["CURRENT", "SUPERSEDED", "STALE"] as const) {
     await t.test(`rejects empty projection results for ${state}`, async () => {
@@ -462,22 +492,29 @@ test("retries one retryable technical failure and never fabricates an authority 
     });
   }) as typeof fetch;
   const port = createExternalAidosAuthorityReadPort(config(fetchImpl));
-  assert.equal((await port.readAidosAvailability(availabilityQuery)).state, "AVAILABLE");
+  assert.equal(
+    (await port.readAidosAvailability(availabilityQuery)).state,
+    "AVAILABLE",
+  );
   assert.equal(calls, 2);
 });
 
 test("maps malformed and superseded authority to bounded MAOS failures", async (t) => {
   await t.test("malformed response", async () => {
     const port = createExternalAidosAuthorityReadPort(
-      config((async () =>
-        new Response("{}", {
-          status: 200,
-          headers: { "content-type": mediaType },
-        })) as typeof fetch),
+      config(
+        (async () =>
+          new Response("{}", {
+            status: 200,
+            headers: { "content-type": mediaType },
+          })) as typeof fetch,
+      ),
     );
     await assert.rejects(
       port.readAidosAvailability(availabilityQuery),
-      (error) => error instanceof RoutingContractError && error.code === "AIDOS_AUTHORITY_STALE",
+      (error) =>
+        error instanceof RoutingContractError &&
+        error.code === "AIDOS_AUTHORITY_STALE",
     );
   });
   await t.test("superseded revalidation", async () => {
@@ -486,7 +523,9 @@ test("maps malformed and superseded authority to bounded MAOS failures", async (
       config((async () => {
         calls += 1;
         return new Response(
-          canonical(calls === 1 ? resolveResponse() : revalidateResponse("SUPERSEDED")),
+          canonical(
+            calls === 1 ? resolveResponse() : revalidateResponse("SUPERSEDED"),
+          ),
           { status: 200, headers: { "content-type": mediaType } },
         );
       }) as typeof fetch),
@@ -524,12 +563,22 @@ test("maps malformed and superseded authority to bounded MAOS failures", async (
         },
         snapshotBinding: eligibility.snapshotBinding,
       }),
-      (error) => error instanceof RoutingContractError && error.code === "AIDOS_AUTHORITY_CONFLICT",
+      (error) =>
+        error instanceof RoutingContractError &&
+        error.code === "AIDOS_AUTHORITY_CONFLICT",
     );
   });
   for (const [name, response, expectedCode] of [
-    ["mixed projection states reduce to superseded", mixedRevalidateResponse(), "AIDOS_AUTHORITY_CONFLICT"],
-    ["canonical empty not-found result remains stale", notFoundRevalidateResponse(), "AIDOS_AUTHORITY_STALE"],
+    [
+      "mixed projection states reduce to superseded",
+      mixedRevalidateResponse(),
+      "AIDOS_AUTHORITY_CONFLICT",
+    ],
+    [
+      "canonical empty not-found result remains stale",
+      notFoundRevalidateResponse(),
+      "AIDOS_AUTHORITY_STALE",
+    ],
   ] as const) {
     await t.test(name, async () => {
       let calls = 0;
@@ -543,7 +592,8 @@ test("maps malformed and superseded authority to bounded MAOS failures", async (
         }) as typeof fetch),
       );
       const availability = await port.readAidosAvailability(availabilityQuery);
-      const registration = await port.readProjectOnboardingState(onboardingQuery);
+      const registration =
+        await port.readProjectOnboardingState(onboardingQuery);
       const eligibility = await port.readDelegationEligibility({
         ...onboardingQuery,
         classificationVersionId: "classification-1",
@@ -575,7 +625,8 @@ test("maps malformed and superseded authority to bounded MAOS failures", async (
           },
           snapshotBinding: eligibility.snapshotBinding,
         }),
-        (error) => error instanceof RoutingContractError && error.code === expectedCode,
+        (error) =>
+          error instanceof RoutingContractError && error.code === expectedCode,
       );
     });
   }
@@ -588,6 +639,12 @@ test("factory exposes only the existing read port and no AIDOS mutation capabili
     }) as typeof fetch),
   );
   assert.equal(port.constructor.name, "ExternalAidosAuthorityAdapter");
-  for (const operation of ["registerProject", "dispatch", "execute", "approve", "deploy"])
+  for (const operation of [
+    "registerProject",
+    "dispatch",
+    "execute",
+    "approve",
+    "deploy",
+  ])
     assert.equal(operation in port, false);
 });

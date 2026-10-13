@@ -39,9 +39,24 @@ const aidosSnapshotBinding = {
   authorityEpoch: sha("a"),
   requestDigest: sha("b"),
   projectionBindings: [
-    { projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: sha("c") },
-    { projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: sha("d") },
-    { projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: sha("e") },
+    {
+      projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION",
+      projectionRevision: sha("c"),
+    },
+    {
+      projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION",
+      projectionRevision: sha("d"),
+    },
+    {
+      projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION",
+      projectionRevision: sha("e"),
+    },
   ],
 };
 

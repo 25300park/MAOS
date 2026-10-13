@@ -8,7 +8,9 @@ import { applyMigrations, loadMigrations } from "../src/index.js";
 test("migration 0034 persists canonical AIDOS input and complete snapshot binding", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
-  const migrations = await loadMigrations(resolve("packages/database/migrations"));
+  const migrations = await loadMigrations(
+    resolve("packages/database/migrations"),
+  );
   await applyMigrations(database, migrations);
 
   const columns = await database.query<{ column_name: string }>(`

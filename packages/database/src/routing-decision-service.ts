@@ -527,7 +527,16 @@ function requireNonEmptyBounded(value: string, maximum: number) {
   return (
     value.trim().length > 0 &&
     value.length <= maximum &&
-    !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value)
+    !Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return (
+        code <= 8 ||
+        code === 11 ||
+        code === 12 ||
+        (code >= 14 && code <= 31) ||
+        code === 127
+      );
+    })
   );
 }
 

@@ -42,9 +42,24 @@ const aidosSnapshotBinding = {
   authorityEpoch: digest("a"),
   requestDigest: digest("b"),
   projectionBindings: [
-    { projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: digest("c") },
-    { projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: digest("d") },
-    { projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: digest("e") },
+    {
+      projectionType: "AIDOS_PROJECT_REGISTRATION_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION",
+      projectionRevision: digest("c"),
+    },
+    {
+      projectionType: "AIDOS_RUNTIME_AVAILABILITY_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION",
+      projectionRevision: digest("d"),
+    },
+    {
+      projectionType: "AIDOS_DELEGATION_ELIGIBILITY_PROJECTION" as const,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION",
+      projectionRevision: digest("e"),
+    },
   ],
 };
 const registrySnapshotHash = "a".repeat(64);
@@ -912,7 +927,8 @@ test("Development revalidates AIDOS and never calls MAOS candidate resolution", 
     aidos: {
       ...aidosPort,
       readDelegationEligibility: async (query) => {
-        aidosRequiredCapabilityRefs = query.delegationInput.requiredCapabilities;
+        aidosRequiredCapabilityRefs =
+          query.delegationInput.requiredCapabilities;
         return aidosPort.readDelegationEligibility(query);
       },
       revalidate: async (...args) => {

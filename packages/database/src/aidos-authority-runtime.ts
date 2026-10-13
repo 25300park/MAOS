@@ -1,7 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import {
-  AIDOS_PROJECTION_TYPES,
   validateAidosDelegationInput,
   validateAidosSnapshotBinding,
   type AidosDelegationInput,
@@ -105,7 +104,10 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function exactKeys(value: Record<string, unknown>, expected: readonly string[]) {
+function exactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+) {
   const actual = Object.keys(value).sort();
   const keys = [...expected].sort();
   if (
@@ -164,7 +166,10 @@ function normalizeDelegation(input: AidosDelegationInput) {
   const value = validateAidosDelegationInput(input);
   const sortStrings = (items: readonly string[]) =>
     [...items].sort((left, right) =>
-      Buffer.compare(Buffer.from(JSON.stringify(left)), Buffer.from(JSON.stringify(right))),
+      Buffer.compare(
+        Buffer.from(JSON.stringify(left)),
+        Buffer.from(JSON.stringify(right)),
+      ),
     );
   const policyConstraints = value.policyConstraints
     .map((constraint) => ({
@@ -288,8 +293,10 @@ function parseProjection(
     failConflict();
   requireDigest(projection.projection_revision);
   requireDigest(projection.evidence_hash);
-  const body = record(projection.body);
-  return projection as unknown as ProjectionWire & { body: Record<string, unknown> };
+  record(projection.body);
+  return projection as unknown as ProjectionWire & {
+    body: Record<string, unknown>;
+  };
 }
 
 function projectionBase(projection: ProjectionWire) {
@@ -303,12 +310,15 @@ function projectionBase(projection: ProjectionWire) {
   } as const;
 }
 
-function parseResolve(value: unknown, expected: {
-  correlationId: string;
-  environment: string;
-  projectRef: string;
-  delegationRequestId: string;
-}): ResolvedSnapshot {
+function parseResolve(
+  value: unknown,
+  expected: {
+    correlationId: string;
+    environment: string;
+    projectRef: string;
+    delegationRequestId: string;
+  },
+): ResolvedSnapshot {
   const envelope = record(value);
   exactKeys(envelope, [
     "contract_version",
@@ -480,19 +490,26 @@ function parseRevalidation(
     result.project_id !== expected.projectRef ||
     result.environment !== expected.environment ||
     result.snapshot_id !== expected.snapshotBinding.snapshotId ||
-    result.submitted_authority_epoch !== expected.snapshotBinding.authorityEpoch ||
+    result.submitted_authority_epoch !==
+      expected.snapshotBinding.authorityEpoch ||
     !["CURRENT", "SUPERSEDED", "STALE", "NOT_FOUND"].includes(
       String(result.revalidation_state),
     ) ||
     !Array.isArray(result.projection_results)
   )
     failConflict();
-  const state = result.revalidation_state as AidosCanonicalRevalidationObservation["state"];
+  const state =
+    result.revalidation_state as AidosCanonicalRevalidationObservation["state"];
   const checkedAt = requireTimestamp(result.checked_at);
   const validUntil =
     result.valid_until === null ? null : requireTimestamp(result.valid_until);
   if ((state === "CURRENT") !== (validUntil !== null)) failStale();
-  const revalidationStates = ["CURRENT", "STALE", "SUPERSEDED", "NOT_FOUND"] as const;
+  const revalidationStates = [
+    "CURRENT",
+    "STALE",
+    "SUPERSEDED",
+    "NOT_FOUND",
+  ] as const;
   const reasonCodeByState = {
     CURRENT: null,
     SUPERSEDED: "SNAPSHOT_SUPERSEDED",
@@ -522,7 +539,8 @@ function parseRevalidation(
         projection.current_revision !== binding.projectionRevision)
     )
       failConflict();
-    const projectionState = projection.state as (typeof revalidationStates)[number];
+    const projectionState =
+      projection.state as (typeof revalidationStates)[number];
     if (projection.reason_code !== reasonCodeByState[projectionState])
       failConflict();
     if (
@@ -544,7 +562,8 @@ function parseRevalidation(
     ] as const);
     const reducedState = result.projection_results.reduce(
       (current, item) => {
-        const itemState = record(item).state as (typeof revalidationStates)[number];
+        const itemState = record(item)
+          .state as (typeof revalidationStates)[number];
         return precedence.get(itemState)! > precedence.get(current)!
           ? itemState
           : current;
@@ -604,7 +623,11 @@ export class HmacAidosAuthorityBackend implements AidosAuthorityBackend {
       config.dependencies?.randomNonce ??
       (() => randomBytes(16).toString("base64url"));
     this.#timeoutMs = config.requestTimeoutMs ?? 5_000;
-    if (!Number.isInteger(this.#timeoutMs) || this.#timeoutMs < 1 || this.#timeoutMs > 5_000)
+    if (
+      !Number.isInteger(this.#timeoutMs) ||
+      this.#timeoutMs < 1 ||
+      this.#timeoutMs > 5_000
+    )
       failStale();
   }
 
@@ -658,7 +681,10 @@ export class HmacAidosAuthorityBackend implements AidosAuthorityBackend {
           if (response.status === 409) failConflict();
           failStale();
         }
-        if (response.headers.get("content-type") !== AIDOS_EXTERNAL_AUTHORITY_MEDIA_TYPE)
+        if (
+          response.headers.get("content-type") !==
+          AIDOS_EXTERNAL_AUTHORITY_MEDIA_TYPE
+        )
           failStale();
         const text = await response.text();
         if (Buffer.byteLength(text) > 256 * 1024) failStale();
@@ -690,7 +716,10 @@ export class HmacAidosAuthorityBackend implements AidosAuthorityBackend {
     });
   }
 
-  #resolve(input: { environment: string; delegationInput: AidosDelegationInput }) {
+  #resolve(input: {
+    environment: string;
+    delegationInput: AidosDelegationInput;
+  }) {
     const canonicalInput = validateAidosDelegationInput(input.delegationInput);
     const correlationId = this.#randomUUID();
     const environment = normalizeEnvironment(input.environment);
@@ -733,18 +762,30 @@ export class HmacAidosAuthorityBackend implements AidosAuthorityBackend {
   }
 
   readAidosAvailability(input: AidosAvailabilityQuery) {
-    if (input.targetRef !== input.delegationInput.aidosProjectRef) failConflict();
-    return this.#read(input, "availability") as Promise<AidosAvailabilitySnapshot>;
+    if (input.targetRef !== input.delegationInput.aidosProjectRef)
+      failConflict();
+    return this.#read(
+      input,
+      "availability",
+    ) as Promise<AidosAvailabilitySnapshot>;
   }
 
   readProjectOnboardingState(input: AidosProjectOnboardingQuery) {
-    if (input.projectRef !== input.delegationInput.aidosProjectRef) failConflict();
-    return this.#read(input, "registration") as Promise<AidosProjectOnboardingSnapshot>;
+    if (input.projectRef !== input.delegationInput.aidosProjectRef)
+      failConflict();
+    return this.#read(
+      input,
+      "registration",
+    ) as Promise<AidosProjectOnboardingSnapshot>;
   }
 
   readDelegationEligibility(input: AidosDelegationEligibilityQuery) {
-    if (input.projectRef !== input.delegationInput.aidosProjectRef) failConflict();
-    return this.#read(input, "eligibility") as Promise<AidosDelegationEligibilitySnapshot>;
+    if (input.projectRef !== input.delegationInput.aidosProjectRef)
+      failConflict();
+    return this.#read(
+      input,
+      "eligibility",
+    ) as Promise<AidosDelegationEligibilitySnapshot>;
   }
 
   async revalidate(
@@ -767,11 +808,13 @@ export class HmacAidosAuthorityBackend implements AidosAuthorityBackend {
       snapshot_id: snapshotBinding.snapshotId,
       authority_epoch: snapshotBinding.authorityEpoch,
       request_digest: snapshotBinding.requestDigest,
-      projection_bindings: snapshotBinding.projectionBindings.map((binding) => ({
-        projection_type: binding.projectionType,
-        projection_id: binding.projectionId,
-        projection_revision: binding.projectionRevision,
-      })),
+      projection_bindings: snapshotBinding.projectionBindings.map(
+        (binding) => ({
+          projection_type: binding.projectionType,
+          projection_id: binding.projectionId,
+          projection_revision: binding.projectionRevision,
+        }),
+      ),
     });
     return parseRevalidation(parsed, {
       correlationId,

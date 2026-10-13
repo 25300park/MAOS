@@ -37,9 +37,24 @@ const aidosSnapshotBinding = {
   authorityEpoch: digest,
   requestDigest: digest,
   projectionBindings: [
-    { projectionType: AIDOS_PROJECT_REGISTRATION_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION", projectionRevision: digest },
-    { projectionType: AIDOS_AVAILABILITY_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION", projectionRevision: digest },
-    { projectionType: AIDOS_DELEGATION_ELIGIBILITY_SOURCE, projectionId: "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION", projectionRevision: digest },
+    {
+      projectionType: AIDOS_PROJECT_REGISTRATION_SOURCE,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_PROJECT_REGISTRATION_PROJECTION",
+      projectionRevision: digest,
+    },
+    {
+      projectionType: AIDOS_AVAILABILITY_SOURCE,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_RUNTIME_AVAILABILITY_PROJECTION",
+      projectionRevision: digest,
+    },
+    {
+      projectionType: AIDOS_DELEGATION_ELIGIBILITY_SOURCE,
+      projectionId:
+        "urn:aidos:projection:018f47a2-5c2d-7b9f-8abc-0123456789ab:AIDOS_DELEGATION_ELIGIBILITY_PROJECTION",
+      projectionRevision: digest,
+    },
   ],
 };
 const currentClassificationContext = {
@@ -569,10 +584,7 @@ test("AIDOS adapter preserves the external v1.1 authority and fails closed", asy
     snapshotBinding: aidosSnapshotBinding,
   });
   assert.equal(revalidated.current, true);
-  assert.equal(
-    revalidated.revision,
-    `${digest}:${digest}:${digest}`,
-  );
+  assert.equal(revalidated.revision, `${digest}:${digest}:${digest}`);
 
   const unavailable = new ExternalAidosAuthorityAdapter({
     readAidosAvailability: async () => ({

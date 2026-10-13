@@ -243,9 +243,7 @@ class PostgresPhase15bRegistrySnapshotBackend implements RegistryCanonicalSnapsh
     private readonly environment: RegistryFreshnessEnvironment,
   ) {}
 
-  async readCanonicalSnapshot(
-    _input: RegistrySnapshotQuery,
-  ): Promise<RegistryCanonicalObservation> {
+  async readCanonicalSnapshot(): Promise<RegistryCanonicalObservation> {
     await this.database.exec("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     try {
       const marker = await this.database.query<{
@@ -419,10 +417,10 @@ export interface AidosAuthorityReadPort {
   readDelegationEligibility(
     input: AidosDelegationEligibilityQuery,
   ): Promise<AidosDelegationEligibilitySnapshot>;
-  revalidate(
-    input: AidosRevalidationQuery,
-  ): Promise<
-    AuthorityFreshnessResult & { readonly snapshotBinding: AidosSnapshotBinding }
+  revalidate(input: AidosRevalidationQuery): Promise<
+    AuthorityFreshnessResult & {
+      readonly snapshotBinding: AidosSnapshotBinding;
+    }
   >;
 }
 
@@ -1033,9 +1031,7 @@ export interface AidosAuthorityBackend {
   readDelegationEligibility(
     input: AidosDelegationEligibilityQuery,
   ): Promise<AidosDelegationEligibilitySnapshot>;
-  revalidate(
-    input: AidosRevalidationQuery,
-  ): Promise<
+  revalidate(input: AidosRevalidationQuery): Promise<
     | (AidosRevalidationObservation & {
         readonly snapshotBinding: AidosSnapshotBinding;
       })
@@ -1102,10 +1098,7 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
   }
   async revalidate(input: AidosRevalidationQuery) {
     const value = await this.backend.revalidate(input);
-    if (
-      "kind" in value &&
-      value.kind === "AIDOS_CANONICAL_REVALIDATION"
-    ) {
+    if ("kind" in value && value.kind === "AIDOS_CANONICAL_REVALIDATION") {
       const snapshotBinding = validateAidosSnapshotBinding(
         value.snapshotBinding,
       );
@@ -1154,7 +1147,9 @@ export class ExternalAidosAuthorityAdapter implements AidosAuthorityReadPort {
     )
       throw new RoutingContractError("AIDOS_AUTHORITY_CONFLICT");
     const snapshotBinding = validateAidosSnapshotBinding(value.snapshotBinding);
-    const requestedBinding = validateAidosSnapshotBinding(input.snapshotBinding);
+    const requestedBinding = validateAidosSnapshotBinding(
+      input.snapshotBinding,
+    );
     const availability = requireCurrent(
       value.availability,
       AIDOS_AVAILABILITY_SOURCE,

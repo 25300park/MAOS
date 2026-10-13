@@ -5,9 +5,7 @@ import {
   ROUTING_ERROR_CODES,
   RoutingContractError,
   RoutingReadService,
-  type AppendRoutingDecisionInput,
   type RoutingCandidateSnapshot,
-  type RoutingDecisionAuditInput,
   type RoutingDecisionRecord,
   type RoutingDecisionRepository,
   type RoutingPurpose,
@@ -190,10 +188,10 @@ class ReadRepository implements RoutingDecisionRepository {
   async findHumanOverrideAudit() {
     return undefined;
   }
-  async recordRoutingAudit(_input: RoutingDecisionAuditInput) {
+  async recordRoutingAudit() {
     this.mutationCalls.push("recordRoutingAudit");
   }
-  async appendDecision(_input: AppendRoutingDecisionInput): Promise<never> {
+  async appendDecision(): Promise<never> {
     this.mutationCalls.push("appendDecision");
     throw new Error("read service invoked appendDecision");
   }
