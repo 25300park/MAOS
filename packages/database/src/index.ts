@@ -101,3 +101,8 @@ export type {
 export * from "./aidos-delegation-contracts.js";
 export * from "./aidos-authority-runtime.js";
 export * from "./aidos-authority-runtime-factory.js";
+export * from "./project-status-registry.js";
+export * from "./delay-drift-detector.js";
+export * from "./development-delegation-service.js";
+export * from "./multi-ai-handoff-service.js";
+export * from "./development-control-loop.js";

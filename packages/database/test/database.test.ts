@@ -54,6 +54,9 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "0032_phase15d_multi_ai_role_model_routing",
       "0033_phase15b_registry_freshness_policy",
       "0034_phase15d_aidos_delegation_input_binding",
+      "0035_project_status_registry_mvp",
+      "0036_development_delegation_mvp",
+      "0037_multi_ai_handoff_mvp",
     ],
     skipped: [],
   });
@@ -140,6 +143,9 @@ test("initializes canonical schemas and Phase 1.4 foundation tables on a clean d
       "work.command_clarification_receipts",
       "work.command_envelope_versions",
       "work.command_envelopes",
+      "work.development_delegations",
+      "work.multi_ai_handoffs",
+      "work.project_development_statuses",
       "work.requests",
       "work.task_assignments",
       "work.task_dependencies",
@@ -1478,6 +1484,9 @@ test("replays migrations idempotently and rejects checksum drift", async (t) => 
       "0032_phase15d_multi_ai_role_model_routing",
       "0033_phase15b_registry_freshness_policy",
       "0034_phase15d_aidos_delegation_input_binding",
+      "0035_project_status_registry_mvp",
+      "0036_development_delegation_mvp",
+      "0037_multi_ai_handoff_mvp",
     ],
   });
 
@@ -1495,11 +1504,8 @@ test("reports the applied schema version and rolls back a failed migration", asy
   t.after(() => database.close());
   await applyMigrations(database, await loadMigrations(migrationsDirectory));
   const version = await getSchemaVersion(database);
-  assert.equal(version.applied_count, 34);
-  assert.equal(
-    version.latest_id,
-    "0034_phase15d_aidos_delegation_input_binding",
-  );
+  assert.equal(version.applied_count, 37);
+  assert.equal(version.latest_id, "0037_multi_ai_handoff_mvp");
   assert.match(version.latest_checksum, /^[a-f0-9]{64}$/);
 
   await assert.rejects(

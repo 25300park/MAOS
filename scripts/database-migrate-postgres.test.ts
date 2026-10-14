@@ -263,7 +263,7 @@ test("requires an exact staging migration target before opening", async () => {
   }
 });
 
-test("applies migrations 0001 through 0034 and skips all 34 on replay", async (t) => {
+test("applies migrations 0001 through 0037 and skips all 37 on replay", async (t) => {
   const database = new PGlite();
   t.after(() => database.close());
   await initializeExistingRegistry(database);
@@ -283,7 +283,7 @@ test("applies migrations 0001 through 0034 and skips all 34 on replay", async (t
     0,
   );
   const firstRecords = first.stdout.map((line) => JSON.parse(line));
-  assert.equal(firstRecords.length, 35);
+  assert.equal(firstRecords.length, 38);
   assert.equal(firstRecords[0].migration_id, "0001_canonical_schemas");
   assert.equal(firstRecords[18].migration_id, "0019_staging_session_ingress");
   assert.equal(
@@ -337,11 +337,20 @@ test("applies migrations 0001 through 0034 and skips all 34 on replay", async (t
     firstRecords[33].migration_id,
     "0034_phase15d_aidos_delegation_input_binding",
   );
-  assert.ok(
-    firstRecords.slice(0, 34).every(({ status }) => status === "APPLIED"),
+  assert.equal(
+    firstRecords[34].migration_id,
+    "0035_project_status_registry_mvp",
   );
-  assert.deepEqual(firstRecords[34], {
-    applied: 34,
+  assert.equal(
+    firstRecords[35].migration_id,
+    "0036_development_delegation_mvp",
+  );
+  assert.equal(firstRecords[36].migration_id, "0037_multi_ai_handoff_mvp");
+  assert.ok(
+    firstRecords.slice(0, 37).every(({ status }) => status === "APPLIED"),
+  );
+  assert.deepEqual(firstRecords[37], {
+    applied: 37,
     skipped: 0,
     status: "SUCCEEDED",
   });
@@ -357,11 +366,11 @@ test("applies migrations 0001 through 0034 and skips all 34 on replay", async (t
   );
   const replayRecords = replay.stdout.map((line) => JSON.parse(line));
   assert.ok(
-    replayRecords.slice(0, 34).every(({ status }) => status === "SKIPPED"),
+    replayRecords.slice(0, 37).every(({ status }) => status === "SKIPPED"),
   );
-  assert.deepEqual(replayRecords[34], {
+  assert.deepEqual(replayRecords[37], {
     applied: 0,
-    skipped: 34,
+    skipped: 37,
     status: "SUCCEEDED",
   });
   assert.equal(closeCount, 2);

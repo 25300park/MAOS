@@ -137,11 +137,8 @@ test(
       try {
         const migrations = await loadMigrations(migrationDirectory);
         const applied = await applyMigrations(migration, migrations);
-        assert.equal(
-          applied.applied.at(-1),
-          "0034_phase15d_aidos_delegation_input_binding",
-        );
-        assert.equal(applied.applied.length, 34);
+        assert.equal(applied.applied.at(-1), "0037_multi_ai_handoff_mvp");
+        assert.equal(applied.applied.length, 37);
         assert.deepEqual(await applyMigrations(migration, migrations), {
           applied: [],
           skipped: migrations.map(({ id }) => id),

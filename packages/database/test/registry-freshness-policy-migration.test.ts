@@ -456,7 +456,7 @@ test(
       try {
         const migrations = await loadMigrations(migrationDirectory);
         const applied = await applyMigrations(first, migrations);
-        assert.equal(applied.applied.length, 34);
+        assert.equal(applied.applied.length, 37);
         assert.deepEqual(await applyMigrations(first, migrations), {
           applied: [],
           skipped: migrations.map(({ id }) => id),

@@ -199,6 +199,21 @@ export const RESET_MIGRATION_MANIFEST = Object.freeze(
       "81db09844d8bc5754578d3fd46a92cb5e68e9c6cbfb6135caa62b3f264b6e531",
       "38f2094193372a45785e72d68fcfec8e1bad5ddabbfbeca3be8b84c1d40366b9",
     ],
+    [
+      "0035_project_status_registry_mvp",
+      "cee9cc115f07fb82bd4cc6d372633b2cbef6ee16e99d656f706e96bbda4f476b",
+      "765ba15d199de3d1eb5226c870356eddcffa7b36342301c7e1b3efa58a2dc511",
+    ],
+    [
+      "0036_development_delegation_mvp",
+      "89d4f1592d1fce5d871836adcc0592fbdb8193977c747f339384327a02545b9d",
+      "0d9135b7b1f83e00d98fcd65374139ecfa1b9846a5fb4d45206c530aae8429e1",
+    ],
+    [
+      "0037_multi_ai_handoff_mvp",
+      "500748992e5a634928e89ce162b6de1a167e043a9a098d62264f44904433aaa4",
+      "c87f58ba728c9e36006c6b91926b920a24fbf29ea3d06155548edb4682e79d5b",
+    ],
   ].map(([id, canonicalChecksum, legacyCrlfChecksum]) => ({
     canonicalChecksum: canonicalChecksum ?? "",
     id: id ?? "",

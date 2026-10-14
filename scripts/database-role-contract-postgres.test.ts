@@ -272,12 +272,15 @@ test(
           "0032_phase15d_multi_ai_role_model_routing",
           "0033_phase15b_registry_freshness_policy",
           "0034_phase15d_aidos_delegation_input_binding",
+          "0035_project_status_registry_mvp",
+          "0036_development_delegation_mvp",
+          "0037_multi_ai_handoff_mvp",
         ]);
         const replay = await applyMigrations(admin, migrations, {
           registryMode: "VERIFY_EXISTING",
         });
         assert.equal(replay.applied.length, 0);
-        assert.equal(replay.skipped.length, 34);
+        assert.equal(replay.skipped.length, 37);
 
         await admin.exec("RESET ROLE");
         await assert.rejects(

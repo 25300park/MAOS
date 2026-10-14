@@ -4,3 +4,4 @@ export const KNOWLEDGE_MODULE = Object.freeze({
 });
 
 export * from "./memory-gateway.js";
+export * from "./project-memory-context.js";
