@@ -68,12 +68,7 @@ function repositoryPort(
       repository.createSession({ ...input, organization_id: ids.organization }),
     find: (sessionId) => repository.findSession(sessionId),
     resolveIdentity: (actorId) => repository.resolveIdentityByActorId(actorId),
-    revoke: async (input) => {
-      const current = await repository.findSession(input.session_id);
-      return current
-        ? repository.revokeSession({ ...input, actor_id: current.actor_id })
-        : null;
-    },
+    revoke: input => repository.revokeSession(input),
     touch: (sessionId, expectedVersion, accessedAt) =>
       repository.touchSession({ accessedAt, expectedVersion, sessionId }),
   };
@@ -241,6 +236,10 @@ test("requires separate BFF and human credentials plus exact CREATE authority", 
     401,
   );
   assert.equal((await issue(`Bearer ${tokens.human}`)).response.status, 401);
+  assert.equal((await call(baseUrl, "/api/v1/identity/sessions", {
+    authorization: `Bearer ${tokens.human}`, bffToken: tokens.bff, method: "POST",
+    body: { actor_id: "another-human" },
+  })).response.status, 400);
   assert.equal(
     (await issue(`Bearer ${tokens.human}`, "invalid-bff")).response.status,
     401,

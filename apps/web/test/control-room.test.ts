@@ -203,7 +203,7 @@ test("fails closed at the authenticated UI boundary", () => {
     path: "/today",
   });
   assert.match(html, /Authentication required/);
-  assert.match(html, /Sign in through your organization identity provider/);
+  assert.match(html, /existing approved Staging Human sign-in credential/);
   assert.doesNotMatch(html, /Approval Center/);
   assert.doesNotMatch(html, /Project Atlas/);
 });
@@ -354,7 +354,7 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
     "PREVIEW",
   ])
     assert.match(systems, new RegExp(text));
-  assert.match(systems, /href="\/systems\/routing"/u);
+  assert.match(systems, /Routing diagnostics currently unavailable/u);
 
   const workspace = controlRoom.renderControlRoom({
     identity: operator,

@@ -45,7 +45,7 @@ export interface SessionRepositoryPort {
     expectedVersion: number,
     accessedAt: string,
   ): Promise<SessionRecord | null>;
-  revoke(input: RevokeSessionRecord): Promise<SessionRecord | null>;
+  revoke(input: RevokeSessionRecord & { actor_id: string }): Promise<SessionRecord | null>;
   resolveIdentity(actorId: string): Promise<IdentityContext | null>;
 }
 
@@ -425,9 +425,26 @@ export class SessionService {
     expectedVersion: number;
     sessionId: string;
   }): Promise<SessionRecord> {
+    // The caller comes from canonical authentication, never from the target row.
+    if (input.actor?.actor_type !== "HUMAN" || !input.actor.actor_id) {
+      throw new SessionLifecycleError("IDENTITY_UNAVAILABLE");
+    }
+    const target = await this.options.repository.find(input.sessionId);
+    if (!target || target.actor_id !== input.actor.actor_id) {
+      await this.options.audit.recordFailure?.({
+        actor_id: input.actor.actor_id,
+        context: input.context,
+        reason: "TENANT_MISMATCH",
+      });
+      throw new SessionLifecycleError("TENANT_MISMATCH");
+    }
+    const identity = await this.options.repository.resolveIdentity(input.actor.actor_id);
+    const bindingFailure = validateIdentityBinding(target, identity);
+    if (bindingFailure) throw new SessionLifecycleError(bindingFailure);
     const auditEvidenceReference =
       this.options.audit.createEvidenceReference?.();
     const revoked = await this.options.repository.revoke({
+      actor_id: input.actor.actor_id,
       ...(auditEvidenceReference
         ? { audit_evidence_ref: auditEvidenceReference }
         : {}),

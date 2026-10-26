@@ -16,6 +16,34 @@ export interface CoreBootstrapResult {
   readonly outcome: "CREATED" | "REUSED";
 }
 
+export type CoreProjectLookupSelector =
+  | { readonly project_id: string }
+  | { readonly repository_reference: string }
+  | { readonly department_id: string; readonly project_name: string };
+
+export interface CoreProjectLookupRecord {
+  readonly project_id: string;
+  readonly organization_id: string;
+  readonly department_id: string;
+  readonly name: string;
+  readonly version: number;
+  readonly archived_at: string | null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+export function validCoreProjectLookupSelector(value: unknown): value is CoreProjectLookupSelector {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const input = value as Record<string, unknown>;
+  const keys = Object.keys(input).sort().join(",");
+  if (keys === "project_id") return typeof input.project_id === "string" && UUID.test(input.project_id);
+  if (keys === "repository_reference") return typeof input.repository_reference === "string" &&
+    input.repository_reference.length <= 512 && /^registry:\/\/[^\s?#]+$/u.test(input.repository_reference);
+  return keys === "department_id,project_name" && typeof input.department_id === "string" &&
+    UUID.test(input.department_id) && typeof input.project_name === "string" &&
+    input.project_name.length > 0 && input.project_name.length <= 512 && input.project_name.trim() === input.project_name;
+}
+
 type OrganizationRow = {
   archived_at: Date | string | null;
   id: string;
@@ -88,6 +116,51 @@ function exactProject(
 
 export class PostgresCoreBootstrapRepository {
   constructor(private readonly database: MigrationDatabase) {}
+
+  /** Caller must establish administrative read authority for this exact organization first. */
+  async findProjectsExact(
+    organizationId: string,
+    selector: CoreProjectLookupSelector,
+  ): Promise<readonly CoreProjectLookupRecord[]> {
+    if (!UUID.test(organizationId) || !validCoreProjectLookupSelector(selector)) {
+      throw new Error("CORE_PROJECT_LOOKUP_INVALID");
+    }
+    const params: unknown[] = [organizationId];
+    let predicate: string;
+    if ("project_id" in selector) {
+      predicate = "p.id=$2";
+      params.push(selector.project_id);
+    } else if ("repository_reference" in selector) {
+      // EXISTS deduplicates multiple system/repository links to one canonical project.
+      predicate = `EXISTS (SELECT 1 FROM core.project_system_links link
+        JOIN operations.repositories repository
+          ON repository.system_id=link.system_id AND repository.id=link.repository_id
+        WHERE link.project_id=p.id AND repository.reference=$2)`;
+      params.push(selector.repository_reference);
+    } else {
+      predicate = "p.department_id=$2 AND p.name=$3";
+      params.push(selector.department_id, selector.project_name);
+    }
+    const result = await this.database.query<{
+      project_id: string; organization_id: string; department_id: string;
+      name: string; version: string; archived_at: Date | string | null;
+    }>(
+      `SELECT p.id::text AS project_id, p.organization_id::text AS organization_id,
+              p.department_id::text AS department_id, p.name, p.version::text AS version, p.archived_at
+       FROM core.projects p WHERE p.organization_id=$1 AND ${predicate}
+       ORDER BY p.id LIMIT 2`,
+      params,
+    );
+    return result.rows.map(row => {
+      const version = Number(row.version);
+      if (!Number.isSafeInteger(version) || version < 1) throw new Error("CORE_PROJECT_LOOKUP_INVALID_RECORD");
+      return {
+        project_id: row.project_id, organization_id: row.organization_id,
+        department_id: row.department_id, name: row.name, version,
+        archived_at: row.archived_at === null ? null : new Date(row.archived_at).toISOString(),
+      };
+    });
+  }
 
   async bootstrap(input: {
     idempotencyKey: string;

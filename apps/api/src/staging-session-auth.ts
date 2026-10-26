@@ -30,6 +30,36 @@ export function createStagingCredentialVerifier(input: {
   return constantTimeVerifier(input);
 }
 
+/** Closed login bindings only. Identity/permissions always come from the canonical repository. */
+export function createBoundSessionCredentialVerifier(input: {
+  bindings: readonly { bearerToken: string; externalSubject: string }[];
+  organizationId?: string;
+  resolve: (subject: string) => Promise<(IdentityContext & {
+    organization_id: string; external_subject: string;
+  }) | null>;
+}): StagingCredentialVerifier {
+  const bindings = input.bindings.map(binding => ({ ...binding }));
+  if (bindings.length < 1 || bindings.length > 2 ||
+      bindings.some(binding => !binding.bearerToken || /\s/u.test(binding.bearerToken) ||
+        !binding.externalSubject || binding.externalSubject.trim() !== binding.externalSubject) ||
+      new Set(bindings.map(binding => binding.bearerToken)).size !== bindings.length ||
+      new Set(bindings.map(binding => binding.externalSubject)).size !== bindings.length ||
+      (bindings.length === 2 && !input.organizationId)) {
+    throw new Error("STAGING_SESSION_BINDINGS_INVALID");
+  }
+  const organizationId = input.organizationId;
+  return async credential => {
+    const matched = bindings.map(binding => constantTimeEqual(credential, binding.bearerToken));
+    if (matched.filter(Boolean).length !== 1) return null;
+    const identities = await Promise.all(bindings.map(binding => input.resolve(binding.externalSubject)));
+    if (identities.some((identity, index) => !identity || identity.actor_type !== "HUMAN" ||
+        !identity.actor_id || identity.external_subject !== bindings[index]!.externalSubject ||
+        (organizationId !== undefined && identity.organization_id !== organizationId)) ||
+        new Set(identities.map(identity => identity?.actor_id)).size !== identities.length) return null;
+    return identities[matched.indexOf(true)] ?? null;
+  };
+}
+
 export function createStagingIdentityAdminVerifier(input: {
   bearerToken: string;
   identity: IdentityContext;
@@ -61,11 +91,19 @@ export function createStagingApiAuthenticator(input: {
   );
 
   return async (headers, context) => {
+    if (
+      context?.method === "POST" &&
+      (context.path === "/api/v1/identity/provisioning/humans" ||
+        context.path === "/api/v1/identity/provisioning/assignment-permissions")
+    ) {
+      return authenticateIdentityAdmin(headers, context);
+    }
     const sessionIdHeader = headers["x-session-id"];
     const bffAuthorizationHeader = headers["x-maos-bff-service-authorization"];
     const isSessionIssuance =
       context?.method === "POST" &&
       context.path === "/api/v1/identity/sessions";
+    if (isSessionIssuance && sessionIdHeader !== undefined) return null;
     if (
       sessionIdHeader !== undefined ||
       (bffAuthorizationHeader !== undefined && !isSessionIssuance)
@@ -84,12 +122,6 @@ export function createStagingApiAuthenticator(input: {
       return resolved.authenticated ? resolved.identity : null;
     }
 
-    if (
-      context?.method === "POST" &&
-      context.path === "/api/v1/identity/provisioning/humans"
-    ) {
-      return authenticateIdentityAdmin(headers, context);
-    }
     if (
       context?.method === "POST" &&
       context.path === "/api/v1/identity/sessions"

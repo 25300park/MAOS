@@ -106,3 +106,8 @@ export * from "./delay-drift-detector.js";
 export * from "./development-delegation-service.js";
 export * from "./multi-ai-handoff-service.js";
 export * from "./development-control-loop.js";
+
+export * from "./organization-project-admin-authority.js";
+
+export { PostgresPasswordCredentialRepository } from "./password-credential-repository.js";
+export { PostgresPasswordSetupRepository, type InitialPasswordInput } from "./password-setup-repository.js";

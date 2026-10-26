@@ -1,4 +1,8 @@
 import { CONTROL_ROOM_CSS } from "./styles.js";
+import { passwordLoginPage } from "./native-password-login.js";
+import { renderSystemConsoles } from "./system-consoles.js";
+import type { SystemHealth } from "./system-health.js";
+import { renderProjectRegistry, renderSystemRegistry, type ProjectRegistryRead, type SystemRegistryRead } from "./registry-reads.js";
 import {
   projectAiRegistryPortal,
   renderAiRegistryPortal,
@@ -260,6 +264,7 @@ export interface OptimizationView {
 }
 
 export interface ControlRoomRenderInput {
+  account_login?: boolean | undefined;
   ai_registry?: AiRegistryPortalView | undefined;
   classification?: ClassificationPortalView | undefined;
   routing?: RoutingPortalView | undefined;
@@ -284,6 +289,9 @@ export interface ControlRoomRenderInput {
   marketing?: MarketingView | undefined;
   path: string;
   phase14_portal?: Phase14PortalView | undefined;
+  project_registry?: ProjectRegistryRead | undefined;
+  system_registry?: SystemRegistryRead | undefined;
+  system_health?: SystemHealth | undefined;
   rbs_admin?: RbsAdminView | undefined;
   state?: ViewState;
   supplemental?: Record<string, unknown>;
@@ -500,7 +508,22 @@ function pageHeading(
   title: string,
   description: string,
 ): string {
-  return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div><div class="date-block"><strong>Thursday, Sep 3</strong><span>Seoul · 09:42 KST</span></div></div>`;
+  const now = new Date();
+  const date = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul", weekday: "long", month: "short", day: "numeric",
+  }).format(now);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(now);
+  return `<div class="page-heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div><div class="date-block"><strong>${date}</strong><span>Seoul · ${time} KST</span></div></div>`;
+}
+
+function atlasProjectPage(): string {
+  return `${pageHeading("Project preview", "Project Atlas", "Launch readiness · read-only portfolio preview")}
+  <p><a href="/projects">Back to projects</a></p>
+  <section class="panel"><div class="panel-head"><h2>Project status</h2><span class="status blocked">AT RISK</span></div>
+  <div class="panel-body"><div class="callout"><strong>Sample portfolio data</strong><p>This preview uses the existing Projects sample. It is not a live registered project or execution authorization.</p></div>
+  <dl class="fact-grid"><div class="fact"><dt>Owner</dt><dd>J. Kim</dd></div><div class="fact"><dt>Progress</dt><dd>68%</dd></div><div class="fact"><dt>Next step</dt><dd>Evidence package</dd></div><div class="fact"><dt>Purpose</dt><dd>Launch readiness</dd></div></dl></div></section>`;
 }
 
 function todayPage(identity: ControlRoomIdentity): string {
@@ -530,8 +553,9 @@ function todayPage(identity: ControlRoomIdentity): string {
   </div></section><section class="panel"><div class="panel-head"><h2>Who owns it</h2></div><div class="panel-body"><dl class="fact-grid"><div class="fact"><dt>At-risk projects</dt><dd>J. Kim · S. Lee</dd></div><div class="fact"><dt>Approvals</dt><dd>CEO · Ops Lead</dd></div><div class="fact"><dt>Failed runs</dt><dd>Platform Team</dd></div><div class="fact"><dt>What happens next</dt><dd>Evidence review</dd></div></dl></div></section></aside></div>`;
 }
 
-function projectsPage(): string {
-  return `${pageHeading("Portfolio control", "Projects", "Business containers with explicit owners, delivery confidence, blockers, and next actions.")}<section class="panel"><div class="panel-head"><h2>Company portfolio</h2><div class="utility-row"><button class="btn">Filters</button><button class="btn btn-primary">New project</button></div></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Projects</caption><thead><tr><th>Project</th><th>State</th><th>Owner</th><th>Progress</th><th>Next action</th></tr></thead><tbody><tr><td><a href="/projects/atlas">Project Atlas</a><br><small>Launch readiness</small></td><td>${status("AT RISK", "blocked")}</td><td><span class="owner"><span class="avatar">JK</span>J. Kim</span></td><td><div class="progress"><span style="width:68%"></span></div></td><td>Evidence package</td></tr><tr><td><a href="/projects/revenue-ops">Revenue Operations</a><br><small>Automation controls</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">SL</span>S. Lee</span></td><td><div class="progress"><span style="width:82%"></span></div></td><td>Approval decision</td></tr><tr><td><a href="/projects/market-signal">Market Signal</a><br><small>Research system</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">MH</span>M. Han</span></td><td><div class="progress"><span style="width:54%"></span></div></td><td>Source validation</td></tr></tbody></table></div></section>`;
+function projectsPage(registry?: ProjectRegistryRead): string {
+  const sample = `<section class="panel"><div class="panel-head"><h2>Company portfolio</h2><div class="utility-row"><button class="btn">Filters</button><button class="btn btn-primary">New project</button></div></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Projects</caption><thead><tr><th>Project</th><th>State</th><th>Owner</th><th>Progress</th><th>Next action</th></tr></thead><tbody><tr><td><a href="/projects/atlas">Project Atlas</a><br><small>Launch readiness</small></td><td>${status("AT RISK", "blocked")}</td><td><span class="owner"><span class="avatar">JK</span>J. Kim</span></td><td><div class="progress"><span style="width:68%"></span></div></td><td>Evidence package</td></tr><tr><td><a href="/projects/revenue-ops">Revenue Operations</a><br><small>Automation controls</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">SL</span>S. Lee</span></td><td><div class="progress"><span style="width:82%"></span></div></td><td>Approval decision</td></tr><tr><td><a href="/projects/market-signal">Market Signal</a><br><small>Research system</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">MH</span>M. Han</span></td><td><div class="progress"><span style="width:54%"></span></div></td><td>Source validation</td></tr></tbody></table></div></section>`;
+  return `${pageHeading("Portfolio control", "Projects", "Authorized project Registry reads and separate sample previews.")}${renderProjectRegistry(registry ?? { state: "UNAVAILABLE" })}<details style="margin-top:18px"><summary>Sample portfolio preview — not registered projects</summary><p class="permission-note">Demo data only. These samples are not counted as registered projects.</p>${sample}</details>`;
 }
 
 function tasksPage(): string {
@@ -658,7 +682,7 @@ function systemsPage(
   rbsAdmin?: RbsAdminView,
 ): string {
   const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
-  return `${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="panel-head"><h2>AI systems</h2><span class="permission-note">SYSTEM:READ · read-only</span></div><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Provider, model, host, capability, compatibility, and domain restrictions.</p><a href="/systems/routing">Routing diagnostics</a><p class="permission-note">Canonical redacted EWP-07 decisions, candidates, and bounded observability only.</p></div></section>${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Registered systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Registered systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
+  return `<p class="permission-note">Sample systems preview — not live Registry records or current connectivity.</p>${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="panel-head"><h2>AI systems</h2><span class="permission-note">SYSTEM:READ · read-only</span></div><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Provider, model, host, capability, compatibility, and domain restrictions.</p><a href="/systems/routing">Routing diagnostics</a><p class="permission-note">Canonical redacted EWP-07 decisions, candidates, and bounded observability only.</p></div></section>${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Sample systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Sample systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
 }
 
 function rbsAdminPanel(view?: RbsAdminView): string {
@@ -814,8 +838,9 @@ function routeContent(input: ControlRoomRenderInput): string {
     })}${memoryIntegrationPanel(input.memory_integration)}`;
   if (input.state && input.state !== "ready") return statePage(input.state);
   if (path === "/today") return todayPage(input.identity!);
+  if (path === "/projects/atlas") return atlasProjectPage();
   if (path === "/projects" || path.startsWith("/projects/"))
-    return projectsPage();
+    return projectsPage(input.project_registry);
   if (path === "/tasks") return tasksPage();
   if (path.startsWith("/tasks/")) return taskDetail(path, input.identity!);
   if (path === "/ai-company") return aiCompanyPage();
@@ -835,8 +860,10 @@ function routeContent(input: ControlRoomRenderInput): string {
     return renderClassificationPortal(input.classification);
   if (path === "/systems/routing" && input.routing)
     return renderRoutingPortal(input.routing);
+  if (path === "/systems" && input.system_registry)
+    return `${pageHeading("Platform visibility", "Systems", "Authorized system Registry records; no inferred health or project membership.")}${renderSystemConsoles(input.system_health)}${renderSystemRegistry(input.system_registry)}<section class="panel"><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Read-only availability; no execution authority.</p></div></section>`;
   if (path === "/systems")
-    return systemsPage(
+    return renderSystemConsoles(input.system_health) + systemsPage(
       input.control_plane,
       input.memory_integration,
       input.rbs_admin,
@@ -924,11 +951,45 @@ function marketingPage(view?: MarketingView): string {
 }
 
 function authenticationPage(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authentication required · MAOS</title><style>${CONTROL_ROOM_CSS}</style></head><body><main class="auth-shell"><section class="auth-story"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><div><p class="eyebrow">Enterprise AI control plane</p><h1>Human authority stays visible.</h1><p>Structured work, explicit ownership, governed AI activity, and evidence you can inspect.</p></div><small>Private personal data remains private by default.</small></section><section class="auth-panel"><div class="auth-card"><span class="eyebrow">Secure boundary</span><h2>Authentication required</h2><p>Sign in through your organization identity provider to access authorized Control Room resources.</p><button class="btn btn-primary" disabled>Organization sign-in</button><p class="permission-note">Identity provider integration is configured outside source code.</p></div></section></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authentication required · MAOS</title><style>${CONTROL_ROOM_CSS}</style></head><body><main class="auth-shell"><section class="auth-story"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><div><p class="eyebrow">Enterprise AI control plane</p><h1>Human authority stays visible.</h1><p>Structured work, explicit ownership, governed AI activity, and evidence you can inspect.</p></div><small>Private personal data remains private by default.</small></section><section class="auth-panel"><div class="auth-card"><span class="eyebrow">Secure boundary</span><h2>Authentication required</h2><p>Use your existing approved Staging Human sign-in credential. Your Vercel login and MAOS session are separate.</p><form id="maos-sign-in" method="post" action="/auth/session"><label for="maos-credential">Staging sign-in credential</label><input id="maos-credential" type="password" autocomplete="current-password" required spellcheck="false"><button id="maos-sign-in-submit" class="btn btn-primary" type="submit">Organization sign-in</button><p id="maos-sign-in-status" role="status" aria-live="polite"></p></form><p class="permission-note">Use only the Human sign-in credential, never a service/admin credential. It is not saved in browser storage.</p></div></section></main>
+<script data-session-login>
+(() => {
+  const form = document.getElementById('maos-sign-in');
+  const input = document.getElementById('maos-credential');
+  const button = document.getElementById('maos-sign-in-submit');
+  const status = document.getElementById('maos-sign-in-status');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (button.disabled) return;
+    const credential = input.value;
+    input.value = '';
+    if (!credential || /\\s/.test(credential)) {
+      status.textContent = 'Enter your approved Staging sign-in credential.';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = 'Signing in…';
+    try {
+      const response = await fetch('/auth/session', {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        headers: { authorization: 'Bearer ' + credential },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok || (await response.json()).authenticated !== true) throw new Error('SIGN_IN_REJECTED');
+      location.assign('/projects');
+    } catch {
+      status.textContent = 'Sign-in failed. Check your credential or try again.';
+    } finally {
+      input.value = '';
+      button.disabled = false;
+    }
+  });
+})();
+</script></body></html>`;
 }
 
 export function renderControlRoom(input: ControlRoomRenderInput): string {
-  if (!input.identity) return authenticationPage();
+  if (!input.identity) return input.account_login ? passwordLoginPage() : authenticationPage();
   const path = input.path === "/" ? "/today" : input.path;
   const section = NAVIGATION.find((item) => currentPath(item.path, path));
   const title = section?.label ?? "Control Room";
@@ -959,9 +1020,23 @@ export function renderControlRoom(input: ControlRoomRenderInput): string {
         '<button class="btn btn-primary">New project</button>',
         "",
       );
-  const content = permissionAwareContent.replace(
+  const content = permissionAwareContent
+    .replace('<a class="btn btn-primary" href="/today" style="display:inline-flex;align-items:center;text-decoration:none">Return to Today</a>', (() => {
+      const destination = NAVIGATION.find((item) => input.identity!.permissions.includes(item.permission));
+      return destination
+        ? `<a class="btn btn-primary" href="${escapeHtml(destination.path)}" style="display:inline-flex;align-items:center;text-decoration:none">Return to ${escapeHtml(destination.label)}</a>`
+        : '<span class="permission-note">No authorized view is available. Contact your project administrator.</span>';
+    })())
+    .replace('<a href="/systems/routing">Routing diagnostics</a>', input.routing
+      ? '<a href="/systems/routing">Routing diagnostics</a>'
+      : '<span class="permission-note">Routing diagnostics currently unavailable</span>')
+    .replace('<button class="btn">Filters</button>', '<span class="permission-note">Filters coming soon</span>')
+    .replace('<button class="btn btn-primary">New project</button>', '<span class="permission-note">New project coming soon</span>')
+    .replace('<a href="/projects/revenue-ops">Revenue Operations</a>', '<strong>Revenue Operations</strong><br><span class="permission-note">Preview only · Details coming soon · Not clickable</span>')
+    .replace('<a href="/projects/market-signal">Market Signal</a>', '<strong>Market Signal</strong><br><span class="permission-note">Preview only · Details coming soon · Not clickable</span>')
+    .replace(
     '<a href="/audit">Open audit →</a>',
     '<span class="permission-note">3 linked records</span>',
   );
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · Development</small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><div class="command-search" role="search">⌕ <span>Search work, agents, runs…</span><span class="key">⌘ K</span></div><button class="icon-button" aria-label="Notifications">♢</button></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · Development</small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><div class="permission-note">Search coming soon</div><span class="permission-note">Notifications coming soon</span></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script></body></html>`;
 }

@@ -171,6 +171,23 @@ const stagingSessionEnv = {
   MAOS_STAGING_SESSION_INGRESS_ENABLED: "true",
 };
 
+test("accepts only a complete distinct optional Operator binding with an exact organization", () => {
+  const second = {
+    MAOS_STAGING_OPERATOR_SESSION_CREDENTIAL_BEARER_TOKEN: "synthetic-operator-token",
+    MAOS_STAGING_OPERATOR_SESSION_EXTERNAL_SUBJECT: "staging:human:executor",
+    MAOS_STAGING_SESSION_ORGANIZATION_ID: "00000000-0000-4000-8000-000000005001",
+  };
+  const config = loadStagingSessionApiConfig({ ...stagingSessionEnv, ...second });
+  assert.equal(config.enabled && config.operatorSessionBinding?.externalSubject, second.MAOS_STAGING_OPERATOR_SESSION_EXTERNAL_SUBJECT);
+  for (const key of Object.keys(second)) {
+    assert.throws(() => loadStagingSessionApiConfig({ ...stagingSessionEnv, ...second, [key]: undefined }));
+  }
+  for (const token of [stagingSessionEnv.MAOS_STAGING_BFF_SERVICE_BEARER_TOKEN, stagingSessionEnv.MAOS_STAGING_SESSION_CREDENTIAL_BEARER_TOKEN, stagingSessionEnv.MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN]) {
+    assert.throws(() => loadStagingSessionApiConfig({ ...stagingSessionEnv, ...second, MAOS_STAGING_OPERATOR_SESSION_CREDENTIAL_BEARER_TOKEN: token }));
+  }
+  assert.throws(() => loadStagingSessionApiConfig({ ...stagingSessionEnv, ...second, MAOS_STAGING_OPERATOR_SESSION_EXTERNAL_SUBJECT: stagingSessionEnv.MAOS_STAGING_SESSION_EXTERNAL_SUBJECT }));
+});
+
 test("loads separate bounded staging Session API and BFF configuration", () => {
   assert.deepEqual(loadStagingSessionApiConfig(stagingSessionEnv), {
     bffServiceBearerToken: "synthetic-service-token",

@@ -116,7 +116,7 @@ async function fixture(t: TestContext) {
     environment: "staging",
     scope: "project-maos",
   });
-  return { audit, repository, routes };
+  return { audit, database, repository, routes };
 }
 
 async function request(input: {
@@ -124,6 +124,7 @@ async function request(input: {
   authorization?: string | null;
   body?: unknown;
   idempotencyKey?: string;
+  path?: string;
   routes: ReturnType<typeof createIdentityProvisioningRoutes>;
 }) {
   const authorization =
@@ -140,7 +141,7 @@ async function request(input: {
   try {
     const port = (server.address() as AddressInfo).port;
     const response = await fetch(
-      `http://127.0.0.1:${port}/api/v1/identity/provisioning/humans`,
+      `http://127.0.0.1:${port}${input.path ?? "/api/v1/identity/provisioning/humans"}`,
       {
         body: JSON.stringify(input.body ?? body),
         headers: {
@@ -302,6 +303,230 @@ test("provisions once, replays idempotently, and records redacted audit proof", 
   assert.doesNotMatch(
     JSON.stringify(audits),
     /identity-admin-credential|provision-approved-operator|approved-provider-subject|Staging Operator/u,
+  );
+});
+
+test("assignment writer permits only exact Staging SYSTEM/PROJECT R0 reads", async (t) => {
+  const { repository, routes } = await fixture(t);
+  const authenticate = createBearerAuthenticator(() => ({
+    ...admin,
+    actor_id: ids.organization,
+  }));
+  await request({ authenticate, routes, idempotencyKey: "read-grant-human" });
+  const human = await repository.resolveIdentityByExternalSubject(
+    body.external_subject,
+  );
+  assert.ok(human);
+  const assignment = human.roles[0]!;
+  const grant = {
+    assignment_id: assignment.id,
+    human_id: human.actor_id,
+    organization_id: ids.organization,
+    project_id: ids.project,
+    scope: "project-maos",
+    evidence_refs: ["evidence://staging/mvp-project-read"],
+    permission: {
+      action: "READ",
+      effect: "ALLOW",
+      environment: "staging",
+      resource: "PROJECT",
+      risk: "R0",
+    },
+  };
+  const path = "/api/v1/identity/provisioning/assignment-permissions";
+  for (const resource of ["SYSTEM", "PROJECT"]) {
+    const result = await request({
+      authenticate,
+      routes,
+      path,
+      body: { ...grant, permission: { ...grant.permission, resource } },
+      idempotencyKey: `read-grant-${resource}`,
+    });
+    assert.equal(result.response.status, 200, resource);
+    const replay = await request({
+      authenticate,
+      routes,
+      path,
+      body: { ...grant, permission: { ...grant.permission, resource } },
+      idempotencyKey: `read-grant-${resource}`,
+    });
+    assert.equal(replay.response.status, 200, `${resource} replay`);
+  }
+  const reloaded = await repository.resolveIdentityByExternalSubject(
+    body.external_subject,
+  );
+  for (const resource of ["SYSTEM", "PROJECT"]) {
+    assert.ok(
+      reloaded?.roles[0]?.permissions.some(
+        (p) =>
+          p.resource === resource &&
+          p.action === "READ" &&
+          p.risk === "R0" &&
+          p.scope === "project-maos",
+      ),
+    );
+  }
+  for (const invalid of [
+    { ...grant, scope: "project-other" },
+    { ...grant, scope: "*" },
+    ...[
+      { environment: "production" },
+      { risk: "R1" },
+      { resource: "CONTROL_PLANE" },
+      { resource: "*" },
+      { resource: "UNSUPPORTED" },
+      { action: "*" },
+      { action: "CREATE" },
+    ].map((delta) => ({
+      ...grant,
+      permission: { ...grant.permission, ...delta },
+    })),
+  ]) {
+    const result = await request({
+      authenticate,
+      routes,
+      path,
+      body: invalid,
+      idempotencyKey: "invalid-read-grant",
+    });
+    assert.equal(result.response.status, 422);
+  }
+  const wrongProject = await request({
+    authenticate,
+    routes,
+    path,
+    body: { ...grant, project_id: ids.otherProject },
+    idempotencyKey: "wrong-project-read-grant",
+  });
+  assert.equal(wrongProject.response.status, 409);
+});
+
+test("assignment INSERT denial rolls back; exact column INSERT enables canonical grant and replay", async (t) => {
+  const { database, repository, routes } = await fixture(t);
+  const authenticate = createBearerAuthenticator(() => ({
+    ...admin,
+    actor_id: ids.organization,
+  }));
+  await request({ authenticate, routes, idempotencyKey: "acl-read-human" });
+  const human = await repository.resolveIdentityByExternalSubject(
+    body.external_subject,
+  );
+  assert.ok(human);
+  const grant = {
+    assignment_id: human.roles[0]!.id,
+    human_id: human.actor_id,
+    organization_id: ids.organization,
+    project_id: ids.project,
+    scope: "project-maos",
+    evidence_refs: ["evidence://staging/minimum-writer-acl"],
+    permission: {
+      action: "READ",
+      effect: "ALLOW",
+      environment: "staging",
+      resource: "PROJECT",
+      risk: "R0",
+    },
+  };
+  const output: unknown[][] = [];
+  t.mock.method(console, "error", (...args: unknown[]) => output.push(args));
+  await database.exec(`CREATE ROLE r2_writer_test;
+    GRANT USAGE ON SCHEMA identity, audit TO r2_writer_test;
+    GRANT SELECT ON identity.humans, identity.human_project_assignments, identity.assignment_permissions TO r2_writer_test;
+    GRANT SELECT, INSERT ON audit.audit_records TO r2_writer_test;
+    SET ROLE r2_writer_test;`);
+  const call = () =>
+    request({
+      authenticate,
+      routes,
+      path: "/api/v1/identity/provisioning/assignment-permissions",
+      body: grant,
+      idempotencyKey: "acl-project-read",
+    });
+  assert.equal((await call()).response.status, 409);
+  assert.match(JSON.stringify(output), /42501/);
+  assert.match(JSON.stringify(output), /assignment_permissions/);
+  await database.exec("RESET ROLE");
+  assert.equal(
+    (
+      await database.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM audit.audit_records WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'",
+      )
+    ).rows[0]!.count,
+    0,
+  );
+  await database.exec(`GRANT INSERT (assignment_id, action, resource, environment, risk, effect)
+    ON identity.assignment_permissions TO r2_writer_test; SET ROLE r2_writer_test;`);
+  assert.equal((await call()).response.status, 200);
+  assert.equal((await call()).response.status, 200);
+  await database.exec("RESET ROLE");
+  const reloaded = await repository.resolveIdentityByExternalSubject(
+    body.external_subject,
+  );
+  assert.equal(
+    reloaded?.roles[0]?.permissions.filter((p) => p.resource === "PROJECT")
+      .length,
+    1,
+  );
+  assert.equal(
+    (
+      await database.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM audit.audit_records WHERE action = 'IDENTITY.ASSIGNMENT_PERMISSION_GRANTED'",
+      )
+    ).rows[0]!.count,
+    1,
+  );
+});
+
+test("assignment failure logs only bounded diagnostic metadata, never database details", async (t) => {
+  const { audit, repository } = await fixture(t);
+  const output: unknown[][] = [];
+  t.mock.method(console, "error", (...args: unknown[]) => output.push(args));
+  const routes = createIdentityProvisioningRoutes(
+    {
+      provisionHuman: repository.provisionHuman.bind(repository),
+      grantAssignmentPermission: async () => {
+        throw Object.assign(
+          new Error("permission denied for table assignment_permissions"),
+          {
+            code: "42501",
+            detail: "secret-password-and-private-row",
+          },
+        );
+      },
+    },
+    audit,
+    { environment: "staging", scope: "project-maos" },
+  );
+  const result = await request({
+    authenticate: createBearerAuthenticator(() => admin),
+    routes,
+    path: "/api/v1/identity/provisioning/assignment-permissions",
+    idempotencyKey: "bounded-diagnostic",
+    body: {
+      assignment_id: ids.department,
+      human_id: ids.department,
+      organization_id: ids.organization,
+      project_id: ids.project,
+      scope: "project-maos",
+      evidence_refs: ["evidence://staging/diagnostic"],
+      permission: {
+        action: "READ",
+        effect: "ALLOW",
+        environment: "staging",
+        resource: "PROJECT",
+        risk: "R0",
+      },
+    },
+  });
+  assert.equal(result.response.status, 409);
+  const logged = JSON.stringify(output);
+  assert.match(logged, /ASSIGNMENT_PERMISSION_WRITE_FAILED/);
+  assert.match(logged, /42501/);
+  assert.match(logged, /assignment_permissions/);
+  assert.doesNotMatch(logged, /secret-password|private-row|permission denied/);
+  assert.doesNotMatch(
+    JSON.stringify(result.payload),
+    /42501|assignment_permissions|secret-password/,
   );
 });
 

@@ -525,6 +525,43 @@ test("fails closed after a second optimistic touch conflict", async () => {
   assert.equal(repository.findCalls, 2);
 });
 
+test("rejects cross-account revoke before mutation even when the target owner resolves", async () => {
+  const repository = new FakeSessionRepository(session({ actor_id: "other-human" }));
+  repository.identity = { ...actor, actor_id: "other-human" };
+  const events: SessionAuditEvent[] = [];
+  await assert.rejects(service(repository, "2026-09-13T01:45:00.000Z", events).revoke({
+    actor,
+    context: requestContext,
+    evidenceRef: "evidence://synthetic/revoke",
+    expectedVersion: 1,
+    sessionId: "session-opaque-reference",
+  }), SessionLifecycleError);
+  assert.equal(repository.revoked, undefined);
+  assert.equal(repository.session?.session_version, 1);
+  assert.deepEqual(events, []);
+});
+
+test("rejects missing, non-Human and unavailable caller identities without mutation", async () => {
+  for (const caller of [undefined, { ...actor, actor_type: "SYSTEM" }, { ...actor, actor_id: "" }]) {
+    const repository = new FakeSessionRepository();
+    await assert.rejects(service(repository, "2026-09-13T01:45:00.000Z").revoke({
+      actor: caller as IdentityContext,
+      context: requestContext,
+      evidenceRef: "evidence://synthetic/revoke",
+      expectedVersion: 1,
+      sessionId: "session-opaque-reference",
+    }), SessionLifecycleError);
+    assert.equal(repository.revoked, undefined);
+  }
+  const repository = new FakeSessionRepository();
+  repository.identity = null;
+  await assert.rejects(service(repository, "2026-09-13T01:45:00.000Z").revoke({
+    actor, context: requestContext, evidenceRef: "evidence://synthetic/revoke",
+    expectedVersion: 1, sessionId: "session-opaque-reference",
+  }), SessionLifecycleError);
+  assert.equal(repository.revoked, undefined);
+});
+
 test("revokes exactly the expected Session version and cannot reactivate it", async () => {
   const repository = new FakeSessionRepository();
   const revoked = await service(repository, "2026-09-13T01:45:00.000Z").revoke({

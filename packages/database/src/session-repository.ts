@@ -134,6 +134,8 @@ const iso = (value: Date | string): string => new Date(value).toISOString();
 function mapIdentity(rows: readonly IdentityRow[]): StoredHumanIdentity | null {
   const first = rows[0];
   if (!first) return null;
+  if (rows.some(row => row.actor_id !== first.actor_id ||
+      row.organization_id !== first.organization_id || row.external_subject !== first.external_subject)) return null;
   const assignments = new Map<string, StoredAssignmentPermission[]>();
   for (const row of rows) {
     if (
@@ -477,7 +479,7 @@ export class PostgresSessionRepository {
              revocation_evidence_ref = $4,
              audit_evidence_ref = COALESCE($6, audit_evidence_ref),
              session_version = session_version + 1
-         WHERE id = $1 AND session_version = $2 AND revoked_at IS NULL
+         WHERE id = $1 AND session_version = $2 AND revoked_at IS NULL AND actor_id = $5
          RETURNING *
        ), recorded AS (
          INSERT INTO identity.session_revocations (

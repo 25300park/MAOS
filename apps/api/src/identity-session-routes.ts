@@ -5,6 +5,7 @@ import type {
   StoredSession,
 } from "@maos/database";
 import {
+  authorize,
   SessionLifecycleError,
   type AuthenticationRequestContext,
   type IdentityContext,
@@ -19,6 +20,7 @@ import {
 } from "./app.js";
 
 interface IdentitySessionRouteOptions {
+  readonly passwordVerifier?: (body: unknown) => Promise<IdentityContext | null>;
   readonly bffServiceBearerToken: string;
   readonly repository: Pick<PostgresSessionRepository, "findSession">;
   readonly sessionService: SessionService;
@@ -256,6 +258,23 @@ export function createIdentitySessionRoutes(
   const contextPath = "/api/v1/identity/session-context";
   const revokePath = "/api/v1/identity/sessions/revoke";
   return [
+    ...(options.passwordVerifier ? [{
+      access: 'PUBLIC' as const,
+      method: 'POST', path: '/api/v1/identity/password-sessions',
+      validate: (value: unknown): ValidationResult => ({ok:true,value}),
+      handle: async ({context,request,input}: Parameters<ApiRoute['handle']>[0]) => {
+        requireBffService(request.headers['x-maos-bff-service-authorization'],options.bffServiceBearerToken);
+        if(request.headers.authorization || request.headers['x-session-id']) authenticationRequired();
+        const actor=await options.passwordVerifier!(input);
+        if(!actor) authenticationRequired();
+        if(!authorize(actor,{action:'CREATE',resource:'SESSION',risk:'R2',environment:'staging',scope:options.scope}).allowed)
+          throw new ApiRequestError(403,{code:'AUTHENTICATION_REQUIRED',type:'AUTHENTICATION',severity:'INFO',retryable:false,details:{}});
+        const issued=await options.sessionService.issue({actor_id:actor.actor_id,
+          context:requestContext(context,'POST','/api/v1/identity/password-sessions'),
+          tenant_binding_origin:'identity.human_project_assignments',tenant_binding_ref:createBinding(actor,options.scope)});
+        return {session_reference:issued.session.session_id};
+      },
+    }] : []),
     {
       access: {
         action: "CREATE",
@@ -269,6 +288,12 @@ export function createIdentitySessionRoutes(
           request.headers["x-maos-bff-service-authorization"],
           options.bffServiceBearerToken,
         );
+        // Canonical issuance has no caller-controlled identity payload.
+        if (request.headers["transfer-encoding"] !== undefined ||
+            (request.headers["content-length"] !== undefined && request.headers["content-length"] !== "0")) {
+          throw new ApiRequestError(400, { code: "SESSION_IDENTITY_OVERRIDE_REJECTED", type: "VALIDATION",
+            severity: "INFO", retryable: false, details: {} });
+        }
         const actor = identityOrThrow(identity);
         const issued = await options.sessionService.issue({
           actor_id: actor.actor_id,

@@ -48,6 +48,7 @@ export type SessionBffRuntimeOptions = Extract<
 > & {
   fetch?: typeof fetch;
   timeoutMs?: number;
+  nativePasswordLogin?: boolean;
 };
 
 export type SessionBoundCoreRead = (path: string) => Promise<Response>;
@@ -168,13 +169,13 @@ function upstreamUnavailable(response: ServerResponse): void {
   });
 }
 
-async function readBody(request: IncomingMessage): Promise<Buffer | undefined> {
+async function readBody(request: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<Buffer | undefined> {
   const chunks: Buffer[] = [];
   let length = 0;
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     length += buffer.length;
-    if (length > MAX_BODY_BYTES) throw new Error("REQUEST_BODY_TOO_LARGE");
+    if (length > maxBytes) throw new Error("REQUEST_BODY_TOO_LARGE");
     chunks.push(buffer);
   }
   return chunks.length === 0 ? undefined : Buffer.concat(chunks);
@@ -309,15 +310,34 @@ async function exchangeSession(
 ): Promise<void> {
   try {
     requireExactOrigin(request.headers, options.controlRoomOrigin);
-    const authorization = validAuthorization(request.headers.authorization);
-    if (!authorization) return authenticationRequired(response);
+    let authorization: string | null | undefined;
+    let passwordBody: string | undefined;
+    if (options.nativePasswordLogin) {
+      if (request.headers.authorization || request.headers['content-type']?.split(';')[0] !== 'application/json') return authenticationRequired(response);
+      const body=await readBody(request,8192);
+      if(!body || body.length>8192) return authenticationRequired(response);
+      let fields: Record<string,unknown>;
+      try { fields=JSON.parse(body.toString('utf8')); } catch { return authenticationRequired(response); }
+      if(!fields || Array.isArray(fields) || Object.keys(fields).some(k=>k!=='email'&&k!=='password') ||
+        typeof fields.email!=='string' || fields.email.length>254 || typeof fields.password!=='string' || !fields.password || Buffer.byteLength(fields.password)>1024) return authenticationRequired(response);
+      passwordBody=JSON.stringify({email:fields.email,password:fields.password});
+    } else {
+      authorization = validAuthorization(request.headers.authorization);
+    }
+    if (!options.nativePasswordLogin && !authorization) return authenticationRequired(response);
     const headers = coreHeaders(request, options);
-    headers.set("authorization", authorization);
-    const upstream = await coreFetch(options, "/api/v1/identity/sessions", {
+    if(authorization) headers.set("authorization", authorization);
+    if(passwordBody) headers.set('content-type','application/json');
+    const upstream = await coreFetch(options, options.nativePasswordLogin ? '/api/v1/identity/password-sessions' : "/api/v1/identity/sessions", {
       headers,
       method: "POST",
+      ...(passwordBody ? {body:passwordBody, redirect:'error' as const} : {}),
     });
     if (!upstream.ok) {
+      if (options.nativePasswordLogin) {
+        writeJson(response, upstream.status === 403 ? 403 : 401, { ok: false, error: { code: "SIGN_IN_REJECTED" } });
+        return;
+      }
       writeJson(response, upstream.status, await apiEnvelope(upstream));
       return;
     }

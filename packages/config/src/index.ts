@@ -93,6 +93,8 @@ export type StagingSessionApiConfig =
       identityAdminBearerToken: string;
       sessionCredentialBearerToken: string;
       sessionExternalSubject: string;
+      operatorSessionBinding?: { bearerToken: string; externalSubject: string };
+      sessionOrganizationId?: string;
     };
 
 export type StagingSessionBffConfig =
@@ -569,10 +571,25 @@ export function loadStagingSessionApiConfig(
     env,
     "MAOS_STAGING_IDENTITY_ADMIN_BEARER_TOKEN",
   );
+  const operatorNames = ["MAOS_STAGING_OPERATOR_SESSION_CREDENTIAL_BEARER_TOKEN",
+    "MAOS_STAGING_OPERATOR_SESSION_EXTERNAL_SUBJECT", "MAOS_STAGING_SESSION_ORGANIZATION_ID"] as const;
+  const hasOperator = operatorNames.some(name => env[name] !== undefined);
+  const operatorSessionBinding = hasOperator ? {
+    bearerToken: requiredValue(env, operatorNames[0]),
+    externalSubject: requiredValue(env, operatorNames[1]),
+  } : undefined;
+  const sessionOrganizationId = hasOperator ? requiredValue(env, operatorNames[2]) : undefined;
+  if (sessionOrganizationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(sessionOrganizationId)) {
+    throw new Error("STAGING_SESSION_ORGANIZATION_INVALID");
+  }
+  if (operatorSessionBinding && operatorSessionBinding.externalSubject === env.MAOS_STAGING_SESSION_EXTERNAL_SUBJECT) {
+    throw new Error("STAGING_SESSION_BINDINGS_INVALID");
+  }
   requireDistinctCredentials([
     bffServiceBearerToken,
     sessionCredentialBearerToken,
     identityAdminBearerToken,
+    ...(operatorSessionBinding ? [operatorSessionBinding.bearerToken] : []),
   ]);
 
   return {
@@ -582,6 +599,7 @@ export function loadStagingSessionApiConfig(
       "MAOS_STAGING_CONTROL_ROOM_ORIGIN",
     ),
     enabled: true,
+    ...(operatorSessionBinding && sessionOrganizationId ? { operatorSessionBinding, sessionOrganizationId } : {}),
     identityAdminActorId: requiredValue(
       env,
       "MAOS_STAGING_IDENTITY_ADMIN_ACTOR_ID",

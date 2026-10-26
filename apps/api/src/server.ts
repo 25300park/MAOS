@@ -68,6 +68,11 @@ import {
   type OfficialSourceAdapter,
 } from "@maos/module-integration";
 import { createApiServer } from "./app.js";
+import { startPrivateInitialPasswordApi } from "./native-password-setup-api.js";
+import { createNativePasswordVerifier, nativePasswordBinding } from "./native-password.js";
+import { PostgresPasswordCredentialRepository } from "@maos/database";
+import { createProjectAdminHttpComposition } from "./project-admin-http.js";
+import { createPostgresProjectAdminLookupRuntime } from "./project-admin-runtime.js";
 import { createAlertEmailApiRuntime } from "./alert-email-runtime.js";
 import { composeAiRegistryRoutes } from "./ai-registry-server-composition.js";
 import { composeStagingClassificationRoutes } from "./classification-server-composition.js";
@@ -108,7 +113,7 @@ import {
 } from "./staging-core-bootstrap-auth.js";
 import {
   createStagingApiAuthenticator,
-  createStagingCredentialVerifier,
+  createBoundSessionCredentialVerifier,
   createStagingIdentityAdminVerifier,
 } from "./staging-session-auth.js";
 
@@ -144,6 +149,32 @@ const stagingSessionRepository =
   stagingSessionConfig.enabled && stagingDatabase
     ? new PostgresSessionRepository(stagingDatabase)
     : undefined;
+const nativePasswordConfig=nativePasswordBinding(process.env);
+if (stagingSessionConfig.enabled && !nativePasswordConfig) throw Error("NATIVE_PASSWORD_REQUIRED_NO_LEGACY_FALLBACK");
+if(nativePasswordConfig && (!stagingDatabase || !stagingSessionRepository)) throw Error('NATIVE_PASSWORD_CONFIG_INVALID');
+const nativePasswordVerifier=nativePasswordConfig && stagingDatabase && stagingSessionRepository
+  ? createNativePasswordVerifier({...nativePasswordConfig,repository:new PostgresPasswordCredentialRepository(stagingDatabase),
+      resolve:id=>stagingSessionRepository.resolveIdentityByActorId(id)}) : undefined;
+// Initial setup is opt-in, private loopback only, and has a dedicated transaction connection.
+// Never add its route to the public routes array below.
+if (process.env.MAOS_NATIVE_PASSWORD_SETUP_ENABLED === "true" && process.env.MAOS_NATIVE_LOGIN_FORWARD_DISABLED !== "true") {
+  if (!nativePasswordConfig || !stagingRuntimeDatabaseConfig) throw Error("SETUP_UNAVAILABLE");
+  const setupDatabase = await openPostgresDatabase(stagingRuntimeDatabaseConfig.databaseUrl);
+  try {
+    const setupServer = await startPrivateInitialPasswordApi({
+      environment: "staging", database: setupDatabase,
+      ...(process.env.MAOS_NATIVE_PASSWORD_SETUP_ISSUANCE_ENABLED === "true" && stagingSessionConfig.enabled ? {issuer: {
+        scope:"project-maos", verify:createStagingIdentityAdminVerifier({bearerToken:stagingSessionConfig.identityAdminBearerToken,
+          identity:{actor_id:stagingSessionConfig.identityAdminActorId,actor_type:"HUMAN",roles:[{id:"role-staging-identity-admin",name:"STAGING_IDENTITY_ADMIN",permissions:[{action:"PROVISION",effect:"ALLOW",environment:"staging",resource:"IDENTITY",risk:"R2",scope:"project-maos"}]}]}})
+      }} : {}),
+      target: {...nativePasswordConfig, login: process.env.MAOS_NATIVE_PASSWORD_LOGIN_ID ?? ""},
+      port: Number(process.env.MAOS_NATIVE_PASSWORD_SETUP_PORT),
+    });
+    setupServer.once("close", () => { void setupDatabase.close(); });
+  } catch {
+    await setupDatabase.close(); throw Error("SETUP_UNAVAILABLE");
+  }
+}
 const stagingSessionAuditDatabase = stagingSessionConfig.enabled
   ? await openPostgresDatabase(stagingRuntimeDatabaseConfig!.databaseUrl)
   : undefined;
@@ -288,17 +319,7 @@ const stagingSessionRuntime =
           find: (sessionId) => stagingSessionRepository.findSession(sessionId),
           resolveIdentity: (actorId) =>
             stagingSessionRepository.resolveIdentityByActorId(actorId),
-          revoke: async (input) => {
-            const current = await stagingSessionRepository.findSession(
-              input.session_id,
-            );
-            return current
-              ? stagingSessionRepository.revokeSession({
-                  ...input,
-                  actor_id: current.actor_id,
-                })
-              : null;
-          },
+          revoke: input => stagingSessionRepository.revokeSession(input),
           touch: (sessionId, expectedVersion, accessedAt) =>
             stagingSessionRepository.touchSession({
               accessedAt,
@@ -317,13 +338,12 @@ const stagingSessionRuntime =
           now: () => new Date(),
           repository: repositoryPort,
         });
-        const sessionCredentialMatch = createStagingCredentialVerifier({
-          bearerToken: stagingSessionConfig.sessionCredentialBearerToken,
-          identity: {
-            actor_id: "credential-match-only",
-            actor_type: "SYSTEM",
-            roles: [],
-          },
+        const sessionCredential = createBoundSessionCredentialVerifier({
+          bindings: [{ bearerToken: stagingSessionConfig.sessionCredentialBearerToken,
+            externalSubject: stagingSessionConfig.sessionExternalSubject },
+            ...(stagingSessionConfig.operatorSessionBinding ? [stagingSessionConfig.operatorSessionBinding] : [])],
+          ...(stagingSessionConfig.sessionOrganizationId ? { organizationId: stagingSessionConfig.sessionOrganizationId } : {}),
+          resolve: subject => stagingSessionRepository.resolveIdentityByExternalSubject(subject),
         });
         const authenticate = createStagingApiAuthenticator({
           bffServiceToken: stagingSessionConfig.bffServiceBearerToken,
@@ -351,12 +371,7 @@ const stagingSessionRuntime =
             },
           }),
           operations: baseAuthenticate,
-          sessionCredential: async (credential) => {
-            if (!(await sessionCredentialMatch(credential))) return null;
-            return stagingSessionRepository.resolveIdentityByExternalSubject(
-              stagingSessionConfig.sessionExternalSubject,
-            );
-          },
+          sessionCredential: nativePasswordConfig ? async () => null : sessionCredential,
           sessionService,
         });
         return {
@@ -366,7 +381,16 @@ const stagingSessionRuntime =
         };
       })()
     : undefined;
-const authenticate = stagingSessionRuntime?.authenticate ?? baseAuthenticate;
+const canonicalAuthenticate = stagingSessionRuntime?.authenticate ?? baseAuthenticate;
+const projectAdminOrganizationId = process.env.MAOS_STAGING_CORE_BOOTSTRAP_ORGANIZATION_ID;
+const projectAdminHttp = config.environment === "staging" && stagingSessionRuntime && stagingDatabase &&
+  projectAdminOrganizationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(projectAdminOrganizationId)
+  ? createProjectAdminHttpComposition({ environment: "staging", organizationId: projectAdminOrganizationId,
+      authenticate: stagingSessionRuntime.authenticate,
+      runtime: createPostgresProjectAdminLookupRuntime({ authenticate: stagingSessionRuntime.authenticate,
+        database: stagingDatabase, organizationId: projectAdminOrganizationId, environment: "staging" }),
+    }) : undefined;
+const authenticate = projectAdminHttp?.authenticate ?? canonicalAuthenticate;
 const unavailableAdapter: DomainReadAdapter = {
   mode: "READ_ONLY",
   read: async () => {
@@ -856,6 +880,7 @@ controlPlane.registerSystem({
   type: "INTERNAL_PLATFORM",
 });
 const routes = [
+  ...(projectAdminHttp?.routes ?? []),
   ...alertEmailRuntime.routes,
   ...composeAiRegistryRoutes(stagingDatabase, {
     environment: config.environment,
@@ -964,6 +989,7 @@ const routes = [
         ),
         ...(stagingSessionRuntime
           ? createIdentitySessionRoutes({
+              ...(nativePasswordVerifier ? {passwordVerifier:process.env.MAOS_NATIVE_LOGIN_FORWARD_DISABLED === "true" ? async () => null : nativePasswordVerifier} : {}),
               bffServiceBearerToken:
                 stagingSessionRuntime.bffServiceBearerToken,
               repository: stagingSessionRepository,

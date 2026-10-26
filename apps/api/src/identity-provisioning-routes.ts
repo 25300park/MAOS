@@ -139,7 +139,7 @@ function validateProvisioning(
       };
 }
 
-function validR0SystemRead(value: unknown): boolean {
+function validR0AssignmentRead(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -147,10 +147,12 @@ function validR0SystemRead(value: unknown): boolean {
   const fields = Object.keys(R0_SYSTEM_READ);
   return (
     Object.keys(permission).length === fields.length &&
+    (permission.resource === "SYSTEM" || permission.resource === "PROJECT") &&
     fields.every(
       (field) =>
+        field === "resource" ||
         permission[field] ===
-        R0_SYSTEM_READ[field as keyof typeof R0_SYSTEM_READ],
+          R0_SYSTEM_READ[field as keyof typeof R0_SYSTEM_READ],
     )
   );
 }
@@ -184,7 +186,7 @@ function validateAssignmentPermissionGrant(
   ) {
     invalid.push("scope");
   }
-  if (!validR0SystemRead(input.permission)) invalid.push("permission");
+  if (!validR0AssignmentRead(input.permission)) invalid.push("permission");
   if (
     !Array.isArray(input.evidence_refs) ||
     input.evidence_refs.length === 0 ||
@@ -282,6 +284,51 @@ export function createIdentityProvisioningRoutes(
             trace_id: context.trace_id,
           });
         } catch (error) {
+          const databaseCode =
+            error &&
+            typeof error === "object" &&
+            "code" in error &&
+            [
+              "42501",
+              "23503",
+              "23505",
+              "23514",
+              "22P02",
+              "42P01",
+              "42703",
+            ].includes(String(error.code))
+              ? String(error.code)
+              : "UNCLASSIFIED";
+          const domainCode =
+            error instanceof Error &&
+            [
+              "ASSIGNMENT_PERMISSION_TARGET_NOT_FOUND",
+              "ASSIGNMENT_PERMISSION_TARGET_AMBIGUOUS",
+              "ASSIGNMENT_PERMISSION_IDENTITY_NOT_FOUND",
+              "ASSIGNMENT_PERMISSION_REPLAY_CONFLICT",
+            ].includes(error.message)
+              ? error.message
+              : "UNCLASSIFIED";
+          const object =
+            error instanceof Error
+              ? ([
+                  "assignment_permissions",
+                  "human_project_assignments",
+                  "audit_records",
+                ].find(
+                  (name) =>
+                    error.message === `permission denied for table ${name}`,
+                ) ?? "UNCLASSIFIED")
+              : "UNCLASSIFIED";
+          console.error(
+            JSON.stringify({
+              diagnostic_code: "ASSIGNMENT_PERMISSION_WRITE_FAILED",
+              database_code: databaseCode,
+              domain_code: domainCode,
+              object,
+              request_id: context.request_id,
+            }),
+          );
           const replayConflict =
             error instanceof Error &&
             error.message === "ASSIGNMENT_PERMISSION_REPLAY_CONFLICT";

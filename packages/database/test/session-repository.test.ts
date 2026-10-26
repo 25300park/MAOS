@@ -11,6 +11,16 @@ import type { MigrationDatabase } from "../src/index.js";
 
 const migrationsDirectory = resolve("packages/database/migrations");
 
+test("ambiguous external subjects cannot merge Humans or cross-organization permissions", async () => {
+  const row = { actor_id: "human-a", organization_id: "org-a", display_name: "Synthetic",
+    external_subject: "synthetic-subject", assignment_id: "assignment-a", scope: "project-maos",
+    action: "CREATE", resource: "SESSION", environment: "staging", risk: "R2", effect: "ALLOW" };
+  const repository = new PostgresSessionRepository({ exec: async () => undefined,
+    query: async <Row>() => ({ rows: [row, { ...row, actor_id: "human-b", organization_id: "org-b" }] as Row[] }),
+  });
+  assert.equal(await repository.resolveIdentityByExternalSubject("synthetic-subject"), null);
+});
+
 const ids = {
   actor: "00000000-0000-4000-8000-000000003001",
   assignment: "00000000-0000-4000-8000-000000003002",
@@ -439,6 +449,16 @@ test("creates, touches, reconstructs, and irreversibly revokes a Session", async
     null,
   );
 
+  await database.query(`INSERT INTO identity.humans(id, organization_id, display_name, external_subject)
+    VALUES ($1,$2,'Synthetic other caller','synthetic-other-caller')`,
+  ["00000000-0000-4000-8000-000000003099", ids.organization]);
+  assert.equal(await restarted.revokeSession({
+    actor_id: "00000000-0000-4000-8000-000000003099",
+    expected_version: 2,
+    revocation_evidence_ref: "evidence://synthetic/cross-account-denied",
+    revoked_at: "2026-09-13T01:45:00.000Z",
+    session_id: ids.session,
+  }), null);
   const revoked = await restarted.revokeSession({
     actor_id: ids.actor,
     audit_evidence_ref: "evidence://session/revoke-audit",

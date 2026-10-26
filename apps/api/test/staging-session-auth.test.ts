@@ -4,6 +4,7 @@ import test from "node:test";
 import type { SessionRecord } from "@maos/contracts";
 import {
   SessionService,
+  authorize,
   type AuthenticationRequestContext,
   type IdentityContext,
   type SessionRepositoryPort,
@@ -13,7 +14,79 @@ import {
   createStagingApiAuthenticator,
   createStagingCredentialVerifier,
   createStagingIdentityAdminVerifier,
+  createBoundSessionCredentialVerifier,
 } from "../src/staging-session-auth.js";
+
+test("closed credential bindings resolve only their canonical Human without sharing permissions", async () => {
+  const owner = { ...sessionCredentialIdentity, organization_id: "org-synthetic", external_subject: "subject-owner" };
+  const operator = { ...owner, actor_id: "human-operator", external_subject: "subject-operator", roles: [] };
+  const bindings = [
+    { bearerToken: "synthetic-owner", externalSubject: owner.external_subject },
+    { bearerToken: "synthetic-operator", externalSubject: operator.external_subject },
+  ];
+  const verify = createBoundSessionCredentialVerifier({
+    bindings, organizationId: "org-synthetic",
+    resolve: async subject => subject === owner.external_subject ? owner : operator,
+  });
+  assert.equal(await verify("synthetic-owner"), owner);
+  assert.equal(await verify("synthetic-operator"), operator);
+  assert.deepEqual((await verify("synthetic-operator"))?.roles, []);
+  assert.equal(await verify("unknown-synthetic"), null);
+  // Configuration is captured, not changed by later caller mutation.
+  bindings[1]!.bearerToken = "synthetic-replaced";
+  assert.equal(await verify("synthetic-replaced"), null);
+});
+
+test("closed bindings reject ambiguous configuration, shared canonical IDs and wrong organizations", async () => {
+  const first = { bearerToken: "synthetic-first", externalSubject: "subject-first" };
+  const second = { bearerToken: "synthetic-second", externalSubject: "subject-second" };
+  const resolve = async (subject: string) => ({ ...sessionCredentialIdentity, external_subject: subject, organization_id: "org-synthetic" });
+  for (const bindings of [[], [first, second, { ...first }], [first, first], [first, { ...second, externalSubject: first.externalSubject }]]) {
+    assert.throws(() => createBoundSessionCredentialVerifier({ bindings, resolve, organizationId: "org-synthetic" }));
+  }
+  const verify = createBoundSessionCredentialVerifier({ bindings: [first, second], resolve, organizationId: "org-synthetic" });
+  assert.equal(await verify(first.bearerToken), null);
+  const wrongOrg = createBoundSessionCredentialVerifier({ bindings: [first], resolve, organizationId: "other-org" });
+  assert.equal(await wrongOrg(first.bearerToken), null);
+});
+
+test("session issuance rejects a target Session header instead of replacing credential identity", async () => {
+  const authenticate = createAuthenticator();
+  assert.equal(await authenticate({ authorization: "Bearer synthetic-session-credential",
+    "x-maos-bff-service-authorization": "Bearer synthetic-bff-service-token",
+    "x-session-id": storedSession.session_id,
+  }, requestContext("/api/v1/identity/sessions")), null);
+});
+
+test("single binding stays compatible; two canonical login actors keep independent R2 permissions", async () => {
+  const owner = { ...sessionCredentialIdentity, organization_id: "org-synthetic", external_subject: "owner-subject" };
+  const operator = { ...owner, actor_id: "human-executor", external_subject: "operator-subject",
+    roles: [{ id: "operator-assignment", name: "project-assignment", permissions: [
+      { action: "CREATE", effect: "ALLOW" as const, environment: "staging", resource: "SESSION", risk: "R2" as const, scope: "project-maos" },
+      { action: "REVOKE", effect: "ALLOW" as const, environment: "staging", resource: "SESSION", risk: "R2" as const, scope: "project-maos" },
+    ] }] };
+  const bindings = [{ bearerToken: "synthetic-owner", externalSubject: owner.external_subject },
+    { bearerToken: "synthetic-executor", externalSubject: operator.external_subject }];
+  const resolve = async (subject: string) => subject === owner.external_subject ? owner : operator;
+  const single = createBoundSessionCredentialVerifier({ bindings: bindings.slice(0, 1), resolve });
+  assert.equal(await single("synthetic-owner"), owner);
+  const authenticate = createStagingApiAuthenticator({
+    bffServiceToken: "synthetic-bff", identityAdmin: async () => null, operations: undefined,
+    sessionService: new SessionService({ repository: new SessionRepository(), now: () => new Date(), audit: { record: () => undefined } }),
+    sessionCredential: createBoundSessionCredentialVerifier({ bindings, organizationId: "org-synthetic", resolve }),
+  });
+  const resolved = await authenticate({ authorization: "Bearer synthetic-executor" }, requestContext("/api/v1/identity/sessions"));
+  assert.equal(resolved?.actor_id, operator.actor_id);
+  assert.equal((await authenticate({ authorization: "Bearer synthetic-owner" }, requestContext("/api/v1/identity/sessions")))?.actor_id, owner.actor_id);
+  assert.ok(resolved);
+  const request = { action: "CREATE", resource: "SESSION", risk: "R2" as const, environment: "staging", scope: "project-maos" };
+  assert.equal(authorize(resolved, request).allowed, true);
+  for (const denied of [{ ...request, resource: "PROJECT", action: "READ", risk: "R0" as const },
+    { ...request, resource: "GOVERNANCE_AUTHORITY_RULE", action: "APPROVE", risk: "R0" as const },
+    { ...request, scope: "other-project" }, { ...request, environment: "production" }]) {
+    assert.equal(authorize(resolved, denied).allowed, false);
+  }
+});
 
 const operationsIdentity: IdentityContext = {
   actor_id: "human-operations",
@@ -220,6 +293,67 @@ test("keeps all four staging authentication paths non-overlapping", async () => 
     ),
     null,
   );
+});
+
+test("both provisioning paths require the existing Identity-admin credential, never a Human session", async (t) => {
+  const paths = [
+    "/api/v1/identity/provisioning/humans",
+    "/api/v1/identity/provisioning/assignment-permissions",
+  ];
+  const server = createApiServer({
+    authenticate: createAuthenticator(),
+    environment: "staging",
+    service: "api",
+    routes: paths.map((path) => ({
+      path,
+      method: "POST",
+      access: {
+        action: "PROVISION",
+        environment: "staging",
+        resource: "IDENTITY",
+        risk: "R2",
+        scope: "organization-maos/project-maos",
+      },
+      handle: ({ identity }) => ({ actor_id: identity?.actor_id }),
+    })),
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  const port = (server.address() as AddressInfo).port;
+  for (const path of paths) {
+    for (const headers of [
+      {},
+      { authorization: "Bearer wrong-admin-token" },
+      { authorization: "Bearer synthetic-session-credential" },
+      { authorization: "Bearer synthetic-operations-token" },
+      {
+        "x-session-id": "session-opaque-reference",
+        "x-maos-bff-service-authorization":
+          "Bearer synthetic-bff-service-token",
+      },
+    ]) {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: "POST",
+        headers,
+      });
+      assert.equal(response.status, 401, path);
+      await response.text();
+    }
+    const accepted = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: "POST",
+      headers: { authorization: "Bearer synthetic-identity-admin-token" },
+    });
+    assert.equal(accepted.status, 200, path);
+    assert.equal(
+      ((await accepted.json()) as { data: { actor_id: string } }).data.actor_id,
+      identityAdmin.actor_id,
+    );
+  }
 });
 
 test("fails closed for malformed, partial, or invalid BFF Session headers", async () => {

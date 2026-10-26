@@ -1,3 +1,4 @@
+import { readRbsPublicCount } from "./rbs-public-count.js";
 import { randomUUID } from "node:crypto";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { loadStagingSessionBffConfig } from "@maos/config";
@@ -25,6 +26,8 @@ import {
   type ClassificationPortalView,
 } from "./classification.js";
 import { loadRoutingPortal, type RoutingPortalView } from "./routing.js";
+import { loadProjectRegistry, loadSystemRegistry, type ProjectRegistryRead, type SystemRegistryRead } from "./registry-reads.js";
+import { loadSystemHealth, type SystemHealth } from "./system-health.js";
 import {
   createSessionBffRequestHandler,
   type SessionBffRuntimeOptions,
@@ -328,6 +331,9 @@ export const CONTROL_ROOM_PREVIEW_OPTIMIZATION: OptimizationView = {
 };
 
 export interface ControlRoomServerOptions {
+  project_registry?: ProjectRegistryRead | undefined;
+  system_registry?: SystemRegistryRead | undefined;
+  system_health?: SystemHealth | undefined;
   ai_registry?: AiRegistryPortalView | undefined;
   classification?: ClassificationPortalView | undefined;
   routing?: RoutingPortalView | undefined;
@@ -360,6 +366,10 @@ function createRenderedControlRoomRequestHandler(
     const spanId = randomUUID();
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     const html = renderControlRoom({
+      account_login: Boolean(options.session_bff?.nativePasswordLogin),
+      project_registry: options.project_registry,
+      system_registry: options.system_registry,
+      system_health: options.system_health,
       ai_registry: options.ai_registry,
       classification: options.classification,
       routing: options.routing,
@@ -410,6 +420,17 @@ export function createControlRoomRequestHandler(
         let aiRegistry = options.ai_registry;
         let classification = options.classification;
         let routing = options.routing;
+        let projectRegistry = options.project_registry;
+        let systemRegistry = options.system_registry;
+        let systemHealth: SystemHealth | undefined;
+        if (path === "/projects" && identity?.permissions.includes("PROJECT:READ")) {
+          projectRegistry = readCore ? await loadProjectRegistry(readCore) : { state: "UNAVAILABLE" };
+        }
+        if (path === "/systems" && identity?.permissions.includes("SYSTEM:READ")) {
+          systemRegistry = readCore ? await loadSystemRegistry(readCore) : { state: "UNAVAILABLE" };
+          systemHealth = await loadSystemHealth(options.session_bff?.fetch);
+          systemHealth.rbsPublicCount = await readRbsPublicCount(options.session_bff?.fetch);
+        }
         if (
           !aiRegistry &&
           path === "/systems/ai-registry" &&
@@ -462,7 +483,7 @@ export function createControlRoomRequestHandler(
           }
         }
         createRenderedControlRoomRequestHandler(
-          { ...options, ai_registry: aiRegistry, classification, routing },
+          { ...options, ai_registry: aiRegistry, classification, routing, project_registry: projectRegistry, system_registry: systemRegistry, system_health: systemHealth },
           identity,
         )(request, response);
       },
