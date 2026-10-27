@@ -390,7 +390,8 @@ const NAVIGATION: readonly NavigationItem[] = [
     permission: "SYSTEM:READ",
     section: "GOVERN",
   },
-  {
+
+  { icon: "→", label: "Routing Flow", path: "/systems/routing", permission: "SYSTEM:READ", section: "GOVERN" },  {
     icon: "◈",
     label: "Marketing",
     path: "/marketing",
@@ -475,6 +476,7 @@ function redact(value: unknown, key = ""): unknown {
 }
 
 function currentPath(itemPath: string, path: string): boolean {
+  if (itemPath === "/systems" && path === "/systems/routing") return false;
   return itemPath === "/today"
     ? path === itemPath || path === "/"
     : path === itemPath || path.startsWith(`${itemPath}/`);
@@ -497,6 +499,31 @@ function navigation(identity: ControlRoomIdentity, path: string): string {
         .join("")}`;
     })
     .join("");
+}
+
+function logoutScript(): string {
+  return `<script data-maos-logout>(()=>{
+    const button=document.getElementById('maos-logout');
+    const status=document.getElementById('maos-logout-status');
+    button?.addEventListener('click',async()=>{
+      if(button.disabled)return;
+      button.disabled=true;
+      status.textContent='';
+      try{
+        const entry=document.cookie.split(';').map(value=>value.trim()).find(value=>value.startsWith('__Host-maos_csrf='));
+        if(!entry)throw new Error('CSRF_UNAVAILABLE');
+        const csrf=decodeURIComponent(entry.slice('__Host-maos_csrf='.length));
+        const response=await fetch('/auth/logout',{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'x-maos-csrf-token':csrf}});
+        if(!response.ok)throw new Error('LOGOUT_UNCONFIRMED');
+        const result=await response.json();
+        if(result.authenticated!==false)throw new Error('LOGOUT_UNCONFIRMED');
+        location.replace('/projects');
+      }catch{
+        status.textContent='Logout could not be confirmed. Refresh and try again.';
+        button.disabled=false;
+      }
+    });
+  })()</script>`;
 }
 
 function status(label: string, style: string): string {
@@ -1025,5 +1052,5 @@ export function renderControlRoom(input: ControlRoomRenderInput): string {
     '<a href="/audit">Open audit →</a>',
     '<span class="permission-note">3 linked records</span>',
   );
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · Development</small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><div class="permission-note">Search coming soon</div><span class="permission-note">Notifications coming soon</span></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · Development</small><button class="btn" type="button" id="maos-logout" style="margin-top:8px">Logout</button><small id="maos-logout-status" role="status" aria-live="polite"></small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><div class="permission-note">Search coming soon</div><span class="permission-note">Notifications coming soon</span></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script>${logoutScript()}</body></html>`;
 }

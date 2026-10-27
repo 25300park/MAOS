@@ -39,8 +39,9 @@ test("Atlas retains working return navigation and no dead detail buttons", () =>
   assert.ok(!main.includes("<button"));
 });
 
-test("Systems does not advertise routing diagnostics when its read model is unavailable", () => {
+test("Systems exposes Routing Flow lookup while missing records remain unavailable", () => {
   const html = renderControlRoom({ identity, path: "/systems" });
-  assert.ok(!html.includes('href="/systems/routing"'));
+  assert.ok(html.includes('href="/systems/routing"'));
+  assert.ok(html.includes("Routing Flow"));
   assert.ok(html.includes("Routing diagnostics currently unavailable"));
 });

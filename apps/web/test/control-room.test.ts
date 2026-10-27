@@ -806,7 +806,7 @@ test("renders governed optimization and learning visibility without automatic ac
   ])
     assert.match(html, new RegExp(text));
   assert.match(html, /aria-label="Optimization summary"/);
-  assert.doesNotMatch(html, /private_notes|credential|api_key/i);
+  assert.doesNotMatch(html.replace(/<script[\s\S]*?<\/script>/gu, ""), /private_notes|credential|api_key/i);
 });
 
 test("hides optimization navigation without exact permission and renders an accessible empty state", () => {

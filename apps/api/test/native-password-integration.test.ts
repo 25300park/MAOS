@@ -1,6 +1,7 @@
 import { createStagingIdentityAdminVerifier } from "../src/staging-session-auth.js";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -319,22 +320,35 @@ test("disposable PostgreSQL: exact credentials, canonical login, restoration, re
   );
   const csrfCookie = cookies.find((c) => c.startsWith(CSRF_COOKIE + "="));
   assert.ok(csrfCookie);
-  const csrf = decodeURIComponent(
-    csrfCookie.split(";")[0]!.slice(CSRF_COOKIE.length + 1),
-  );
-  const logout = await fetch(url + "/auth/logout", {
-    method: "POST",
-    headers: {
-      cookie,
-      origin: "https://web.example.invalid",
-      "x-maos-csrf-token": csrf,
+  const logoutScript = /<script data-maos-logout>([\s\S]*?)<\/script>/u.exec(pageText)?.[1];
+  assert.ok(logoutScript);
+  let clickLogout: (() => Promise<void>) | undefined;
+  let destination = "";
+  const logoutButton = { disabled: false, addEventListener: (_: string, click: () => Promise<void>) => { clickLogout = click; } };
+  const logoutStatus = { textContent: "" };
+  runInNewContext(logoutScript, {
+    document: {
+      getElementById: (id: string) => id === "maos-logout" ? logoutButton : logoutStatus,
+      cookie: csrfCookie.split(";")[0],
+    },
+    location: { replace: (path: string) => { destination = path; } },
+    fetch: async (path: string, init: RequestInit) => {
+      assert.equal(path, "/auth/logout");
+      const headers = new Headers(init.headers);
+      headers.set("cookie", cookie);
+      headers.set("origin", "https://web.example.invalid");
+      return fetch(url + path, { ...init, headers });
     },
   });
-  assert.equal(logout.status, 200);
+  assert.ok(clickLogout);
+  await clickLogout();
+  assert.equal(destination, "/projects");
+  assert.equal(logoutStatus.textContent, "");
   const restored = await (
     await fetch(url + "/projects", { headers: { cookie } })
   ).text();
   assert.ok(restored.includes('id="account-login"'));
+  assert.ok((await (await fetch(url + "/systems", { headers: { cookie } })).text()).includes('id="account-login"'));
   const second = await submit({ email: login, password });
   assert.equal(second.status, 200);
   const secondCookie = second.headers
