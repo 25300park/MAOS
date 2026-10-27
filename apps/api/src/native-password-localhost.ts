@@ -113,7 +113,7 @@ export async function startLocalPasswordSetup(options: {
   server.headersTimeout = 10000;
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(18081, "127.0.0.1", resolve);
   });
   const address = server.address() as AddressInfo;
   origin = `http://127.0.0.1:${address.port}`;

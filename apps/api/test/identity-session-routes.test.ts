@@ -79,6 +79,7 @@ async function fixture(
   options: { includeRevoke?: boolean } = {},
 ) {
   const database = new PGlite();
+  await database.exec("CREATE ROLE maos_staging_runtime");
   t.after(() => database.close());
   await applyMigrations(
     database,

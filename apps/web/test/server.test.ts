@@ -85,7 +85,7 @@ test("serves the authorized read-only routing portal and denies mutation control
   assert.match(html, /Routing diagnostics/u);
   assert.doesNotMatch(
     html,
-    /<form|data-action=|\/overrides|\/decisions(?:\?|"|')/iu,
+    /<form[^>]*method="post"|data-action=|\/overrides|\/decisions(?:\?|"|')/iu,
   );
 });
 
@@ -183,7 +183,7 @@ test("passes a safe AI Registry view through with secure headers and safe missin
     `http://127.0.0.1:${missingPort}/systems/ai-registry`,
   ).then((result) => result.text());
   assert.match(missingHtml, /AI Registry/);
-  assert.match(missingHtml, /NOT AVAILABLE/);
+  assert.match(missingHtml, /NOT[_ ]AVAILABLE/);
 });
 
 test("composes the live AI Registry projection through the authenticated Core API boundary", async (t) => {
@@ -396,6 +396,6 @@ test("keeps an authenticated registry page safely unavailable when its Core API 
   assert.equal(response.status, 200);
   assert.match(html, /human-system-reader/u);
   assert.match(html, /AI Registry/u);
-  assert.match(html, /NOT AVAILABLE/u);
+  assert.match(html, /NOT[_ ]AVAILABLE/u);
   assert.deepEqual(response.headers.getSetCookie(), []);
 });

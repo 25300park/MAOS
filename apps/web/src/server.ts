@@ -445,7 +445,7 @@ export function createControlRoomRequestHandler(
         }
         if (
           !classification &&
-          path === "/systems/classifications" &&
+          (path === "/systems/classifications" || path === "/systems/routing") &&
           identity?.permissions.includes("SYSTEM:READ") &&
           readCore
         ) {

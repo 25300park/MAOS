@@ -346,12 +346,10 @@ test("shows the read-only RBS/Admin pilot boundary and simulated delivery state"
     path: "/systems",
   });
   for (const text of [
-    "RBS Homes",
-    "Admin RBS Homes",
-    "I2 · Observable",
-    "DOMAIN SOURCE OF TRUTH",
-    "READ ONLY",
-    "PREVIEW",
+    "RBS-HOMES Consumer",
+    "RBS-HOMES Admin",
+    "NOT_AVAILABLE",
+    "Console directory",
   ])
     assert.match(systems, new RegExp(text));
   assert.match(systems, /Routing diagnostics currently unavailable/u);

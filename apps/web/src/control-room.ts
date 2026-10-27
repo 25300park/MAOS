@@ -1,10 +1,10 @@
+import { renderAttention, renderRequestOverview, samplePreview } from "./management-center.js";
 import { CONTROL_ROOM_CSS } from "./styles.js";
 import { passwordLoginPage } from "./native-password-login.js";
 import { renderSystemConsoles } from "./system-consoles.js";
 import type { SystemHealth } from "./system-health.js";
 import { renderProjectRegistry, renderSystemRegistry, type ProjectRegistryRead, type SystemRegistryRead } from "./registry-reads.js";
 import {
-  projectAiRegistryPortal,
   renderAiRegistryPortal,
   type AiRegistryPortalView,
 } from "./ai-registry.js";
@@ -555,7 +555,7 @@ function todayPage(identity: ControlRoomIdentity): string {
 
 function projectsPage(registry?: ProjectRegistryRead): string {
   const sample = `<section class="panel"><div class="panel-head"><h2>Company portfolio</h2><div class="utility-row"><button class="btn">Filters</button><button class="btn btn-primary">New project</button></div></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Projects</caption><thead><tr><th>Project</th><th>State</th><th>Owner</th><th>Progress</th><th>Next action</th></tr></thead><tbody><tr><td><a href="/projects/atlas">Project Atlas</a><br><small>Launch readiness</small></td><td>${status("AT RISK", "blocked")}</td><td><span class="owner"><span class="avatar">JK</span>J. Kim</span></td><td><div class="progress"><span style="width:68%"></span></div></td><td>Evidence package</td></tr><tr><td><a href="/projects/revenue-ops">Revenue Operations</a><br><small>Automation controls</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">SL</span>S. Lee</span></td><td><div class="progress"><span style="width:82%"></span></div></td><td>Approval decision</td></tr><tr><td><a href="/projects/market-signal">Market Signal</a><br><small>Research system</small></td><td>${status("ACTIVE", "active")}</td><td><span class="owner"><span class="avatar">MH</span>M. Han</span></td><td><div class="progress"><span style="width:54%"></span></div></td><td>Source validation</td></tr></tbody></table></div></section>`;
-  return `${pageHeading("Portfolio control", "Projects", "Authorized project Registry reads and separate sample previews.")}${renderProjectRegistry(registry ?? { state: "UNAVAILABLE" })}<details style="margin-top:18px"><summary>Sample portfolio preview — not registered projects</summary><p class="permission-note">Demo data only. These samples are not counted as registered projects.</p>${sample}</details>`;
+  return `${pageHeading("Portfolio control", "Projects", "Authorized project Registry reads and separate sample previews.")}${renderProjectRegistry(registry ?? { state: "UNAVAILABLE" })}<details style="margin-top:18px"><summary>Sample Preview · Sample portfolio preview — not registered projects</summary><p class="permission-note">Demo data only. These samples are not counted as registered projects.</p>${sample}</details>`;
 }
 
 function tasksPage(): string {
@@ -676,14 +676,6 @@ function memoryIntegrationPanel(view?: MemoryIntegrationView): string {
   return `<div class="section-title"><h2>AI Memory Gateway Integration</h2><span class="permission-note">AI Memory Gateway is source of truth · MAOS stores references and governance metadata only</span></div><section class="panel" aria-label="AI Memory Gateway integration"><div class="panel-head"><h2>${escapeHtml(view.gateway_id)}</h2>${status(view.health, style)}</div><dl class="fact-grid"><div class="fact"><dt>Context status</dt><dd>${status(view.last_context_status, style)}</dd></div><div class="fact"><dt>Provenance issues</dt><dd>${view.provenance_issues}</dd></div><div class="fact"><dt>Requests</dt><dd>${view.request_count}</dd></div><div class="fact"><dt>Failure / latency</dt><dd>${Math.round(view.failure_rate * 100)}% · ${Math.round(view.average_latency_ms)} ms</dd></div></dl></section>`;
 }
 
-function systemsPage(
-  controlPlane?: ControlPlaneView,
-  memoryIntegration?: MemoryIntegrationView,
-  rbsAdmin?: RbsAdminView,
-): string {
-  const scoped = controlPlane ? controlPlaneScope(controlPlane) : "";
-  return `<p class="permission-note">Sample systems preview — not live Registry records or current connectivity.</p>${pageHeading("Platform visibility", "Systems", "Health is explicit and dependency-aware. UNKNOWN never appears as HEALTHY.")}<section class="panel"><div class="panel-head"><h2>AI systems</h2><span class="permission-note">SYSTEM:READ · read-only</span></div><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Provider, model, host, capability, compatibility, and domain restrictions.</p><a href="/systems/routing">Routing diagnostics</a><p class="permission-note">Canonical redacted EWP-07 decisions, candidates, and bounded observability only.</p></div></section>${scoped}${memoryIntegrationPanel(memoryIntegration)}${rbsAdminPanel(rbsAdmin)}<div class="section-title"><h2>Phase 1 operational dependencies</h2></div><section class="panel"><div class="panel-head"><h2>Sample systems and dependencies</h2><span class="permission-note">Pilot boundary · READ ONLY · domain systems remain source of truth</span></div><div class="table-wrap"><table class="data-table"><caption class="sr-only">Sample systems and dependencies</caption><thead><tr><th>System</th><th>Type</th><th>Health</th><th>Integration</th><th>Owner / boundary</th></tr></thead><tbody><tr><td><strong>MAOS Core API</strong></td><td>INTERNAL_PLATFORM</td><td>${status("HEALTHY", "healthy")}</td><td>Native</td><td>Platform Team</td></tr><tr><td><strong>AI Memory Gateway</strong></td><td>MEMORY_SYSTEM</td><td>${status("HEALTHY", "healthy")}</td><td>I2 · Observable</td><td>Knowledge Team</td></tr><tr><td><strong>RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>PUBLIC_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Admin RBS Homes</strong><br><small>PREVIEW · readiness awaiting fresh evidence</small></td><td>INTERNAL_PLATFORM</td><td>${status("UNKNOWN", "waiting")}</td><td>I2 · Observable</td><td>Platform Owner<br><small>DOMAIN SOURCE OF TRUTH</small></td></tr><tr><td><strong>Local Runner 2</strong></td><td>INFRASTRUCTURE</td><td>${status("DEGRADED", "approval")}</td><td>Registered provider</td><td>Platform Team</td></tr><tr><td><strong>CRM</strong></td><td>DOMAIN_APPLICATION</td><td>${status("UNKNOWN", "waiting")}</td><td>I0 · Independent</td><td>Revenue Ops</td></tr></tbody></table></div></section>`;
-}
 
 function rbsAdminPanel(view?: RbsAdminView): string {
   if (!view) return "";
@@ -837,10 +829,10 @@ function routeContent(input: ControlRoomRenderInput): string {
       state: input.state,
     })}${memoryIntegrationPanel(input.memory_integration)}`;
   if (input.state && input.state !== "ready") return statePage(input.state);
-  if (path === "/today") return todayPage(input.identity!);
-  if (path === "/projects/atlas") return atlasProjectPage();
+  if (path === "/today") return renderAttention() + samplePreview(todayPage(input.identity!));
+  if (path === "/projects/atlas") return samplePreview(atlasProjectPage());
   if (path === "/projects" || path.startsWith("/projects/"))
-    return projectsPage(input.project_registry);
+    return projectsPage(input.project_registry) + renderAttention();
   if (path === "/tasks") return tasksPage();
   if (path.startsWith("/tasks/")) return taskDetail(path, input.identity!);
   if (path === "/ai-company") return aiCompanyPage();
@@ -853,21 +845,16 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/operations") return operationsPage(input.operations);
   if (path === "/optimization") return optimizationPage(input.optimization);
   if (path === "/systems/ai-registry")
-    return renderAiRegistryPortal(
-      input.ai_registry ?? projectAiRegistryPortal({}),
-    );
+    return input.ai_registry ? renderAiRegistryPortal(input.ai_registry)
+      : `${pageHeading("System registry", "AI Registry", "Authorized read-only Registry projection.")}<p role="status" data-source-kind="NOT_AVAILABLE">AI Registry: NOT_AVAILABLE. No current records were returned; no observation time is inferred.</p>`;
   if (path === "/systems/classifications" && input.classification)
     return renderClassificationPortal(input.classification);
-  if (path === "/systems/routing" && input.routing)
-    return renderRoutingPortal(input.routing);
+  if (path === "/systems/routing")
+    return renderRequestOverview(input.routing, input.classification) + (input.routing ? renderRoutingPortal(input.routing) : '<p role="status">Routing: NOT_AVAILABLE. Provide an existing request ID; access remains restricted by the source API.</p>');
   if (path === "/systems" && input.system_registry)
-    return `${pageHeading("Platform visibility", "Systems", "Authorized system Registry records; no inferred health or project membership.")}${renderSystemConsoles(input.system_health)}${renderSystemRegistry(input.system_registry)}<section class="panel"><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Read-only availability; no execution authority.</p></div></section>`;
+    return `${pageHeading("Platform visibility", "Systems", "Authorized system Registry records; no inferred health or project membership.")}${renderSystemConsoles(input.system_health)}${renderSystemRegistry(input.system_registry)}${renderRequestOverview()}<section class="panel"><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Read-only availability; no execution authority.</p></div></section>`;
   if (path === "/systems")
-    return renderSystemConsoles(input.system_health) + systemsPage(
-      input.control_plane,
-      input.memory_integration,
-      input.rbs_admin,
-    );
+    return renderSystemConsoles(input.system_health) + (input.control_plane ? controlPlaneScope(input.control_plane) : renderSystemRegistry({ state: "UNAVAILABLE" })) + memoryIntegrationPanel(input.memory_integration) + rbsAdminPanel(input.rbs_admin) + renderRequestOverview() + '<p>Routing diagnostics currently unavailable until an authorized request is selected.</p><a href="/systems/ai-registry">AI Registry</a>';
   if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
   if (path === "/crm") return crmPage(input.identity!, input.crm);

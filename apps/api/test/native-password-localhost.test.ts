@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:net";
+import { request } from "node:http";
 import { randomBytes } from "node:crypto";
 import { startLocalPasswordSetup } from "../src/native-password-localhost.js";
 
@@ -15,6 +17,12 @@ test("loopback-only setup rejects cross-origin and confirms password without dis
   });
   t.after(() => app.close());
   assert.equal(app.address, "127.0.0.1");
+  assert.equal(app.url, "http://127.0.0.1:18081/");
+  const wrongHost = await new Promise<number>((resolve, reject) => {
+    const req = request(app.url, { headers: { host: "evil.invalid:18081" } }, res => { res.resume(); resolve(res.statusCode!); });
+    req.on("error", reject); req.end();
+  });
+  assert.equal(wrongHost, 403);
   const page = await fetch(app.url);
   const html = await page.text();
   const csrf = /const csrf="([a-f0-9]+)"/.exec(html)![1]!;
@@ -91,4 +99,13 @@ test("setup is bounded in time and rejects concurrent consumption and identity o
   t.after(() => expired.close());
   await new Promise((r) => setTimeout(r, 30));
   await assert.rejects(fetch(expired.url));
+});
+
+test("occupied canonical port fails closed without fallback", async (t) => {
+  const blocker = createServer();
+  await new Promise<void>((resolve, reject) => { blocker.once("error", reject); blocker.listen(18081, "127.0.0.1", resolve); });
+  t.after(() => blocker.close());
+  let unexpected: Awaited<ReturnType<typeof startLocalPasswordSetup>> | undefined;
+  t.after(() => unexpected?.close());
+  await assert.rejects(async () => { unexpected = await startLocalPasswordSetup({ login: "fixture@example.invalid", complete: async () => { throw Error("must not run"); } }); }, { code: "EADDRINUSE" });
 });
