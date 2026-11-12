@@ -64,7 +64,7 @@ export async function loadProjectRegistry(read: SessionBoundCoreRead): Promise<P
 
 export async function loadSystemRegistry(read: SessionBoundCoreRead): Promise<SystemRegistryRead> {
   try {
-    const data = await readEnvelope(read, "/api/v1/control-plane");
+    const data = await readEnvelope(read, "/api/v1/systems");
     if (data === "RESTRICTED") return { state: data };
     const rows = object(data.entity)?.systems;
     if (!Array.isArray(rows)) throw Error("SYSTEM_RESPONSE_INVALID");
@@ -93,5 +93,5 @@ export function renderProjectRegistry(view: ProjectRegistryRead): string {
 
 export function renderSystemRegistry(view: SystemRegistryRead): string {
   const rows = view.state === "AVAILABLE" ? view.records.map(s => `<tr><td>${escape(s.name)}<br><small>${escape(s.id)}</small></td><td>${escape(s.lifecycle)}</td><td>${escape(s.health)}</td><td>${escape(s.owner.id)} · ${escape(s.owner.type)}</td><td>${escape(s.source_of_truth)}</td><td>Capability / responsibility: NOT_AVAILABLE<br>Operational / delegation state: NOT_AVAILABLE<br>Last meaningful update: NOT_AVAILABLE</td></tr>`).join("") : "";
-  return `<section class="panel" data-source-kind="AUTHORITATIVE_CURRENT" aria-label="Authorized system records"><div class="panel-head"><h2>System records</h2><span class="permission-note">Read-only Registry view</span></div><div class="panel-body"><p>AUTHORITATIVE_CURRENT — Source: authenticated Control Plane. Health is source-reported, not an inferred uptime check. System records are distinct from project records and their Portal bindings. No project-system relationship or live connectivity is inferred.</p>${view.state === "AVAILABLE" ? `<div class="table-wrap"><table class="data-table"><caption>Authorized systems</caption><thead><tr><th>System / identity</th><th>Lifecycle</th><th>Reported health</th><th>Owner</th><th>Source of truth</th><th>Operational evidence</th></tr></thead><tbody>${rows}</tbody></table></div>` : unavailable(view.state, "system records")}</div></section>`;
+  return `<section class="panel" data-source-kind="AUTHORITATIVE_CURRENT" aria-label="Authorized system records"><div class="panel-head"><h2>System records</h2><span class="permission-note">Read-only Registry view</span></div><div class="panel-body"><p>AUTHORITATIVE_CURRENT — Source: authenticated, project-scoped Systems Registry. Health is source-reported, not an inferred uptime check. System records are distinct from project records and their Portal bindings. No project-system relationship or live connectivity is inferred.</p>${view.state === "AVAILABLE" ? `<div class="table-wrap"><table class="data-table"><caption>Authorized systems</caption><thead><tr><th>System / identity</th><th>Lifecycle</th><th>Reported health</th><th>Owner</th><th>Source of truth</th><th>Operational evidence</th></tr></thead><tbody>${rows}</tbody></table></div>` : unavailable(view.state, "system records")}</div></section>`;
 }

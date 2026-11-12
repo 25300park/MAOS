@@ -111,3 +111,5 @@ export * from "./organization-project-admin-authority.js";
 
 export { PostgresPasswordCredentialRepository } from "./password-credential-repository.js";
 export { PostgresPasswordSetupRepository, type InitialPasswordInput } from "./password-setup-repository.js";
+
+export { PostgresSystemsReadRepository, type SystemsReadInput, type SystemReadRecord } from './systems-read-repository.js';

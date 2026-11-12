@@ -39,7 +39,7 @@ for (const scenario of ["project", "project-denied", "project-error", "project-e
         if (scenario.endsWith("denied")) return new Response("private error", { status: 403 });
         if (scenario === "project-error") throw Error("private transport error");
         if (path === "/api/v1/phase14/portal") return Response.json({ ok: true, data: { project: scenario === "project-empty" ? null : project } });
-        if (path === "/api/v1/control-plane") return Response.json({ ok: true, data: { entity: {
+        if (path === "/api/v1/systems") return Response.json({ ok: true, data: { entity: {
           systems: scenario === "systems-invalid" ? [{ id: "maos" }] : [{ id: "maos", name: "Real authorized system", lifecycle: "ACTIVE", health: "UNKNOWN", owner: { id: "owner", type: "HUMAN" }, source_of_truth: "MAOS" }],
         } } });
         throw Error("Unexpected API");
@@ -59,7 +59,7 @@ for (const scenario of ["project", "project-denied", "project-error", "project-e
       assert.ok(html.includes(scenario === "atlas" ? "<h1>Project Atlas</h1>" : "Screen not available"));
       return;
     }
-    assert.deepEqual(calls, ["/api/v1/identity/session-context", ...(scenario.startsWith("systems") ? ["/api/v1/control-plane", "/health", "/api/health", "/api/units"] : ["/api/v1/phase14/portal"])]);
+    assert.deepEqual(calls, ["/api/v1/identity/session-context", ...(scenario.startsWith("systems") ? ["/api/v1/systems", "/health", "/api/health", "/api/units"] : ["/api/v1/phase14/portal"])]);
     if (scenario === "project") {
       const registered = html.split('aria-label="Authorized registered projects"')[1]?.split("</section>")[0] ?? "";
       assert.ok(registered.includes("project-maos"));

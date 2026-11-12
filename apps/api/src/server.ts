@@ -90,6 +90,8 @@ import {
 import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createCoreBootstrapRoutes } from "./core-bootstrap-routes.js";
+import { createSystemsReadRoutes } from './systems-read-routes.js';
+import { PostgresSystemsReadRepository } from '@maos/database';
 import { createCommandIntakeRoutes } from "./command-intake-routes.js";
 import { createPhase14PortalRoutes } from "./phase14-portal-routes.js";
 import { createPhase14RuntimeRoutes } from "./phase14-runtime-routes.js";
@@ -1105,6 +1107,8 @@ const routes = [
     environment: config.environment,
     scope: "project-maos",
   }),
+  ...createSystemsReadRoutes(stagingDatabase ? new PostgresSystemsReadRepository(stagingDatabase) : undefined,
+    {environment:config.environment,scope:'project-maos',projectId:stagingCommandProjectId}),
   ...createControlPlaneRoutes(controlPlane, {
     environment: config.environment,
     system_ids: ["maos"],

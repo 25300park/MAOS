@@ -29,10 +29,10 @@ test("project reads fail closed for denied, empty, malformed, failed and transpo
   assert.equal((await loadProjectRegistry(async () => { throw Error("private error"); })).state, "UNAVAILABLE");
 });
 
-test("systems consume exact control plane read without manufacturing health or bindings", async () => {
+test("systems consume exact scoped systems read without manufacturing health or bindings", async () => {
   const system = { id: "maos", name: "MAOS", lifecycle: "ACTIVE", health: "UNKNOWN", owner: { id: "owner", type: "HUMAN" }, source_of_truth: "MAOS" };
   const view = await loadSystemRegistry(async path => {
-    assert.equal(path, "/api/v1/control-plane");
+    assert.equal(path, "/api/v1/systems");
     return Response.json({ ok: true, data: { entity: { systems: [system] } } });
   });
   const html = renderSystemRegistry(view);
