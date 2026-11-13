@@ -44,14 +44,14 @@ test("renders a semantic Control Room shell and the complete authorized navigati
   }
   for (const label of [
     "Today",
-    "Projects",
+    "프로젝트",
     "Task Center",
     "AI Company",
     "Agent Registry",
     "Runs",
     "Approval Center",
     "Alerts",
-    "Systems",
+    "연결 시스템",
     "Development",
     "Deployments",
   ]) {
@@ -161,7 +161,7 @@ test("filters navigation and governed actions by exact permission", () => {
     path: "/today",
   });
   assert.match(html, />Today</);
-  assert.match(html, />Projects</);
+  assert.match(html, />프로젝트</);
   assert.doesNotMatch(html, />Approval Center</);
   assert.doesNotMatch(html, /Approve selected/);
   assert.match(html, /Observer access/);
@@ -294,7 +294,7 @@ test("renders a useful not-found state without leaking unauthorized navigation",
   });
   assert.match(html, /Screen not available/);
   assert.match(html, /Return to Today/);
-  assert.doesNotMatch(html, />Systems</);
+  assert.doesNotMatch(html, />연결 시스템</);
 });
 
 test("renders the System Development Workspace with task-scoped delivery context", () => {

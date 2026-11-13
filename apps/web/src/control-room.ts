@@ -315,7 +315,7 @@ const NAVIGATION: readonly NavigationItem[] = [
   },
   {
     icon: "◫",
-    label: "Projects",
+    label: "프로젝트",
     path: "/projects",
     permission: "PROJECT:READ",
     section: "OPERATE",
@@ -385,13 +385,13 @@ const NAVIGATION: readonly NavigationItem[] = [
   },
   {
     icon: "◉",
-    label: "Systems",
+    label: "연결 시스템",
     path: "/systems",
     permission: "SYSTEM:READ",
     section: "GOVERN",
   },
 
-  { icon: "→", label: "Routing Flow", path: "/systems/routing", permission: "SYSTEM:READ", section: "GOVERN" },  {
+  { icon: "→", label: "요청 흐름 조회", path: "/systems/routing", permission: "SYSTEM:READ", section: "GOVERN" },  {
     icon: "◈",
     label: "Marketing",
     path: "/marketing",
@@ -491,7 +491,7 @@ function navigation(identity: ControlRoomIdentity, path: string): string {
           identity.permissions.includes(item.permission),
       );
       if (items.length === 0) return "";
-      return `<div class="nav-section">${section}</div>${items
+      return `<div class="nav-section">${({ OPERATE: "운영", GOVERN: "조회 및 관리", BUILD: "개발" })[section]}</div>${items
         .map(
           (item) =>
             `<a class="nav-link" href="${item.path}"${currentPath(item.path, path) ? ' aria-current="page"' : ""}><span class="nav-icon" aria-hidden="true">${item.icon}</span><span>${escapeHtml(item.label)}</span></a>`,
@@ -879,9 +879,9 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/systems/routing")
     return renderRequestOverview(input.routing, input.classification) + (input.routing ? renderRoutingPortal(input.routing) : '<p role="status">Routing: NOT_AVAILABLE. Provide an existing request ID; access remains restricted by the source API.</p>');
   if (path === "/systems" && input.system_registry)
-    return `${pageHeading("Platform visibility", "Systems", "Authorized system Registry records; no inferred health or project membership.")}${renderSystemConsoles(input.system_health)}${renderSystemRegistry(input.system_registry)}${renderRequestOverview()}<section class="panel"><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Read-only availability; no execution authority.</p></div></section>`;
+    return `${pageHeading("Platform visibility", "Systems", "Authorized system Registry records; no inferred health or project membership.")}${renderSystemRegistry(input.system_registry)}${renderSystemConsoles(input.system_health)}${renderRequestOverview()}<section class="panel"><div class="panel-body"><a href="/systems/ai-registry">AI Registry</a><p class="permission-note">Read-only availability; no execution authority.</p></div></section>`;
   if (path === "/systems")
-    return renderSystemConsoles(input.system_health) + (input.control_plane ? controlPlaneScope(input.control_plane) : renderSystemRegistry({ state: "UNAVAILABLE" })) + memoryIntegrationPanel(input.memory_integration) + rbsAdminPanel(input.rbs_admin) + renderRequestOverview() + '<p>Routing diagnostics currently unavailable until an authorized request is selected.</p><a href="/systems/ai-registry">AI Registry</a>';
+    return (input.control_plane ? controlPlaneScope(input.control_plane) : renderSystemRegistry({ state: "UNAVAILABLE" })) + renderSystemConsoles(input.system_health) + memoryIntegrationPanel(input.memory_integration) + rbsAdminPanel(input.rbs_admin) + renderRequestOverview() + '<p>Routing diagnostics currently unavailable until an authorized request is selected.</p><a href="/systems/ai-registry">AI Registry</a>';
   if (path === "/marketing") return marketingPage(input.marketing);
   if (path === "/ai-mls") return aiMlsPage(input.ai_mls);
   if (path === "/crm") return crmPage(input.identity!, input.crm);
@@ -1052,5 +1052,5 @@ export function renderControlRoom(input: ControlRoomRenderInput): string {
     '<a href="/audit">Open audit →</a>',
     '<span class="permission-note">3 linked records</span>',
   );
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · Development</small><button class="btn" type="button" id="maos-logout" style="margin-top:8px">Logout</button><small id="maos-logout-status" role="status" aria-live="polite"></small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><div class="permission-note">Search coming soon</div><span class="permission-note">Notifications coming soon</span></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script>${logoutScript()}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17251e"><title>${escapeHtml(title)} · MAOS Control Room</title><style>${CONTROL_ROOM_CSS}</style></head><body><a class="skip-link" href="#main-content">Skip to main content</a><div class="mobile-overlay" data-close-nav></div><div class="app-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">M</span><div><strong>MAOS</strong><small>Control Room</small></div></div><nav class="primary-nav" aria-label="Primary navigation">${navigation(input.identity, path)}</nav><div class="sidebar-foot"><span class="avatar">${escapeHtml(initials)}</span><div><small>현재 사용자</small><strong>${escapeHtml(input.identity.display_name)}</strong><small>${escapeHtml(input.identity.role)} · ${escapeHtml(process.env.MAOS_ENV === "staging" ? "Staging" : "환경 미확인")}</small><button class="btn" type="button" id="maos-logout" style="margin-top:8px">로그아웃 (Logout)</button><small id="maos-logout-status" role="status" aria-live="polite"></small></div></div></aside><div class="workspace"><header class="topbar"><button class="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" data-menu-button>☰</button><div class="breadcrumb"><span>Control Room /</span> ${escapeHtml(title)}</div><div class="command"><span class="permission-note">현재 환경: ${escapeHtml(process.env.MAOS_ENV === "staging" ? "Staging" : "환경 미확인")}</span></div></header><main class="main" id="main-content" tabindex="-1">${accessNote}${content}<footer class="footer-meta" aria-label="Request context"><span>Request <code>${escapeHtml(context.request_id)}</code></span><span>Correlation <code>${escapeHtml(context.correlation_id)}</code></span><span>Trace <code>${escapeHtml(context.trace_id)}</code></span></footer></main></div></div><script>(()=>{const b=document.querySelector('[data-menu-button]');const close=()=>{document.body.classList.remove('nav-open');b?.setAttribute('aria-expanded','false')};b?.addEventListener('click',()=>{const open=document.body.classList.toggle('nav-open');b.setAttribute('aria-expanded',String(open))});document.querySelector('[data-close-nav]')?.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close()})})()</script>${logoutScript()}</body></html>`;
 }
