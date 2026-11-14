@@ -56,7 +56,7 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
 
   // New phrasing must retain the same permission and downstream boundaries.
   for (const message of ["서버 상태 괜찮아?", "AIDOS는 연결됐어?", "임대 매물 몇 개 있어?"]) {
-    const before=calls.length;
+    const before:number=calls.length;
     assert.equal((await send(headers,{message})).status,403);
     assert.equal(calls.length,before+1); // Session context only; no tool read.
   }
@@ -71,14 +71,14 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   const naturalRbs=await send(headers,{message:"임대 매물 몇 개 있어?"});
   assert.equal((await naturalRbs.json()).answer.count,8);
   for (const message of ["그건 몇 개야?","개발 현황과 서버 상태 알려줘","서버 상태 확인하고 배포해"]) {
-    const before=calls.length;const response=await send(headers,{message});
+    const before:number=calls.length;const response=await send(headers,{message});
     assert.equal(response.status,200);
     assert.ok(["CLARIFICATION_REQUIRED","EXECUTION_DISABLED"].includes((await response.json()).answer.state));
     assert.equal(calls.length,before+1);
   }
   // A different authenticated session cannot inherit the preceding result.
   const other="synthetic-other-session";const otherCsrf=createCsrfToken(other,secret);
-  const before=calls.length;
+  const before:number=calls.length;
   const followup=await send({...headers,cookie:`__Host-maos_session=${other}; __Host-maos_csrf=${otherCsrf}`,"x-maos-csrf-token":otherCsrf},{message:"그건?"});
   assert.equal((await followup.json()).answer.state,"CLARIFICATION_REQUIRED");assert.equal(calls.length,before+1);
 
@@ -87,7 +87,7 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   assert.equal((await send({...headers,"x-maos-csrf-token":"wrong"},briefing)).status,403);
   for (const permission of ["PROJECT", "SYSTEM", "NONE"]) {
     development=permission==="PROJECT";allowed=permission!=="NONE";
-    const before=calls.length;const res=await send(headers,briefing);assert.equal(res.status,200);
+    const before:number=calls.length;const res=await send(headers,briefing);assert.equal(res.status,200);
     const answer=(await res.json()).answer;assert.match(answer.message,/ACCESS_DENIED/);
     const used=calls.slice(before);
     if(permission!=="PROJECT")assert.ok(!used.some(path=>path.includes("portal")||path.includes("development-status")));
@@ -97,12 +97,24 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
 
   development=true;allowed=true;
   for (const message of ["현재 막힌 개발 업무는?","개발팀에서 무엇을 기다리고 있어?","지금 확인해야 할 문제는?","다음 개발 작업은 뭐야?"]) {
-    const before=calls.length;const response=await send(headers,{message});assert.equal(response.status,200);
+    const before:number=calls.length;const response=await send(headers,{message});assert.equal(response.status,200);
     const answer=(await response.json()).answer;assert.equal(answer.access,"PROJECT:READ");assert.equal(answer.freshness,"UNKNOWN");assert.match(answer.message,/현재 페이지/);
     assert.ok(calls.slice(before).some(path=>path.endsWith("/development-status")));
     assert.ok(!calls.slice(before).some(path=>path.endsWith("/systems")||path===RBS_COUNT_URL));
   }
   development=false;
   const beforeM3=calls.length;assert.equal((await send(headers,{message:"현재 막힌 개발 업무는?"})).status,403);assert.equal(calls.length,beforeM3+1);
+
+  for(const message of ["MAOS 운영 현황 보고서 작성해 줘.","개발팀에 로그인 오류 수정 지시해.","MAOS 시스템 장애 점검 업무 만들어 줘."]) {
+    assert.equal((await send({...headers,cookie:""},{message})).status,401);
+    assert.equal((await send({...headers,"x-maos-csrf-token":"wrong"},{message})).status,403);
+    allowed=false;const before:number=calls.length;
+    const denied=await send(headers,{message});assert.equal(denied.status,200);
+    assert.match((await denied.json()).answer.message,/ACCESS_DENIED/);
+    assert.equal(calls.length,before+1);
+    allowed=true;development=true;
+    const res=await send(headers,{message});assert.equal(res.status,200);
+    assert.equal((await res.json()).answer.state,message.includes("보고서")?"PARTIAL":"DRAFT_ONLY");
+  }
 
 });

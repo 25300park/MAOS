@@ -68,7 +68,7 @@ test("rendered chat submits input only in JSON body and renders untrusted output
   const form = {addEventListener: (_name:string, handler:typeof submit) => {submit=handler;},querySelector:()=>button};
   const calls: string[]=[];
   const script=renderChat().split("<script>")[1]!.split("</script>")[0]!;
-  new Script(script).runInNewContext({document:{cookie:"__Host-maos_csrf=synthetic",getElementById:(id:string)=>id==="maos-chat"?form:id==="maos-chat-input"?input:result},fetch:async (url:string, init:RequestInit)=>{
+  new Script(script).runInNewContext({document:{cookie:"__Host-maos_csrf=synthetic",getElementById:(id:string)=>id==="maos-chat"?form:id==="maos-chat-input"?input:id==="maos-chat-copy"?{disabled:true,addEventListener(){}}:id==="maos-chat-copy-status"?{textContent:""}:result},fetch:async (url:string, init:RequestInit)=>{
     calls.push(url);assert.equal(url,"/chat/query");assert.equal(init.method,"POST");
     assert.equal(JSON.parse(String(init.body)).message,input.value);
     return Response.json({answer:{kind:"QUESTION",state:"AVAILABLE",message:"<img src=x onerror=alert(1)>",source:RBS_COUNT_URL,observedAt:"2026-01-01T00:00:00Z",access:"PUBLIC_READ_ONLY"}});

@@ -1,3 +1,4 @@
+import {readCeoReport,readTaskDraft} from "./report-draft.js";
 import { isSystemQuestion, readSystemStatus } from "./system-status.js";
 import { randomUUID } from "node:crypto";
 import { answerChat, chatIntent } from "./unified-chat.js";
@@ -504,6 +505,16 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
     if (typeof value !== "string" || !value.trim() || value.length > 1000) throw new Error("INVALID_INPUT");
     message = value;
   } catch { writeJson(response, 422, {ok:false,error:{code:"CHAT_INPUT_INVALID"}}); return; }
+  const intent = chatIntent(message);
+  if (intent === "CEO_REPORT" || intent === "TASK_DRAFT") {
+    const read: SessionBoundCoreRead = path => coreFetch(options,path,{
+      headers:coreHeaders(request,options,reference),method:"GET",
+    });
+    const answer = intent === "CEO_REPORT"
+      ? await readCeoReport(message,identity.permissions,read)
+      : await readTaskDraft(message,identity.permissions,read);
+    writeJson(response,200,{ok:true,answer}); return;
+  }
   if (chatIntent(message) === "BRIEFING") {
     const answer = await readOperationsBriefing(identity.permissions, path => coreFetch(options,path,{
       headers:coreHeaders(request,options,reference),method:"GET",
