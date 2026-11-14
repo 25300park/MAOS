@@ -17,11 +17,14 @@ export interface ChatAnswer {
 
 // Whole-utterance grammar, not free-form AI classification. Unknown qualifiers,
 // multi-tool questions and unbound follow-ups never select a reader.
-export function chatIntent(input: string): "DEVELOPMENT" | "SYSTEMS" | "RBS" | "INSTRUCTION" | "UNSUPPORTED" | "CLARIFY" {
+export function chatIntent(input: string): "BRIEFING" | "DEVELOPMENT" | "SYSTEMS" | "RBS" | "INSTRUCTION" | "UNSUPPORTED" | "CLARIFY" {
   const text = input.normalize("NFKC").trim().replace(/\s+/gu, " ").replace(/[?.!。？！]+$/u, "").toLowerCase();
   if (/만들|생성|게시|실행|전송|삭제|수정|배포|등록해|create|execute|publish|delete|deploy/u.test(text)) return "INSTRUCTION";
   const q = text.replace(/\s+/gu, "");
   const ask = "(?:알려줘|알려주세요|보여줘|보여주세요|말해줘|말해주세요|요약해줘|보고해줘)";
+  if (/^(?:maos|마오스)운영(?:상황|현황)(?:을)?종합해(?:줘|주세요)$/u.test(q) ||
+      /^(?:현재)?개발과시스템상태(?:를)?요약해(?:줘|주세요)$/u.test(q) ||
+      /^(?:maos|마오스)(?:전체)?운영브리핑(?:을)?보여(?:줘|주세요)$/u.test(q)) return "BRIEFING";
   const development = [
     /^(?:maos|마오스)?개발은어디까지진행됐어$/u,
     /^현재완료된작업과남은작업알려줘$/u,
@@ -69,7 +72,7 @@ export async function answerChat(input: string, read: typeof fetch): Promise<Cha
 }
 
 export function renderChat(): string {
-  return `<section class="panel" aria-label="CEO 통합 채팅"><div class="panel-head"><h2>CEO 통합 채팅</h2><span>조회 전용 · 저장/실행 없음</span></div><div class="panel-body"><p>지원 질문: RBS 공개 임대 검색 결과는 몇 건인가요?</p><p>시스템 현황 질문: 현재 연결된 시스템 알려줘. / MAOS 시스템 상태는? / 정상 작동하지 않는 시스템이 있어?</p><p>개발 기록 질문: MAOS 개발은 어디까지 진행됐어? / 현재 완료된 작업과 남은 작업 알려줘. / 개발이 막힌 이유가 뭐야? 회계·인사·마케팅·AIDOS 현재 실행: NOT_CONNECTED. 업무 지시는 실행하지 않습니다.</p><form id="maos-chat"><label for="maos-chat-input">질문 또는 보고 요청</label><textarea id="maos-chat-input" maxlength="1000" rows="3" required autocomplete="off" style="width:100%;box-sizing:border-box"></textarea><button type="submit" class="btn">질문 보내기</button></form><pre id="maos-chat-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div></section><script>(()=>{
+  return `<section class="panel" aria-label="CEO 통합 채팅"><div class="panel-head"><h2>CEO 통합 채팅</h2><span>조회 전용 · 저장/실행 없음</span></div><div class="panel-body"><p>통합 브리핑: MAOS 운영 상황 종합해 줘. 개발·시스템의 허용된 조회 범위만 요약합니다.</p><p>지원 질문: RBS 공개 임대 검색 결과는 몇 건인가요?</p><p>시스템 현황 질문: 현재 연결된 시스템 알려줘. / MAOS 시스템 상태는? / 정상 작동하지 않는 시스템이 있어?</p><p>개발 기록 질문: MAOS 개발은 어디까지 진행됐어? / 현재 완료된 작업과 남은 작업 알려줘. / 개발이 막힌 이유가 뭐야? 회계·인사·마케팅·AIDOS 현재 실행: NOT_CONNECTED. 업무 지시는 실행하지 않습니다.</p><form id="maos-chat"><label for="maos-chat-input">질문 또는 보고 요청</label><textarea id="maos-chat-input" maxlength="1000" rows="3" required autocomplete="off" style="width:100%;box-sizing:border-box"></textarea><button type="submit" class="btn">질문 보내기</button></form><pre id="maos-chat-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div></section><script>(()=>{
 const form=document.getElementById('maos-chat');
 const input=document.getElementById('maos-chat-input');
 const result=document.getElementById('maos-chat-result');

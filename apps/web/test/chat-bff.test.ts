@@ -82,4 +82,17 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   const followup=await send({...headers,cookie:`__Host-maos_session=${other}; __Host-maos_csrf=${otherCsrf}`,"x-maos-csrf-token":otherCsrf},{message:"그건?"});
   assert.equal((await followup.json()).answer.state,"CLARIFICATION_REQUIRED");assert.equal(calls.length,before+1);
 
+  const briefing={message:"MAOS 운영 상황 종합해 줘."};
+  assert.equal((await send({...headers,cookie:""},briefing)).status,401);
+  assert.equal((await send({...headers,"x-maos-csrf-token":"wrong"},briefing)).status,403);
+  for (const permission of ["PROJECT", "SYSTEM", "NONE"]) {
+    development=permission==="PROJECT";allowed=permission!=="NONE";
+    const before=calls.length;const res=await send(headers,briefing);assert.equal(res.status,200);
+    const answer=(await res.json()).answer;assert.match(answer.message,/ACCESS_DENIED/);
+    const used=calls.slice(before);
+    if(permission!=="PROJECT")assert.ok(!used.some(path=>path.includes("portal")||path.includes("development-status")));
+    if(permission!=="SYSTEM")assert.ok(!used.some(path=>path.endsWith("/systems")));
+    assert.equal(answer.state,permission==="PROJECT"?"PARTIAL":"NOT_AVAILABLE");
+  }
+
 });

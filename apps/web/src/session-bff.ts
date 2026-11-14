@@ -1,7 +1,7 @@
 import { isSystemQuestion, readSystemStatus } from "./system-status.js";
 import { randomUUID } from "node:crypto";
-import { answerChat } from "./unified-chat.js";
-import { isDevelopmentQuestion, readDevelopmentStatus } from "./development-status.js";
+import { answerChat, chatIntent } from "./unified-chat.js";
+import { isDevelopmentQuestion, readDevelopmentStatus, readOperationsBriefing } from "./development-status.js";
 import type {
   IncomingHttpHeaders,
   IncomingMessage,
@@ -504,6 +504,12 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
     if (typeof value !== "string" || !value.trim() || value.length > 1000) throw new Error("INVALID_INPUT");
     message = value;
   } catch { writeJson(response, 422, {ok:false,error:{code:"CHAT_INPUT_INVALID"}}); return; }
+  if (chatIntent(message) === "BRIEFING") {
+    const answer = await readOperationsBriefing(identity.permissions, path => coreFetch(options,path,{
+      headers:coreHeaders(request,options,reference),method:"GET",
+    }));
+    writeJson(response, 200, {ok:true,answer}); return;
+  }
   const development = isDevelopmentQuestion(message);
   if (!identity.permissions.includes(development ? "PROJECT:READ" : "SYSTEM:READ")) { rejected(response); return; }
   const answer = development ? await readDevelopmentStatus(path => coreFetch(options,path,{

@@ -1,3 +1,4 @@
+import { readSystemStatus } from "./system-status.js";
 import { chatIntent } from "./unified-chat.js";
 import { loadProjectRegistry } from "./registry-reads.js";
 import type { SessionBoundCoreRead } from "./session-bff.js";
@@ -27,4 +28,40 @@ export async function readDevelopmentStatus(read:SessionBoundCoreRead):Promise<C
     return {...base,state:"AVAILABLE",source,observedAt:d.observedAt,freshness:d.records.some((r:{freshness:string})=>r.freshness==="STALE")?"STALE":"UNKNOWN",
       message:["현재 Human이 조회 가능한 등록 Command만 포함합니다. 전체 개발 진행률이 아닙니다.",...lines,`페이지 누락: ${d.partial?"YES":"NO"}; 추가 페이지: ${d.hasMore?"YES":"NO"}. 페이지 간 일관된 스냅샷을 보장하지 않습니다.`,"다음 작업: NOT_AVAILABLE. AIDOS 현재 실행: NOT_CONNECTED."].join("\n")};
   }catch{return base;}
+}
+
+// Uses the existing session-bound readers; each domain retains its own authority.
+export async function readOperationsBriefing(permissions: readonly string[], read: SessionBoundCoreRead): Promise<ChatAnswer> {
+  const section = async (permission: string, reader: () => Promise<ChatAnswer>): Promise<ChatAnswer> => {
+    if (!permissions.includes(permission)) return {kind:"REPORT",state:"ACCESS_DENIED",message:"조회 권한이 없어 이 영역은 조회하지 않았습니다.",access:permission,freshness:"UNKNOWN"};
+    try { return await reader(); }
+    catch { return {kind:"REPORT",state:"NOT_AVAILABLE",message:"응답을 확인하지 못했습니다.",access:permission,freshness:"UNKNOWN"}; }
+  };
+  const [development, systems] = await Promise.all([
+    section("PROJECT:READ", () => readDevelopmentStatus(read)),
+    section("SYSTEM:READ", () => readSystemStatus(read)),
+  ]);
+  const state = (answer: ChatAnswer): string => answer.state === "AVAILABLE" ? "AVAILABLE" :
+    ["RESTRICTED", "ACCESS_DENIED"].includes(answer.state) ? "ACCESS_DENIED" : "NOT_AVAILABLE";
+  const available = [development,systems].filter(answer => state(answer) === "AVAILABLE").length;
+  const detail = (label: string, answer: ChatAnswer, conciseDevelopment = false): string => {
+    const message = conciseDevelopment && state(answer) === "AVAILABLE"
+      ? answer.message.split("\n").filter(line => !/^[a-f0-9-]{36}:/iu.test(line)).join("\n")
+      : answer.message;
+    return [label+" · "+state(answer),message,
+      "출처: "+(answer.source ?? "NOT_AVAILABLE"),
+      "조회 시각 (UTC): "+(answer.observedAt ?? "NOT_AVAILABLE"),
+      "Freshness: "+(answer.freshness ?? "UNKNOWN")+" · 권한: "+answer.access].join("\n");
+  };
+  return {kind:"REPORT",state:available===2?"AVAILABLE":available===1?"PARTIAL":"NOT_AVAILABLE",
+    freshness:[development,systems].some(answer=>answer.freshness==="STALE")?"STALE":"UNKNOWN",
+    access:"PROJECT:READ / SYSTEM:READ — 영역별 독립 검사",
+    message:[
+      available===2?"통합 브리핑 — 허용된 두 조회 영역의 기록입니다. 회사 전체 운영 성공을 의미하지 않습니다.":"부분 브리핑 — 확인되지 않은 영역이 있습니다. 전체 조회 성공이 아닙니다.",
+      detail("개발 기록",development,true),detail("시스템 등록·상태",systems),
+      "확인 필요한 사항",
+      ...[["개발",development],["시스템",systems]].map(([label,answer])=>{const a=answer as ChatAnswer;return label+": "+(state(a)==="AVAILABLE"?"최신성 "+(a.freshness??"UNKNOWN")+" — 현재 정상 운영으로 추정하지 않습니다.":state(a)+" — 해당 영역을 판단할 수 없습니다.");}),
+      "조회 시각은 원천 갱신 시각이 아닙니다. 두 API는 동시에 갱신된 단일 스냅샷이 아닙니다. 개별 개발 기록은 개발 현황 질문으로 확인하세요.",
+      "Finance / Marketing / HR: NOT_CONNECTED. AIDOS 현재 실행: NOT_CONNECTED. 업무 생성·실행·승인·데이터 변경 없음."
+    ].join("\n\n")};
 }
