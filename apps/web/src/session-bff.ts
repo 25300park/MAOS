@@ -1,3 +1,4 @@
+import { isSystemQuestion, readSystemStatus } from "./system-status.js";
 import { randomUUID } from "node:crypto";
 import { answerChat } from "./unified-chat.js";
 import { isDevelopmentQuestion, readDevelopmentStatus } from "./development-status.js";
@@ -506,6 +507,8 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
   const development = isDevelopmentQuestion(message);
   if (!identity.permissions.includes(development ? "PROJECT:READ" : "SYSTEM:READ")) { rejected(response); return; }
   const answer = development ? await readDevelopmentStatus(path => coreFetch(options,path,{
+    headers:coreHeaders(request,options,reference),method:"GET",
+  })) : isSystemQuestion(message) ? await readSystemStatus(path => coreFetch(options,path,{
     headers:coreHeaders(request,options,reference),method:"GET",
   })) : await answerChat(message, options.fetch ?? fetch);
   writeJson(response, 200, {ok:true,answer});

@@ -20,6 +20,7 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
       const path=String(url);calls.push(path);assert.equal(init?.method,"GET");
       if(development && path==="https://core.invalid/api/v1/phase14/portal")return Response.json({ok:true,data:{project:{id:"00000000-0000-4000-8000-000000000001",scope:"project-maos",environment:"STAGING",repository:"registry://fixture",branch:"fixture",workroot:"fixture",health:"UNKNOWN"}}});
       if(development && path==="https://core.invalid/api/v1/projects/00000000-0000-4000-8000-000000000001/development-status")return Response.json({ok:true,data:{developmentStatus:{projectId:"00000000-0000-4000-8000-000000000001",environment:"STAGING",coverage:"CURRENT_HUMAN_REGISTERED_COMMANDS_ONLY",freshness:"UNKNOWN",observedAt:"2026-01-01T00:00:00Z",partial:false,hasMore:false,records:[]}}});
+      if(path==="https://core.invalid/api/v1/systems"){assert.ok(new Headers(init?.headers).has("authorization"));return Response.json({ok:true,data:{entity:{systems:[]}}});}
       if(path===RBS_COUNT_URL){assert.equal(new Headers(init?.headers).has("authorization"),false);return Response.json({total:8,units:[]});}
       assert.equal(path,"https://core.invalid/api/v1/identity/session-context");
       return Response.json({ok:true,data:{actor_id:"fixture-human",roles:[{name:"reader",permissions:allowed?[{resource:development?"PROJECT":"SYSTEM",action:"READ",effect:"ALLOW"}]:[]}]}},{status:sessionStatus});
@@ -47,4 +48,10 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   assert.equal(dev.status,200);assert.equal((await dev.json()).answer.freshness,"UNKNOWN");
   assert.equal(calls.filter(v=>v===RBS_COUNT_URL).length,1);
   allowed=false;assert.equal((await send(headers,{message:"MAOS 개발은 어디까지 진행됐어?"})).status,403);
+  development=false;allowed=true;
+  const systems=await send(headers,{message:"MAOS 시스템 상태는?"});assert.equal(systems.status,200);assert.equal((await systems.json()).answer.state,"NOT_AVAILABLE");
+  assert.equal(calls.filter(v=>v==="https://core.invalid/api/v1/systems").length,1);
+  allowed=false;assert.equal((await send(headers,{message:"현재 연결된 시스템 알려줘."})).status,403);
+  assert.equal(calls.filter(v=>v==="https://core.invalid/api/v1/systems").length,1);
+
 });
