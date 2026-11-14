@@ -426,8 +426,10 @@ export function createControlRoomRequestHandler(
         if (path === "/projects" && identity?.permissions.includes("PROJECT:READ")) {
           projectRegistry = readCore ? await loadProjectRegistry(readCore) : { state: "UNAVAILABLE" };
         }
-        if (path === "/systems" && identity?.permissions.includes("SYSTEM:READ")) {
+        if ((path === "/systems" || (path === "/projects" && identity?.permissions.includes("PROJECT:READ"))) && identity?.permissions.includes("SYSTEM:READ")) {
           systemRegistry = readCore ? await loadSystemRegistry(readCore) : { state: "UNAVAILABLE" };
+        }
+        if (path === "/systems" && identity?.permissions.includes("SYSTEM:READ")) {
           systemHealth = await loadSystemHealth(options.session_bff?.fetch);
           systemHealth.rbsPublicCount = await readRbsPublicCount(options.session_bff?.fetch);
         }

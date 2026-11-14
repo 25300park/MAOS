@@ -1,5 +1,15 @@
 import type { ClassificationPortalView } from "./classification.js";
 import type { RoutingPortalView } from "./routing.js";
+import type { ProjectRegistryRead, SystemRegistryRead } from "./registry-reads.js";
+
+export function renderCeoDashboard(projects: ProjectRegistryRead | undefined, systems: SystemRegistryRead | undefined, canReadSystems: boolean): string {
+  const count = (view: ProjectRegistryRead | SystemRegistryRead | undefined) =>
+    view?.state === "AVAILABLE" ? view.records.length : view?.state === "EMPTY" ? 0 : "NOT_AVAILABLE";
+  const state = (view: ProjectRegistryRead | SystemRegistryRead | undefined) =>
+    view?.state === "RESTRICTED" ? "접근 제한 · RESTRICTED" : !view || view.state === "UNAVAILABLE" ? "조회 정보 없음 · NOT_AVAILABLE" : "현재 세션의 조회 결과";
+  const unknown = systems?.state === "AVAILABLE" ? systems.records.filter(s => s.health === "UNKNOWN").length : systems?.state === "EMPTY" ? 0 : "NOT_AVAILABLE";
+  return `<section class="panel" aria-label="CEO 운영 현황"><div class="panel-head"><h2>회사 운영 현황</h2><span class="permission-note">Registry 기반 · 읽기 전용</span></div><div class="panel-body"><p>현재 계정에 반환된 조회 범위이며 회사 전체 건수가 아닙니다. 연결 상태나 업무 실행 성공을 추정하지 않습니다.</p><div class="card-grid"><article class="entity-card"><h3>프로젝트</h3><strong data-metric="projects">${count(projects)}</strong><p>${state(projects)}</p></article>${canReadSystems ? `<article class="entity-card"><h3>시스템</h3><strong data-metric="systems">${count(systems)}</strong><p>${state(systems)}</p></article><article class="entity-card"><h3>Health 확인 필요</h3><strong data-metric="unknown-systems">${unknown}</strong><p>UNKNOWN — 상태가 확인되지 않은 시스템 수. 다른 상태의 안전성이나 전체 장애 수를 의미하지 않습니다.</p></article>` : ""}</div><p>프로젝트 운영 상태·업무 Blocker: NOT_AVAILABLE — 기존 Registry 계약에 없는 정보입니다.</p>${canReadSystems ? '<p>AIDOS: Not connected — 실행 상태 조회 미연결. Registry 등록 여부와 별개입니다.</p>' : ''}<nav aria-label="빠른 이동"><a class="btn" href="/projects#project-registry">프로젝트 상세</a>${canReadSystems ? ' <a class="btn" href="/systems">연결 시스템</a> <a class="btn" href="/systems/routing">요청 흐름 조회</a>' : ''}</nav></div></section>`;
+}
 
 const escape = (value: string): string =>
   value

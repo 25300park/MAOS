@@ -5,7 +5,7 @@ import { createControlRoomServer } from "../src/server.js";
 
 const project = { id: "b613e899-ba5e-4e9f-8c23-66ade19d2116", scope: "project-maos", environment: "STAGING", repository: "registry://25300park/MAOS", branch: "main", workroot: "workroot://maos/staging/runtime", health: "HEALTHY" };
 
-for (const scenario of ["project", "project-denied", "project-error", "project-empty", "systems", "systems-denied", "systems-invalid", "systems-unauthorized", "unauthorized", "atlas"] as const) {
+for (const scenario of ["project", "project-only", "project-denied", "project-error", "project-empty", "systems", "systems-denied", "systems-invalid", "systems-unauthorized", "unauthorized", "atlas"] as const) {
   test(`actual BFF Registry composition: ${scenario}`, async (t) => {
     const calls: string[] = [];
     const server = createControlRoomServer({ session_bff: {
@@ -33,7 +33,7 @@ for (const scenario of ["project", "project-denied", "project-error", "project-e
         if (path === "/api/v1/identity/session-context") return Response.json({ ok: true, data: {
           actor_id: "human", roles: [{ name: "READER", permissions: scenario.endsWith("unauthorized") ? [] : [
             { resource: "PROJECT", action: "READ", effect: "ALLOW" },
-            { resource: "SYSTEM", action: "READ", effect: "ALLOW" },
+            ...(scenario === "project-only" ? [] : [{ resource: "SYSTEM", action: "READ", effect: "ALLOW" }]),
           ] }],
         } });
         if (scenario.endsWith("denied")) return new Response("private error", { status: 403 });
@@ -59,8 +59,8 @@ for (const scenario of ["project", "project-denied", "project-error", "project-e
       assert.ok(html.includes(scenario === "atlas" ? "<h1>Project Atlas</h1>" : "Screen not available"));
       return;
     }
-    assert.deepEqual(calls, ["/api/v1/identity/session-context", ...(scenario.startsWith("systems") ? ["/api/v1/systems", "/health", "/api/health", "/api/units"] : ["/api/v1/phase14/portal"])]);
-    if (scenario === "project") {
+    assert.deepEqual(calls, ["/api/v1/identity/session-context", ...(scenario.startsWith("systems") ? ["/api/v1/systems", "/health", "/api/health", "/api/units"] : ["/api/v1/phase14/portal", ...(scenario === "project-only" ? [] : ["/api/v1/systems"])])]);
+    if (scenario === "project" || scenario === "project-only") {
       const registered = html.split('aria-label="Authorized registered projects"')[1]?.split("</section>")[0] ?? "";
       assert.ok(registered.includes("project-maos"));
       assert.ok(!registered.includes("Atlas"));
