@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { answerChat } from "./unified-chat.js";
 import type {
   IncomingHttpHeaders,
   IncomingMessage,
@@ -476,6 +477,35 @@ async function renderAuthenticated(
   }
 }
 
+async function chatQuery(request: IncomingMessage, response: ServerResponse, options: SessionBffRuntimeOptions): Promise<void> {
+  if (request.method !== "POST") { writeJson(response, 405, {ok:false}); return; }
+  let reference: string | undefined;
+  try { reference = sessionReference(request); } catch { authenticationRequired(response); return; }
+  if (!reference) { authenticationRequired(response); return; }
+  try { requireExactOrigin(request.headers, options.controlRoomOrigin); }
+  catch { rejected(response); return; }
+  if (!validCsrf(request, reference, options.csrfSecret)) { rejected(response); return; }
+  const upstream = await coreFetch(options, "/api/v1/identity/session-context", {
+    headers: coreHeaders(request, options, reference), method: "GET",
+  });
+  if (upstream.status === 401) { authenticationRequired(response); return; }
+  if (upstream.status === 403) { rejected(response); return; }
+  if (!upstream.ok) { upstreamUnavailable(response); return; }
+  const identity = controlRoomIdentity(await apiEnvelope(upstream));
+  if (!identity.permissions.includes("SYSTEM:READ")) { rejected(response); return; }
+  let message: string;
+  try {
+    if (request.headers["content-type"]?.split(";")[0] !== "application/json" || request.url?.includes("?")) throw new Error("INVALID_INPUT");
+    const body = await readBody(request, 8192);
+    const input: unknown = JSON.parse(body?.toString("utf8") ?? "null");
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).join() !== "message") throw new Error("INVALID_INPUT");
+    const value = (input as {message:unknown}).message;
+    if (typeof value !== "string" || !value.trim() || value.length > 1000) throw new Error("INVALID_INPUT");
+    message = value;
+  } catch { writeJson(response, 422, {ok:false,error:{code:"CHAT_INPUT_INVALID"}}); return; }
+  writeJson(response, 200, {ok:true,answer:await answerChat(message, options.fetch ?? fetch)});
+}
+
 export function createSessionBffRequestHandler(
   options: SessionBffRuntimeOptions,
   render: RenderControlRoom,
@@ -483,7 +513,9 @@ export function createSessionBffRequestHandler(
   return (request, response) => {
     const path = new URL(request.url ?? "/", "http://localhost").pathname;
     let operation: Promise<void>;
-    if (request.method === "POST" && path === "/auth/session") {
+    if (path === "/chat/query") {
+      operation = chatQuery(request, response, options);
+    } else if (request.method === "POST" && path === "/auth/session") {
       operation = exchangeSession(request, response, options);
     } else if (request.method === "POST" && path === "/auth/logout") {
       operation = logout(request, response, options);
