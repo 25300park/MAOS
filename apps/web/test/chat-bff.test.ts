@@ -11,15 +11,18 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   const calls: string[] = [];
   let sessionStatus = 200;
   let allowed = true;
+  let development = false;
   const secret = "synthetic-chat-csrf";
   const reference = "synthetic-session";
   const csrf = createCsrfToken(reference, secret);
   const handler = createSessionBffRequestHandler({enabled:true,coreApiOrigin:"https://core.invalid",controlRoomOrigin:origin,bffServiceBearerToken:"synthetic-service",csrfSecret:secret,
     fetch: (async (url, init) => {
       const path=String(url);calls.push(path);assert.equal(init?.method,"GET");
+      if(development && path==="https://core.invalid/api/v1/phase14/portal")return Response.json({ok:true,data:{project:{id:"00000000-0000-4000-8000-000000000001",scope:"project-maos",environment:"STAGING",repository:"registry://fixture",branch:"fixture",workroot:"fixture",health:"UNKNOWN"}}});
+      if(development && path==="https://core.invalid/api/v1/projects/00000000-0000-4000-8000-000000000001/development-status")return Response.json({ok:true,data:{developmentStatus:{projectId:"00000000-0000-4000-8000-000000000001",environment:"STAGING",coverage:"CURRENT_HUMAN_REGISTERED_COMMANDS_ONLY",freshness:"UNKNOWN",observedAt:"2026-01-01T00:00:00Z",partial:false,hasMore:false,records:[]}}});
       if(path===RBS_COUNT_URL){assert.equal(new Headers(init?.headers).has("authorization"),false);return Response.json({total:8,units:[]});}
       assert.equal(path,"https://core.invalid/api/v1/identity/session-context");
-      return Response.json({ok:true,data:{actor_id:"fixture-human",roles:[{name:"reader",permissions:allowed?[{resource:"SYSTEM",action:"READ",effect:"ALLOW"}]:[]}]}},{status:sessionStatus});
+      return Response.json({ok:true,data:{actor_id:"fixture-human",roles:[{name:"reader",permissions:allowed?[{resource:development?"PROJECT":"SYSTEM",action:"READ",effect:"ALLOW"}]:[]}]}},{status:sessionStatus});
     }) as typeof fetch}, () => {assert.fail("chat must not fall through to HTML");});
   const server=createServer(handler);
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -39,4 +42,9 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   assert.equal(response.headers.get("cache-control"),"no-store");
   assert.equal((await response.json()).answer.count,8);
   assert.equal(calls.filter(v=>v===RBS_COUNT_URL).length,1);
+  development=true;
+  const dev=await send(headers,{message:"MAOS 개발은 어디까지 진행됐어?"});
+  assert.equal(dev.status,200);assert.equal((await dev.json()).answer.freshness,"UNKNOWN");
+  assert.equal(calls.filter(v=>v===RBS_COUNT_URL).length,1);
+  allowed=false;assert.equal((await send(headers,{message:"MAOS 개발은 어디까지 진행됐어?"})).status,403);
 });

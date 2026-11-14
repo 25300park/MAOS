@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { answerChat } from "./unified-chat.js";
+import { isDevelopmentQuestion, readDevelopmentStatus } from "./development-status.js";
 import type {
   IncomingHttpHeaders,
   IncomingMessage,
@@ -492,7 +493,6 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
   if (upstream.status === 403) { rejected(response); return; }
   if (!upstream.ok) { upstreamUnavailable(response); return; }
   const identity = controlRoomIdentity(await apiEnvelope(upstream));
-  if (!identity.permissions.includes("SYSTEM:READ")) { rejected(response); return; }
   let message: string;
   try {
     if (request.headers["content-type"]?.split(";")[0] !== "application/json" || request.url?.includes("?")) throw new Error("INVALID_INPUT");
@@ -503,7 +503,12 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
     if (typeof value !== "string" || !value.trim() || value.length > 1000) throw new Error("INVALID_INPUT");
     message = value;
   } catch { writeJson(response, 422, {ok:false,error:{code:"CHAT_INPUT_INVALID"}}); return; }
-  writeJson(response, 200, {ok:true,answer:await answerChat(message, options.fetch ?? fetch)});
+  const development = isDevelopmentQuestion(message);
+  if (!identity.permissions.includes(development ? "PROJECT:READ" : "SYSTEM:READ")) { rejected(response); return; }
+  const answer = development ? await readDevelopmentStatus(path => coreFetch(options,path,{
+    headers:coreHeaders(request,options,reference),method:"GET",
+  })) : await answerChat(message, options.fetch ?? fetch);
+  writeJson(response, 200, {ok:true,answer});
 }
 
 export function createSessionBffRequestHandler(

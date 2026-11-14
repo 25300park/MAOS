@@ -12,6 +12,7 @@ export interface ChatAnswer {
   observedAt?: string;
   count?: number;
   access?: string;
+  freshness?: "UNKNOWN" | "STALE";
 }
 
 export async function answerChat(input: string, read: typeof fetch): Promise<ChatAnswer> {
@@ -39,7 +40,7 @@ export async function answerChat(input: string, read: typeof fetch): Promise<Cha
 }
 
 export function renderChat(): string {
-  return `<section class="panel" aria-label="CEO 통합 채팅"><div class="panel-head"><h2>CEO 통합 채팅</h2><span>조회 전용 · 저장/실행 없음</span></div><div class="panel-body"><p>지원 질문: RBS 공개 임대 검색 결과는 몇 건인가요?</p><p>개발·회계·인사·마케팅: NOT_CONNECTED. 업무 지시는 실행하지 않습니다.</p><form id="maos-chat"><label for="maos-chat-input">질문 또는 보고 요청</label><textarea id="maos-chat-input" maxlength="1000" rows="3" required autocomplete="off" style="width:100%;box-sizing:border-box"></textarea><button type="submit" class="btn">질문 보내기</button></form><pre id="maos-chat-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div></section><script>(()=>{
+  return `<section class="panel" aria-label="CEO 통합 채팅"><div class="panel-head"><h2>CEO 통합 채팅</h2><span>조회 전용 · 저장/실행 없음</span></div><div class="panel-body"><p>지원 질문: RBS 공개 임대 검색 결과는 몇 건인가요?</p><p>개발 기록 질문: MAOS 개발은 어디까지 진행됐어? / 현재 완료된 작업과 남은 작업 알려줘. / 개발이 막힌 이유가 뭐야? 회계·인사·마케팅·AIDOS 현재 실행: NOT_CONNECTED. 업무 지시는 실행하지 않습니다.</p><form id="maos-chat"><label for="maos-chat-input">질문 또는 보고 요청</label><textarea id="maos-chat-input" maxlength="1000" rows="3" required autocomplete="off" style="width:100%;box-sizing:border-box"></textarea><button type="submit" class="btn">질문 보내기</button></form><pre id="maos-chat-result" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></div></section><script>(()=>{
 const form=document.getElementById('maos-chat');
 const input=document.getElementById('maos-chat-input');
 const result=document.getElementById('maos-chat-result');
@@ -51,7 +52,7 @@ form.addEventListener('submit',async event=>{
   const response=await fetch('/chat/query',{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'content-type':'application/json','x-maos-csrf-token':decodeURIComponent(entry.slice('__Host-maos_csrf='.length))},body:JSON.stringify({message:input.value})});
   input.value='';const body=await response.json();
   if(!response.ok){result.textContent=response.status===401?'AUTHENTICATION_REQUIRED — 로그인 필요':response.status===403?'ACCESS_DENIED — 접근 거부':'UNAVAILABLE — 조회할 수 없습니다';return;}
-  const a=body.answer;result.textContent=[a.kind+' · '+a.state,a.message,a.access?'권한: '+a.access:'',a.source?'출처: '+a.source:'',a.observedAt?'조회 시각 (UTC): '+a.observedAt:''].filter(Boolean).join(String.fromCharCode(10));
+  const a=body.answer;result.textContent=[a.kind+' · '+a.state,a.message,a.freshness?'Freshness: '+a.freshness:'',a.access?'권한: '+a.access:'',a.source?'출처: '+a.source:'',a.observedAt?'조회 시각 (UTC): '+a.observedAt:''].filter(Boolean).join(String.fromCharCode(10));
  } catch {result.textContent='UNAVAILABLE — 응답을 확인하지 못했습니다';}
  finally {input.value='';button.disabled=false;}
 });

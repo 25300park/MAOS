@@ -52,10 +52,10 @@ test("chat UI uses POST body, textContent and no persistent storage", () => {
   assert.doesNotThrow(() => new Script(html.split("<script>")[1]!.split("</script>")[0]!));
 });
 
-test("dashboard chat is available only to authenticated system readers", () => {
+test("dashboard chat is available to project readers; each tool retains its permission", () => {
   for (const permissions of [["PROJECT:READ"], ["PROJECT:READ","SYSTEM:READ"]]) {
     const html=renderControlRoom({path:"/projects",identity:{actor_id:"fixture",display_name:"fixture",role:"reader",permissions}});
-    assert.equal(html.includes('id="maos-chat"'),permissions.includes("SYSTEM:READ"));
+    assert.equal(html.includes('id="maos-chat"'),true);
   }
   assert.equal(renderControlRoom({path:"/projects",identity:null}).includes('id="maos-chat"'),false);
 });

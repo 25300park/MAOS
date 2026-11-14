@@ -151,8 +151,48 @@ function mapRow(row: CommandEnvelopeRow): CommandEnvelope {
   };
 }
 
+export interface DevelopmentCommandRow {
+  task_linked: boolean; run_linked: boolean; evidence_count: string | number;
+  id: string; project_id: string; human_actor_id: string; project_scope_ref: string;
+  environment: string; lifecycle_state: string; updated_at: Date | string;
+  expires_at: Date | string | null; task_id: string | null; run_id: string | null; reason_code: string | null;
+}
+
 export class PostgresCommandEnvelopeRepository {
   constructor(private readonly database: MigrationDatabase) {}
+
+  async listDevelopmentStatus(input: {actorId:string;projectId:string;scope:string;limit:number;after?:string}): Promise<DevelopmentCommandRow[]> {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 20) throw new Error("INVALID_PAGE_LIMIT");
+    const result=await this.database.query<DevelopmentCommandRow>(
+      `SELECT c.id,c.project_id,c.human_actor_id,c.project_scope_ref,c.environment,
+        c.lifecycle_state,c.updated_at,c.expires_at,c.task_id,c.run_id,c.reason_code,
+        EXISTS(SELECT 1 FROM work.tasks t WHERE t.id=c.task_id AND t.project_id=c.project_id) AS task_linked,
+        EXISTS(SELECT 1 FROM execution.runs r WHERE r.id=c.run_id AND r.task_id=c.task_id
+          AND EXISTS(SELECT 1 FROM work.tasks t WHERE t.id=r.task_id AND t.project_id=c.project_id)
+          AND EXISTS(SELECT 1 FROM governance.routing_envelopes g
+            WHERE g.command_envelope_id=c.id AND g.project_id=c.project_id AND g.task_id=r.task_id)) AS run_linked,
+        (SELECT count(e.id)::text FROM governance.governed_artifact_refs e
+          WHERE e.command_envelope_id=c.id AND e.project_id=c.project_id) AS evidence_count
+       FROM work.command_envelopes c
+       WHERE c.project_id=$2 AND c.human_actor_id=$1 AND c.project_scope_ref=$3 AND c.environment='STAGING'
+       AND ($4::text IS NULL OR c.id::text > $4::text)
+       AND EXISTS (
+         SELECT 1 FROM identity.humans h
+         JOIN core.organizations o ON o.id=h.organization_id AND o.archived_at IS NULL
+         JOIN identity.human_project_assignments a ON a.human_id=h.id AND a.organization_id=h.organization_id AND a.revoked_at IS NULL
+         JOIN core.projects p ON p.id=a.project_id AND p.organization_id=h.organization_id AND p.archived_at IS NULL
+         WHERE h.id=$1 AND h.archived_at IS NULL AND p.id=$2 AND a.scope=$3
+         AND EXISTS (SELECT 1 FROM identity.assignment_permissions ap WHERE ap.assignment_id=a.id
+           AND ap.resource='PROJECT' AND ap.action='READ' AND ap.risk='R0' AND ap.environment='staging' AND ap.effect='ALLOW')
+         AND NOT EXISTS (SELECT 1 FROM identity.human_project_assignments da
+           JOIN identity.assignment_permissions dp ON dp.assignment_id=da.id
+           WHERE da.human_id=h.id AND da.organization_id=h.organization_id AND da.revoked_at IS NULL
+             AND da.scope=$3 AND dp.resource='PROJECT' AND dp.action='READ' AND dp.risk='R0'
+             AND dp.environment='staging' AND dp.effect='DENY')
+       ) ORDER BY c.id::text LIMIT $5`,
+      [input.actorId,input.projectId,input.scope,input.after ?? null,input.limit+1]);
+    return result.rows;
+  }
 
   async findById(id: string): Promise<CommandEnvelope | undefined> {
     const result = await this.database.query<CommandEnvelopeRow>(

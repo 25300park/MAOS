@@ -91,6 +91,7 @@ import { createPhLegalRegulatoryRoutes } from "./ph-legal-regulatory-routes.js";
 import { createControlPlaneRoutes } from "./control-plane-routes.js";
 import { createCoreBootstrapRoutes } from "./core-bootstrap-routes.js";
 import { createSystemsReadRoutes } from './systems-read-routes.js';
+import { createDevelopmentStatusRoutes } from './development-status-routes.js';
 import { PostgresSystemsReadRepository } from '@maos/database';
 import { createCommandIntakeRoutes } from "./command-intake-routes.js";
 import { createPhase14PortalRoutes } from "./phase14-portal-routes.js";
@@ -1107,6 +1108,9 @@ const routes = [
     environment: config.environment,
     scope: "project-maos",
   }),
+  ...createDevelopmentStatusRoutes(stagingCommandRuntime ? {
+    listDevelopmentStatus: input => stagingCommandRuntime.commands.listDevelopmentStatus(input),
+  } : undefined, {environment:config.environment,scope:'project-maos',projectId:stagingCommandProjectId}),
   ...createSystemsReadRoutes(stagingDatabase ? new PostgresSystemsReadRepository(stagingDatabase) : undefined,
     {environment:config.environment,scope:'project-maos',projectId:stagingCommandProjectId}),
   ...createControlPlaneRoutes(controlPlane, {

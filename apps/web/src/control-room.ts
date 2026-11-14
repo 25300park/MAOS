@@ -860,7 +860,7 @@ function routeContent(input: ControlRoomRenderInput): string {
   if (path === "/today") return renderAttention() + samplePreview(todayPage(input.identity!));
   if (path === "/projects/atlas") return samplePreview(atlasProjectPage());
   if (path === "/projects" || path.startsWith("/projects/"))
-    return (path === "/projects" ? renderCeoDashboard(input.project_registry, input.system_registry, input.identity!.permissions.includes("SYSTEM:READ")) + (input.identity!.permissions.includes("SYSTEM:READ") ? renderChat() : "") : "") + '<div id="project-registry">' + projectsPage(input.project_registry) + '</div>' + renderAttention();
+    return (path === "/projects" ? renderCeoDashboard(input.project_registry, input.system_registry, input.identity!.permissions.includes("SYSTEM:READ")) + renderChat() : "") + '<div id="project-registry">' + projectsPage(input.project_registry) + '</div>' + renderAttention();
   if (path === "/tasks") return tasksPage();
   if (path.startsWith("/tasks/")) return taskDetail(path, input.identity!);
   if (path === "/ai-company") return aiCompanyPage();
