@@ -15,20 +15,49 @@ export interface ChatAnswer {
   freshness?: "UNKNOWN" | "STALE";
 }
 
+// Whole-utterance grammar, not free-form AI classification. Unknown qualifiers,
+// multi-tool questions and unbound follow-ups never select a reader.
+export function chatIntent(input: string): "DEVELOPMENT" | "SYSTEMS" | "RBS" | "INSTRUCTION" | "UNSUPPORTED" | "CLARIFY" {
+  const text = input.normalize("NFKC").trim().replace(/\s+/gu, " ").replace(/[?.!。？！]+$/u, "").toLowerCase();
+  if (/만들|생성|게시|실행|전송|삭제|수정|배포|등록해|create|execute|publish|delete|deploy/u.test(text)) return "INSTRUCTION";
+  const q = text.replace(/\s+/gu, "");
+  const ask = "(?:알려줘|알려주세요|보여줘|보여주세요|말해줘|말해주세요|요약해줘|보고해줘)";
+  const development = [
+    /^(?:maos|마오스)?개발은어디까지진행됐어$/u,
+    /^현재완료된작업과남은작업알려줘$/u,
+    /^개발이막힌이유가뭐야$/u,
+    new RegExp("^(?:maos|마오스)?(?:개발|개발팀)(?:의)?(?:상황|현황|진행상황|진행현황)(?:을)?"+ask+"$", "u"),
+    /^(?:개발팀에서|개발에|개발팀에)막힌(?:일|작업|업무)(?:이)?(?:있어|있나요)$/u,
+    /^(?:현재)?완료된(?:작업|업무)(?:은|는)(?:뭐야|무엇인가요)$/u,
+    new RegExp("^(?:아직)?(?:남아있는|남은)(?:작업|업무)(?:(?:을)?"+ask+"|(?:은|는)(?:뭐야|무엇인가요))$", "u"),
+  ];
+  if (development.some(pattern => pattern.test(q))) return "DEVELOPMENT";
+  const systems = [
+    /^(?:현재)?연결된시스템(?:은|알려줘|알려주세요)$/u,
+    /^(?:maos)?시스템상태는$/u,
+    /^(?:서버|시스템)상태(?:가)?(?:괜찮아|괜찮나요)$/u,
+    /^(?:문제가있는|정상작동하지않는)시스템(?:이)?(?:있어|있나요)$/u,
+    /^aidos(?:는|가)?연결(?:됐어|됐나요|되었나요)$/u,
+    new RegExp("^(?:maos)?(?:시스템|서버)(?:상태|현황)(?:을)?"+ask+"$", "u"),
+  ];
+  if (systems.some(pattern => pattern.test(q))) return "SYSTEMS";
+  if (/^(?:rbs|rbs-homes)공개임대검색결과(?:는몇건인가요|건수(?:를알려줘|알려주세요|보고해줘|요약해줘)?)$/u.test(q) ||
+      /^(?:rbs|rbs-homes)공개임대검색(?:결과)?건수(?:를)?(?:알려줘|알려주세요)$/u.test(q) ||
+      /^(?:현재)?임대매물(?:은|이)?몇(?:개|건)(?:있어|있나요)$/u.test(q) ||
+      /^(?:현재)?검색가능한임대매물수는$/u.test(q) ||
+      /^(?:how many rbs public rental search matches|rbs public rental search count)$/u.test(text)) return "RBS";
+  if (/회계|인사|급여|마케팅|ai-mls|accounting|payroll|marketing|human resources/u.test(text)) return "UNSUPPORTED";
+  return "CLARIFY";
+}
+
 export async function answerChat(input: string, read: typeof fetch): Promise<ChatAnswer> {
   const text = input.normalize("NFKC").trim().replace(/\s+/gu, " ").replace(/[?.!。？！]+$/u, "").toLowerCase();
-  const instruction = /만들|생성|게시|실행|전송|삭제|수정|배포|등록|create|execute|publish|delete|deploy/u.test(text);
+  const intent = chatIntent(input);
   const report = /보고|요약|report|summari/u.test(text);
-  const kind = instruction ? "INSTRUCTION" : report ? "REPORT" : "QUESTION";
-  if (instruction) return {kind, state: "EXECUTION_DISABLED", message: "업무 지시는 실행하지 않습니다. Task 생성·전송·외부 실행이 이루어지지 않았습니다."};
-  if (/회계|인사|급여|마케팅|개발|aidos|ai-mls|accounting|payroll|marketing|human resources/u.test(text)) {
-    return {kind, state: "NOT_CONNECTED", message: "해당 부서의 검증된 조회 도구가 연결되지 않았습니다."};
-  }
-  // Whole-input allowlist: extra filters, URLs, tool names and compound requests
-  // cannot silently become the unfiltered public aggregate.
-  const supported = /^(?:rbs|rbs-homes) 공개 임대 검색 결과(?:는 몇 건인가요| 건수(?:를 알려 ?줘| 알려 ?주세요| 보고해 ?줘| 요약해 ?줘)?)$/u.test(text) ||
-    /^(?:how many rbs public rental search matches|rbs public rental search count)$/u.test(text);
-  if (!supported) return {kind, state: "CLARIFICATION_REQUIRED", message: "지원 질문: ‘RBS 공개 임대 검색 결과는 몇 건인가요?’ 지역·추가 조건별 또는 전체 등록 매물 수는 조회하지 않습니다."};
+  const kind = intent === "INSTRUCTION" ? "INSTRUCTION" : report ? "REPORT" : "QUESTION";
+  if (intent === "INSTRUCTION") return {kind, state: "EXECUTION_DISABLED", message: "업무 지시는 실행하지 않습니다. Task 생성·전송·외부 실행이 이루어지지 않았습니다."};
+  if (intent === "UNSUPPORTED") return {kind, state: "NOT_CONNECTED", message: "해당 부서의 검증된 조회 도구가 연결되지 않았습니다."};
+  if (intent !== "RBS") return {kind, state: "CLARIFICATION_REQUIRED", message: "개발 기록, 시스템 상태, RBS 공개 임대 검색 건수 중 조회할 대상을 한 가지로 명시해주세요. 복합 질문과 ‘그건?’ 같은 문맥 의존 질문은 이전 결과를 추측해 조회하지 않습니다. 지역·기간·추가 조건이나 전체 등록 매물 수는 지원하지 않습니다."};
   const result = await readRbsPublicCount(read);
   return {
     kind, domain: "BUSINESS", tool: "rbs.public-rental-search-count",

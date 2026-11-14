@@ -1,9 +1,10 @@
+import { chatIntent } from "./unified-chat.js";
 import { loadSystemRegistry } from "./registry-reads.js";
 import type { SessionBoundCoreRead } from "./session-bff.js";
 import type { ChatAnswer } from "./unified-chat.js";
 
 export function isSystemQuestion(input: string): boolean {
-  return ["현재 연결된 시스템 알려줘", "MAOS 시스템 상태는", "정상 작동하지 않는 시스템이 있어"].includes(input.trim().replace(/[?.!]+$/u, ""));
+  return chatIntent(input) === "SYSTEMS";
 }
 
 export async function readSystemStatus(read: SessionBoundCoreRead): Promise<ChatAnswer> {

@@ -54,4 +54,32 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
   allowed=false;assert.equal((await send(headers,{message:"현재 연결된 시스템 알려줘."})).status,403);
   assert.equal(calls.filter(v=>v==="https://core.invalid/api/v1/systems").length,1);
 
+  // New phrasing must retain the same permission and downstream boundaries.
+  for (const message of ["서버 상태 괜찮아?", "AIDOS는 연결됐어?", "임대 매물 몇 개 있어?"]) {
+    const before=calls.length;
+    assert.equal((await send(headers,{message})).status,403);
+    assert.equal(calls.length,before+1); // Session context only; no tool read.
+  }
+  development=true;
+  assert.equal((await send(headers,{message:"개발팀에서 막힌 일 있어?"})).status,403);
+  allowed=true;
+  const naturalDev=await send(headers,{message:"MAOS 개발 상황 알려줘."});
+  assert.equal(naturalDev.status,200);assert.equal((await naturalDev.json()).answer.freshness,"UNKNOWN");
+  development=false;
+  const naturalSystem=await send(headers,{message:"문제가 있는 시스템이 있어?"});
+  assert.equal(naturalSystem.status,200);assert.equal((await naturalSystem.json()).answer.state,"NOT_AVAILABLE");
+  const naturalRbs=await send(headers,{message:"임대 매물 몇 개 있어?"});
+  assert.equal((await naturalRbs.json()).answer.count,8);
+  for (const message of ["그건 몇 개야?","개발 현황과 서버 상태 알려줘","서버 상태 확인하고 배포해"]) {
+    const before=calls.length;const response=await send(headers,{message});
+    assert.equal(response.status,200);
+    assert.ok(["CLARIFICATION_REQUIRED","EXECUTION_DISABLED"].includes((await response.json()).answer.state));
+    assert.equal(calls.length,before+1);
+  }
+  // A different authenticated session cannot inherit the preceding result.
+  const other="synthetic-other-session";const otherCsrf=createCsrfToken(other,secret);
+  const before=calls.length;
+  const followup=await send({...headers,cookie:`__Host-maos_session=${other}; __Host-maos_csrf=${otherCsrf}`,"x-maos-csrf-token":otherCsrf},{message:"그건?"});
+  assert.equal((await followup.json()).answer.state,"CLARIFICATION_REQUIRED");assert.equal(calls.length,before+1);
+
 });

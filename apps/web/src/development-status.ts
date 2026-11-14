@@ -1,9 +1,10 @@
+import { chatIntent } from "./unified-chat.js";
 import { loadProjectRegistry } from "./registry-reads.js";
 import type { SessionBoundCoreRead } from "./session-bff.js";
 import type { ChatAnswer } from "./unified-chat.js";
 
-export function isDevelopmentQuestion(input:string):boolean {
-  return ["MAOS 개발은 어디까지 진행됐어","현재 완료된 작업과 남은 작업 알려줘","개발이 막힌 이유가 뭐야"].includes(input.trim().replace(/[?.!]+$/u,""));
+export function isDevelopmentQuestion(input: string): boolean {
+  return chatIntent(input) === "DEVELOPMENT";
 }
 export async function readDevelopmentStatus(read:SessionBoundCoreRead):Promise<ChatAnswer> {
   const base:ChatAnswer={kind:"QUESTION",state:"NOT_AVAILABLE",message:"개발 기록을 확인할 수 없습니다. AIDOS: NOT_CONNECTED",access:"PROJECT:READ",freshness:"UNKNOWN"};
