@@ -514,7 +514,7 @@ async function chatQuery(request: IncomingMessage, response: ServerResponse, opt
   if (!identity.permissions.includes(development ? "PROJECT:READ" : "SYSTEM:READ")) { rejected(response); return; }
   const answer = development ? await readDevelopmentStatus(path => coreFetch(options,path,{
     headers:coreHeaders(request,options,reference),method:"GET",
-  })) : isSystemQuestion(message) ? await readSystemStatus(path => coreFetch(options,path,{
+  }), chatIntent(message) === "BLOCKERS" ? "blockers" : chatIntent(message) === "NEXT_ACTION" ? "next" : "overview") : isSystemQuestion(message) ? await readSystemStatus(path => coreFetch(options,path,{
     headers:coreHeaders(request,options,reference),method:"GET",
   })) : await answerChat(message, options.fetch ?? fetch);
   writeJson(response, 200, {ok:true,answer});

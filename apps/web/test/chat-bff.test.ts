@@ -95,4 +95,14 @@ test("chat BFF enforces session, origin, CSRF and SYSTEM READ before fixed publi
     assert.equal(answer.state,permission==="PROJECT"?"PARTIAL":"NOT_AVAILABLE");
   }
 
+  development=true;allowed=true;
+  for (const message of ["현재 막힌 개발 업무는?","개발팀에서 무엇을 기다리고 있어?","지금 확인해야 할 문제는?","다음 개발 작업은 뭐야?"]) {
+    const before=calls.length;const response=await send(headers,{message});assert.equal(response.status,200);
+    const answer=(await response.json()).answer;assert.equal(answer.access,"PROJECT:READ");assert.equal(answer.freshness,"UNKNOWN");assert.match(answer.message,/현재 페이지/);
+    assert.ok(calls.slice(before).some(path=>path.endsWith("/development-status")));
+    assert.ok(!calls.slice(before).some(path=>path.endsWith("/systems")||path===RBS_COUNT_URL));
+  }
+  development=false;
+  const beforeM3=calls.length;assert.equal((await send(headers,{message:"현재 막힌 개발 업무는?"})).status,403);assert.equal(calls.length,beforeM3+1);
+
 });

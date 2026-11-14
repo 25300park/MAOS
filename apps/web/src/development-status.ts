@@ -5,9 +5,9 @@ import type { SessionBoundCoreRead } from "./session-bff.js";
 import type { ChatAnswer } from "./unified-chat.js";
 
 export function isDevelopmentQuestion(input: string): boolean {
-  return chatIntent(input) === "DEVELOPMENT";
+  return ["DEVELOPMENT", "BLOCKERS", "NEXT_ACTION"].includes(chatIntent(input));
 }
-export async function readDevelopmentStatus(read:SessionBoundCoreRead):Promise<ChatAnswer> {
+export async function readDevelopmentStatus(read:SessionBoundCoreRead, view: "overview" | "blockers" | "next" = "overview"):Promise<ChatAnswer> {
   const base:ChatAnswer={kind:"QUESTION",state:"NOT_AVAILABLE",message:"개발 기록을 확인할 수 없습니다. AIDOS: NOT_CONNECTED",access:"PROJECT:READ",freshness:"UNKNOWN"};
   try {
     const registry=await loadProjectRegistry(read);
@@ -22,6 +22,28 @@ export async function readDevelopmentStatus(read:SessionBoundCoreRead):Promise<C
     if(!d||d.projectId!==project.id||d.environment!=="STAGING"||d.coverage!=="CURRENT_HUMAN_REGISTERED_COMMANDS_ONLY"||d.freshness!=="UNKNOWN"||!Number.isFinite(Date.parse(d.observedAt))||typeof d.partial!=="boolean"||typeof d.hasMore!=="boolean"||!Array.isArray(d.records)||d.records.length>20)return {...base,source};
     const categories=["COMPLETED_HISTORY","RECORDED_PROGRESS","BLOCKED_OR_WAITING","NOT_AVAILABLE"];
     for(const r of d.records)if(!r||!categories.includes(r.category)||!["UNKNOWN","STALE"].includes(r.freshness)||typeof r.commandId!=="string"||!/^[a-f0-9-]{36}$/iu.test(r.commandId)||typeof r.state!=="string"||!/^[A-Z_]+$/u.test(r.state)||r.nextTask!=="NOT_AVAILABLE"||(r.updatedAt!==null&&!Number.isFinite(Date.parse(r.updatedAt))))return {...base,source};
+    if (view !== "overview") {
+      const waiting = ["WAITING_HUMAN", "WAITING_APPROVAL"];
+      const blocked = ["FAILED", "DENIED", "REJECTED", "EXPIRED"];
+      // Reject contradictory source classification; READY/DISPATCHED never become blockers.
+      if (d.records.some((r:{state:string;category:string}) =>
+        (r.category === "BLOCKED_OR_WAITING") !== [...waiting,...blocked].includes(r.state))) return {...base,source};
+      const rows = d.records.filter((r:{state:string}) => [...waiting,...blocked].includes(r.state));
+      const lines = view === "blockers" ? [
+        `대기 기록: ${rows.filter((r:{state:string})=>waiting.includes(r.state)).length}건 (현재 페이지)`,
+        `차단/실패 기록: ${rows.filter((r:{state:string})=>blocked.includes(r.state)).length}건 (현재 페이지)`,
+        ...rows.map((r:{commandId:string;state:string;freshness:string;updatedAt:string|null;reason:unknown;evidenceCount:unknown}) =>
+          `${r.commandId}: 저장 상태 ${r.state} · ${r.freshness} · 원천 updated_at: ${r.updatedAt ?? "NOT_AVAILABLE"} · 사유: ${typeof r.reason==="string"&&/^[A-Z][A-Z0-9_]{0,79}$/u.test(r.reason)?r.reason:"NOT_AVAILABLE"} · Evidence: ${typeof r.evidenceCount==="number"&&Number.isSafeInteger(r.evidenceCount)&&r.evidenceCount>0?r.evidenceCount:"NOT_AVAILABLE"}`),
+      ] : ["다음 작업: NOT_AVAILABLE — 기존 응답에는 명시적으로 연결된 다음 작업 근거가 없습니다. Task 연결·READY·DISPATCHED로 다음 작업을 추정하지 않습니다.",
+        ...d.records.map((r:{commandId:string;updatedAt:string|null;freshness:string}) => `${r.commandId}: 원천 updated_at: ${r.updatedAt ?? "NOT_AVAILABLE"} · ${r.freshness}`)];
+      return {...base,state:"AVAILABLE",source,observedAt:d.observedAt,
+        freshness:d.records.some((r:{freshness:string})=>r.freshness==="STALE")?"STALE":"UNKNOWN",
+        message:["현재 Human·Project·STAGING의 반환된 등록 기록만 조회합니다. 저장 상태이며 현재 실행 상태가 아닙니다.",...lines,
+          "0건은 조회 범위 내 현재 페이지의 기록 수입니다. 회사 전체에 문제가 없다는 뜻이 아닙니다. READY/DISPATCHED는 실제 실행 중 또는 차단으로 판단하지 않습니다.",
+          `페이지 누락: ${d.partial?"YES":"NO"}; 추가 페이지: ${d.hasMore?"YES":"NO"}. 페이지 간 일관된 스냅샷을 보장하지 않습니다.`,
+          "사유와 Evidence 개수는 원천 요약이며 전체 Evidence 무결성 검증이 아닙니다. 근거 없는 우선순위·일정·다음 작업은 생성하지 않습니다. AIDOS 현재 실행: NOT_CONNECTED."
+        ].join("\n")};
+    }
     const labels=["과거 완료 기록","저장된 진행 상태 (실행 중 보장 아님)","차단/대기 기록","근거 부족"];
     const lines=categories.map((category,i)=>`${labels[i]}: ${d.records.filter((r:{category:string})=>r.category===category).length}건 (현재 페이지)`);
     for(const r of d.records)lines.push(`${r.commandId}: ${r.state} · ${r.freshness} · 원천 갱신: ${r.updatedAt ?? "NOT_AVAILABLE"} · 사유: ${typeof r.reason==="string"&&/^[A-Z][A-Z0-9_]{0,79}$/u.test(r.reason)?r.reason:"NOT_AVAILABLE"} · Evidence: ${Number.isSafeInteger(r.evidenceCount)&&r.evidenceCount>0?r.evidenceCount:"NOT_AVAILABLE"}`);
